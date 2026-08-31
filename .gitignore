@@ -1,0 +1,23 @@
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Tizen packages and signing material
+*.wgt
+*.p12
+*.pfx
+profiles.xml
+.tizen/
+
+# Local environment and OS files
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+/docs/certification/
+/docs/compliance/
+/docs/tv-app-updates.md
+/brand/samsung-seller/
