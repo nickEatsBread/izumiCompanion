@@ -196,6 +196,13 @@ export function App() {
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
+  const focusRef = useRef<FocusLocation>(focus)
+  const remoteHandlerRef = useRef<(action: RemoteAction) => void>()
+
+  const setFocusLocation = (next: FocusLocation) => {
+    focusRef.current = next
+    setFocus((current) => focusId(current) === focusId(next) ? current : next)
+  }
 
   const revealPlayerControls = (hold = false) => {
     setPlayerControlsVisible(true)
@@ -453,7 +460,7 @@ export function App() {
         }
         setSnapshot(next)
         setSelected(next.hero ?? next.rows[0]?.items[0] ?? fallbackMedia)
-        setFocus({ zone: 'hero', index: 0 })
+        setFocusLocation({ zone: 'hero', index: 0 })
         setScreen('home')
       },
       onSearchResults: (query, items, error) => {
@@ -570,7 +577,7 @@ export function App() {
   useEffect(() => {
     const element = document.querySelector<HTMLElement>(`[data-focus-id="${focusId(focus)}"]`)
     if (!element || ['ready', 'loading', 'player', 'error'].includes(screen)) return
-    element.focus()
+    if (document.activeElement !== element) element.focus()
     if (focus.zone === 'row') {
       const strip = element.parentElement
       if (strip) {
@@ -634,15 +641,15 @@ export function App() {
 
   const openDetails = (media: CompanionMedia) => {
     detailReturnScreenRef.current = screen
-    detailReturnFocusRef.current = focus
+    detailReturnFocusRef.current = focusRef.current
     setSelected(media)
-    setFocus({ zone: 'detail', index: 0 })
+    setFocusLocation({ zone: 'detail', index: 0 })
     setScreen('details')
   }
 
   const closeDetails = () => {
     setScreen(detailReturnScreenRef.current)
-    setFocus(detailReturnFocusRef.current)
+    setFocusLocation(detailReturnFocusRef.current)
   }
 
   const collections = catalogCollections(snapshot)
@@ -674,12 +681,27 @@ export function App() {
     : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }]
 
   const changeFocus = (next: FocusLocation) => {
-    setFocus(next)
+    if (focusId(focusRef.current) === focusId(next)) return
+    setFocusLocation(next)
     if (previewSelectionTimerRef.current) window.clearTimeout(previewSelectionTimerRef.current)
     if (next.zone === 'row') {
       const item = snapshot.rows[next.row]?.items[next.index]
-      // Keep focus instant while deferring the expensive hero-art swap until the user pauses.
-      if (item) previewSelectionTimerRef.current = window.setTimeout(() => setSelected(item), 160)
+      // Keep focus instant while deferring image decode and the expensive billboard swap until
+      // the user pauses. Native loading="lazy" does not exist in the 2018 Samsung web engine.
+      if (item) {
+        const targetFocus = focusId(next)
+        previewSelectionTimerRef.current = window.setTimeout(() => {
+          const commit = () => {
+            if (focusId(focusRef.current) === targetFocus) setSelected(item)
+          }
+          const imageUrl = item.episodeImage || item.backdrop || item.poster
+          if (!imageUrl) return commit()
+          const image = new Image()
+          image.onload = commit
+          image.onerror = commit
+          image.src = imageUrl
+        }, 650)
+      }
     }
   }
 
@@ -733,6 +755,7 @@ export function App() {
   }
 
   const moveHomeFocus = (action: RemoteAction) => {
+    const focus = focusRef.current
     let next = focus
     if (focus.zone !== 'nav') lastHomeContentFocusRef.current = focus
     if (focus.zone === 'nav') {
@@ -822,8 +845,15 @@ export function App() {
     setActiveNav(3)
     setCatalogMenuOpen(false)
     setScreen('series')
-    changeFocus({ zone: 'series-season', index: 0 })
+    changeFocus(initialSeriesFocus(media))
     requestSeriesDetails(media)
+  }
+
+  const initialSeriesFocus = (media: CompanionMedia): FocusLocation => {
+    if (episodeCountsFor(media).length) return { zone: 'series-season', index: 0 }
+    if (media.trailer?.id && (!media.trailer.site || media.trailer.site.toLowerCase() === 'youtube')) return { zone: 'series-action', index: 0 }
+    if (media.relations?.length) return { zone: 'relation', index: 0 }
+    return { zone: 'nav', index: 3 }
   }
 
   const selectCatalogMedia = (media: CompanionMedia) => {
@@ -865,7 +895,7 @@ export function App() {
       const firstSeries = seriesItems[0] ?? fallbackMedia
       setSeriesSeason(0)
       setSelected(firstSeries)
-      changeFocus({ zone: 'series-season', index: 0 })
+      changeFocus(initialSeriesFocus(firstSeries))
       requestSeriesDetails(firstSeries)
     }
     else if (destination === 'settings') changeFocus({ zone: 'setting', index: 0 })
@@ -877,6 +907,7 @@ export function App() {
   }
 
   const activateCurrentFocus = () => {
+    const focus = focusRef.current
     if (focus.zone === 'nav') selectNav(focus.index)
     else if (focus.zone === 'hero') focus.index === 0 ? playMedia(selected) : openDetails(selected)
     else if (focus.zone === 'row') {
@@ -980,6 +1011,7 @@ export function App() {
   }
 
   const moveSeriesFocus = (action: RemoteAction) => {
+    const focus = focusRef.current
     const counts = episodeCountsFor(selected)
     if (!counts.length) {
       const relations = selected.relations ?? []
@@ -1054,6 +1086,7 @@ export function App() {
   }
 
   const moveBrowseFocus = (action: RemoteAction) => {
+    const focus = focusRef.current
     const items = browseItemsFor(screen)
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
@@ -1090,10 +1123,10 @@ export function App() {
     const suggestion = searchSuggestions[index]
     if (!suggestion) return
     setSearchQuery(suggestion)
-    changeFocus({ zone: 'grid', index: 0 })
   }
 
   const moveSearchFocus = (action: RemoteAction) => {
+    const focus = focusRef.current
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
       else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(6, focus.index + 1) })
@@ -1171,6 +1204,7 @@ export function App() {
   }
 
   const moveSettingsFocus = (action: RemoteAction) => {
+    const focus = focusRef.current
     if (settingsConfirmation) {
       if (action === 'left') changeFocus({ zone: 'setting', index: 0 })
       else if (action === 'right') changeFocus({ zone: 'setting', index: 1 })
@@ -1189,6 +1223,7 @@ export function App() {
   }
 
   const handleRemote = (action: RemoteAction) => {
+    const focus = focusRef.current
     if (exitConfirmation) {
       if (action === 'left' || action === 'up') setExitFocus(0)
       else if (action === 'right' || action === 'down') setExitFocus(1)
@@ -1218,10 +1253,10 @@ export function App() {
       if (catalogMenuOpen) {
         if (action === 'up' || action === 'down') {
           const offset = action === 'up' ? -1 : 1
-          const index = Math.max(0, Math.min(catalogOptions.length - 1, catalogMenuFocus + offset))
+          const index = Math.max(0, Math.min(catalogOptions.length - 1, focus.index + offset))
           setCatalogMenuFocus(index)
           changeFocus({ zone: 'catalog', index })
-        } else if (action === 'select') selectCatalogOption(catalogMenuFocus)
+        } else if (action === 'select') selectCatalogOption(focus.index)
         else if (action === 'left' || action === 'back') closeCatalogMenu()
         else if (action === 'right') {
           setCatalogMenuOpen(false)
@@ -1333,16 +1368,18 @@ export function App() {
     if (action === 'back') requestExit()
   }
 
+  remoteHandlerRef.current = handleRemote
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const action = remoteAction(event)
       if (!action) return
       event.preventDefault()
-      handleRemote(action)
+      remoteHandlerRef.current?.(action)
     }
     window.addEventListener('keydown', onKeyDown, false)
     return () => window.removeEventListener('keydown', onKeyDown, false)
-  })
+  }, [])
 
   const previewScreen = (next: ScreenName) => {
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
@@ -1365,7 +1402,7 @@ export function App() {
       setSelected(items[0] ?? fallbackMedia)
       if (next === 'series') {
         setSeriesSeason(0)
-        changeFocus({ zone: 'series-season', index: 0 })
+        changeFocus(initialSeriesFocus(items[0] ?? fallbackMedia))
       } else changeFocus({ zone: 'grid', index: 0 })
     }
     if (next === 'settings') {
