@@ -152,9 +152,15 @@ describe('companion play routing', () => {
       positionSeconds: 0,
       subtitles: [],
       activeTrackIds: [],
+      media,
+      trackPreferences: { audio: { language: 'ja-JP', codec: 'aac' } },
     })
 
-    expect(receiverEvents.onLoad).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-one' }), 'sender-one')
+    expect(receiverEvents.onLoad).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-one',
+      media,
+      trackPreferences: { audio: { language: 'ja-JP', codec: 'aac', title: undefined }, subtitle: undefined },
+    }), 'sender-one')
     receiver.disconnect()
   })
 
@@ -316,6 +322,51 @@ describe('companion play routing', () => {
     channel.emit('izumi.companion.play-accepted', { pairingId: play.pairingId, requestId: play.requestId })
 
     await expect(pending).resolves.toBe('local')
+    receiver.disconnect()
+  })
+
+  it('keeps device source URLs private while selecting an opaque row on the TV', async () => {
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify({
+      ...transport,
+      playbackMode: 'cloud-and-device',
+      wakeWhenClosed: false,
+    }))
+    const channel = new FakeSmartViewChannel()
+    const receiverEvents = events()
+    receiverEvents.onDeviceSourceOptions = vi.fn()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(receiverEvents)
+    await receiver.connect()
+
+    const pending = receiver.requestDeviceSourceChange(media, 45)
+    const play = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.play')?.[1] as {
+      pairingId: string
+      requestId: string
+    }
+    channel.emit('izumi.companion.play-accepted', { pairingId: play.pairingId, requestId: play.requestId })
+    await expect(pending).resolves.toBe('local')
+    channel.emit('izumi.companion.source-options', {
+      credential,
+      requestId: play.requestId,
+      choices: [{ id: 'source-1', label: '1080p Japanese', detail: 'HEVC · P2P' }],
+      resolving: false,
+    })
+
+    expect(receiverEvents.onDeviceSourceOptions).toHaveBeenCalledWith({
+      requestId: play.requestId,
+      choices: [{ id: 'source-1', label: '1080p Japanese', detail: 'HEVC · P2P' }],
+      resolving: false,
+      error: undefined,
+    })
+    expect(receiver.selectDeviceSource(play.requestId, 'source-1')).toBe(true)
+    expect(channel.publish).toHaveBeenLastCalledWith('izumi.companion.source-select', {
+      pairingId: play.pairingId,
+      requestId: play.requestId,
+      choiceId: 'source-1',
+    }, 'broadcast')
+    expect(JSON.stringify(channel.publish.mock.calls)).not.toContain('https://private-source.example')
     receiver.disconnect()
   })
 

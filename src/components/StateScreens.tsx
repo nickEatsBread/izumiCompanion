@@ -13,6 +13,8 @@ import {
 import { useEffect, useState } from 'preact/hooks'
 import companionLockup from '../../brand/png/izumi-companion-lockup-dark-936.png'
 import type {
+  LinkedDeviceSourceChoice,
+  LinkedDeviceSourceOptions,
   PlaybackState,
   PlaybackSourceChoice,
   PlaybackTrack,
@@ -203,6 +205,7 @@ export function PlayerScreen({
   menu,
   menuFocus,
   sourceChoices,
+  deviceSourceOptions,
   activeSourceId,
   deviceSourceChangeAvailable,
   audioTracks,
@@ -217,6 +220,7 @@ export function PlayerScreen({
   onControl,
   onMenuFocus,
   onSource,
+  onDeviceSource,
   onDeviceSources,
   onAudio,
   onSubtitle,
@@ -232,6 +236,7 @@ export function PlayerScreen({
   menu: PlayerMenu | null
   menuFocus: number
   sourceChoices: PlaybackSourceChoice[]
+  deviceSourceOptions?: LinkedDeviceSourceOptions
   activeSourceId?: string
   deviceSourceChangeAvailable: boolean
   audioTracks: PlaybackTrack[]
@@ -246,6 +251,7 @@ export function PlayerScreen({
   onControl(index: number): void
   onMenuFocus(index: number): void
   onSource(source: PlaybackSourceChoice): void
+  onDeviceSource(source: LinkedDeviceSourceChoice): void
   onDeviceSources(): void
   onAudio(track: PlaybackTrack): void
   onSubtitle(choice: SubtitleChoice): void
@@ -333,14 +339,31 @@ export function PlayerScreen({
                   <span>{source.label}</span><small>{activeSourceId === source.id ? 'Current' : source.detail ?? ''}</small>
                 </button>
               ))}
+              {deviceSourceOptions?.choices.map((source, index) => {
+                const menuIndex = sourceChoices.length + index
+                return (
+                  <button
+                    type="button"
+                    class={menuFocus === menuIndex ? 'is-focused' : ''}
+                    onFocus={() => onMenuFocus(menuIndex)}
+                    onClick={() => onDeviceSource(source)}
+                    key={`device-${deviceSourceOptions.requestId}-${source.id}`}
+                  >
+                    <span>{source.label}</span><small>{source.detail ?? 'Linked device'}</small>
+                  </button>
+                )
+              })}
+              {deviceSourceOptions?.resolving && !deviceSourceOptions.choices.length && (
+                <div class="player-menu-loading">Finding sources on linked device…</div>
+              )}
               {deviceSourceChangeAvailable && (
                 <button
                   type="button"
-                  class={menuFocus === sourceChoices.length ? 'is-focused' : ''}
-                  onFocus={() => onMenuFocus(sourceChoices.length)}
+                  class={menuFocus === sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) ? 'is-focused' : ''}
+                  onFocus={() => onMenuFocus(sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0))}
                   onClick={onDeviceSources}
                 >
-                  <span>More sources on linked device</span><small>Debrid · P2P · device sources</small>
+                  <span>{deviceSourceOptions ? 'Refresh linked-device sources' : 'More sources on linked device'}</span><small>Debrid · P2P · device sources</small>
                 </button>
               )}
             </div>

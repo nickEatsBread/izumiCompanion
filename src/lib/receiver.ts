@@ -7,6 +7,8 @@ import type {
   PairingInfo,
   PlaybackSnapshot,
   PlaybackSourceChoice,
+  CastTrackPreference,
+  LinkedDeviceSourceOptions,
 } from '../types'
 import { isCompanionSnapshot } from '../types'
 import { cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
@@ -36,6 +38,7 @@ export interface ReceiverEvents {
   onLoad(request: CastLoadRequest, senderId: string): void
   onControl(request: CastControlRequest, senderId: string): void
   onDeviceSourceAvailability?(available: boolean): void
+  onDeviceSourceOptions?(options: LinkedDeviceSourceOptions): void
 }
 
 function parseMessage(value: unknown): unknown {
@@ -201,6 +204,39 @@ function validCompanionMedia(value: unknown): value is CompanionMedia {
     && typeof media.ref?.id === 'string'
 }
 
+function linkedDeviceSourceOptions(value: unknown): LinkedDeviceSourceOptions | undefined {
+  const message = parseMessage(value)
+  if (!message || typeof message !== 'object') return undefined
+  const input = message as Record<string, unknown>
+  if (typeof input.requestId !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(input.requestId)) return undefined
+  const choices = (Array.isArray(input.choices) ? input.choices : []).slice(0, 40).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const choice = entry as Record<string, unknown>
+    if (typeof choice.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(choice.id)
+      || typeof choice.label !== 'string' || !choice.label.trim()) return []
+    return [{
+      id: choice.id,
+      label: choice.label.trim().slice(0, 180),
+      detail: typeof choice.detail === 'string' ? choice.detail.trim().slice(0, 240) : undefined,
+    }]
+  })
+  return {
+    requestId: input.requestId,
+    choices,
+    resolving: input.resolving === true,
+    error: typeof input.error === 'string' ? input.error.slice(0, 240) : undefined,
+  }
+}
+
+function trackPreference(value: unknown): CastTrackPreference | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const input = value as Record<string, unknown>
+  const language = typeof input.language === 'string' ? input.language.trim().slice(0, 40) : undefined
+  const title = typeof input.title === 'string' ? input.title.trim().slice(0, 160) : undefined
+  const codec = typeof input.codec === 'string' ? input.codec.trim().slice(0, 80) : undefined
+  return language || title || codec ? { language, title, codec } : undefined
+}
+
 function normalizeLoad(value: unknown): CastLoadRequest | undefined {
   const message = parseMessage(value)
   if (!message || typeof message !== 'object') return undefined
@@ -221,6 +257,11 @@ function normalizeLoad(value: unknown): CastLoadRequest | undefined {
   })
   const rawAdaptive = input.adaptive && typeof input.adaptive === 'object' ? input.adaptive as Record<string, unknown> : undefined
   const rawDrm = input.drm && typeof input.drm === 'object' ? input.drm as Record<string, unknown> : undefined
+  const rawPreferences = input.trackPreferences && typeof input.trackPreferences === 'object'
+    ? input.trackPreferences as Record<string, unknown>
+    : undefined
+  const audioPreference = trackPreference(rawPreferences?.audio)
+  const subtitlePreference = trackPreference(rawPreferences?.subtitle)
   const drmSystem = rawDrm?.system === 'playready' || rawDrm?.system === 'widevine' ? rawDrm.system : undefined
   const drmLicense = rawDrm && validUrl(rawDrm.licenseServer) ? rawDrm.licenseServer : undefined
   return {
@@ -234,6 +275,11 @@ function normalizeLoad(value: unknown): CastLoadRequest | undefined {
     activeTrackIds: Array.isArray(input.activeTrackIds)
       ? input.activeTrackIds.slice(0, 1).map(Number).filter(Number.isFinite)
       : [],
+    media: validCompanionMedia(input.media) ? input.media : undefined,
+    trackPreferences: audioPreference || subtitlePreference ? {
+      audio: audioPreference,
+      subtitle: subtitlePreference,
+    } : undefined,
     subtitleStyle: input.subtitleStyle && typeof input.subtitleStyle === 'object' ? input.subtitleStyle : undefined,
     adaptive: rawAdaptive ? {
       minBitrateKbps: Number.isFinite(Number(rawAdaptive.minBitrateKbps)) ? Math.max(0, Number(rawAdaptive.minBitrateKbps)) : undefined,
@@ -281,6 +327,7 @@ export class CompanionReceiver {
   private pairing = this.createPairingInfo()
   private pairingTimer?: number
   private playAcknowledgements = new Map<string, (accepted: boolean) => void>()
+  private deviceSourceRequests = new Map<string, number>()
   private detailRequests = new Map<string, (media: CompanionMedia | null) => void>()
 
   constructor(private readonly events: ReceiverEvents) {
@@ -370,6 +417,15 @@ export class CompanionReceiver {
       if (input.pairingId !== (this.cloudflare?.pairingId ?? this.credential.slice(0, 16)) || typeof input.requestId !== 'string') return
       this.playAcknowledgements.get(input.requestId)?.(true)
     })
+    this.channel.on('izumi.companion.source-options', (value) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      const options = linkedDeviceSourceOptions(input)
+      const expiresAt = options ? this.deviceSourceRequests.get(options.requestId) : undefined
+      if (!options || input.credential !== this.credential || !expiresAt || expiresAt <= Date.now()) return
+      this.events.onDeviceSourceOptions?.(options)
+    })
     this.channel.on('clientConnect', (_value, from) => {
       const target = peerId(from) || peerId(_value)
       this.publish('izumi.ready', { protocol: 1, subtitles: ['vtt', 'srt', 'ass', 'ssa'] }, target)
@@ -448,6 +504,7 @@ export class CompanionReceiver {
     if (!this.canRequestDeviceSourceChange()) return Promise.resolve('no-source')
     const secureRequestId = secureRandomHex(16)
     const requestId = secureRequestId ?? randomHex(16)
+    this.deviceSourceRequests.set(requestId, Date.now() + REMOTE_REQUEST_TTL_MS)
     return this.requestFromDevice({
       ...media,
       playback: {
@@ -519,6 +576,18 @@ export class CompanionReceiver {
     return true
   }
 
+  selectDeviceSource(requestId: string, choiceId: string): boolean {
+    const expiresAt = this.deviceSourceRequests.get(requestId)
+    if (!this.credential || !this.connected || !expiresAt || expiresAt <= Date.now()
+      || !/^[A-Za-z0-9_-]{1,80}$/.test(choiceId)) return false
+    this.publish('izumi.companion.source-select', {
+      pairingId: this.cloudflare?.pairingId ?? this.credential.slice(0, 16),
+      requestId,
+      choiceId,
+    }, 'broadcast')
+    return true
+  }
+
   private messageSender(value: unknown, from: unknown): string {
     const direct = peerId(from)
     if (direct) return direct
@@ -544,6 +613,7 @@ export class CompanionReceiver {
     localStorage.removeItem('izumi.companion.cloudflare')
     localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
     this.credential = ''
+    this.deviceSourceRequests.clear()
     this.cloudflare = null
     this.clearPlayback()
     this.pairing = this.createPairingInfo()

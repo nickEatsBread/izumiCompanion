@@ -21,12 +21,15 @@ import { catalogCollections, episodeCountsFor } from './lib/catalog'
 import { registerRemoteKeys, remoteAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
+import { preferredTrack } from './lib/track-selection'
 import type {
   CastControlRequest,
   CastLoadRequest,
   CompanionHomeSnapshot,
   CompanionMedia,
   FocusLocation,
+  LinkedDeviceSourceChoice,
+  LinkedDeviceSourceOptions,
   PairingInfo,
   PlaybackState,
   PlaybackSourceChoice,
@@ -153,6 +156,7 @@ export function App() {
   const [playerMenu, setPlayerMenu] = useState<PlayerMenu | null>(null)
   const [playerMenuFocus, setPlayerMenuFocus] = useState(0)
   const [sourceChoices, setSourceChoices] = useState<PlaybackSourceChoice[]>([])
+  const [deviceSourceOptions, setDeviceSourceOptions] = useState<LinkedDeviceSourceOptions>()
   const [activeSourceId, setActiveSourceId] = useState<string>()
   const [deviceSourceChangeAvailable, setDeviceSourceChangeAvailable] = useState(false)
   const [audioTracks, setAudioTracks] = useState<PlaybackTrack[]>(showPreviewTools ? previewAudioTracks : [])
@@ -192,6 +196,8 @@ export function App() {
   const catalogRequestRef = useRef<{ screen: string; label: string; timer: number }>()
   const externalSubtitlesRef = useRef(new ExternalSubtitleController())
   const activeSubtitleRef = useRef(activeSubtitle)
+  const appliedAudioPreferenceRef = useRef('')
+  const appliedSubtitlePreferenceRef = useRef('')
   const subtitlePreferencesRef = useRef(subtitlePreferences)
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
@@ -241,12 +247,17 @@ export function App() {
     const request = activeLoadRef.current
     if (!request) return
     const view = playerRef.current
+    const subtitleId = activeSubtitleRef.current
+    const externalTrackId = subtitleId.startsWith('external-') ? Number(subtitleId.slice('external-'.length)) : undefined
     receiverRef.current?.publishStatus({
       sessionId: request.sessionId,
       state: view.state,
       positionSeconds: view.position,
       durationSeconds: view.duration || undefined,
       ...audioSnapshot(),
+      subtitleState: subtitleId === 'off' ? 'off' : 'ready',
+      subtitleTitle: subtitleId === 'off' ? undefined : subtitleId,
+      activeTrackIds: Number.isFinite(externalTrackId) ? [externalTrackId!] : [],
       error,
       forced,
     })
@@ -312,6 +323,7 @@ export function App() {
     setSubtitleText('')
     setPlayerMenu(null)
     setSourceChoices([])
+    setDeviceSourceOptions(undefined)
     setActiveSourceId(undefined)
     updatePlayer({ position: 0 })
     setScreen(destination)
@@ -321,6 +333,8 @@ export function App() {
     playRequestGenerationRef.current += 1
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     const requestedPreferences = subtitlePreferencesFor(request.subtitleStyle)
+    appliedAudioPreferenceRef.current = ''
+    appliedSubtitlePreferenceRef.current = ''
     subtitlePreferencesRef.current = requestedPreferences
     setSubtitlePreferences(requestedPreferences)
     const externalChoices: SubtitleChoice[] = request.subtitles.map((track, index) => ({
@@ -358,15 +372,35 @@ export function App() {
         },
         onTracks: (tracks) => {
           const audio = tracks.filter((track) => track.type === 'AUDIO')
-          const embedded = tracks.filter((track) => track.type === 'TEXT').map((track): SubtitleChoice => ({
+          const textTracks = tracks.filter((track) => track.type === 'TEXT')
+          const embedded = textTracks.map((track): SubtitleChoice => ({
             id: `embedded-${track.index}`,
             label: track.label,
             kind: 'embedded',
             index: track.index,
           }))
           setAudioTracks(audio)
-          setActiveAudio(audio[0]?.index)
           setSubtitleChoices([offSubtitle, ...externalChoices, ...embedded])
+          if (audio.length && appliedAudioPreferenceRef.current !== request.sessionId) {
+            const selected = preferredTrack(audio, request.trackPreferences?.audio) ?? audio[0]
+            try { avplayRef.current.selectTrack('AUDIO', selected.index) } catch { /* AVPlay retains its default track. */ }
+            setActiveAudio(selected.index)
+            appliedAudioPreferenceRef.current = request.sessionId
+          }
+          if (appliedSubtitlePreferenceRef.current !== request.sessionId) {
+            if (requestedSubtitle) {
+              appliedSubtitlePreferenceRef.current = request.sessionId
+            } else if (!request.trackPreferences?.subtitle) {
+              appliedSubtitlePreferenceRef.current = request.sessionId
+            } else {
+              const selected = preferredTrack(textTracks, request.trackPreferences.subtitle)
+              const choice = selected ? embedded.find((entry) => entry.index === selected.index) : undefined
+              if (choice) {
+                selectSubtitleChoice(choice)
+                appliedSubtitlePreferenceRef.current = request.sessionId
+              }
+            }
+          }
         },
         onLive: (isLive) => updatePlayer({ isLive }),
         onSubtitle: (text, durationMs) => {
@@ -473,11 +507,20 @@ export function App() {
       },
       onLoad: (request) => {
         setSourceChoices([])
+        setDeviceSourceOptions(undefined)
         setActiveSourceId(undefined)
+        if (request.media) setSelected(request.media)
         void startAvPlay(request)
       },
       onControl: handleControl,
       onDeviceSourceAvailability: setDeviceSourceChangeAvailable,
+      onDeviceSourceOptions: (options) => {
+        setDeviceSourceOptions(options)
+        setPlayerMenu('source')
+        setPlayerMenuFocus(0)
+        if (options.error) showNotice(options.error)
+        else if (!options.resolving && !options.choices.length) showNotice('The linked device found no playable sources.')
+      },
     })
     receiverRef.current = receiver
     void receiver.connect().catch((error) => {
@@ -954,7 +997,7 @@ export function App() {
 
   const activatePlayerControl = (index: number) => {
     setPlayerControlFocus(index)
-    if (index === 0 && sourceChoices.length + Number(deviceSourceChangeAvailable) === 0) {
+    if (index === 0 && sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) + Number(deviceSourceChangeAvailable) === 0) {
       showNotice('No alternate sources are available for this playback.')
       return
     }
@@ -974,18 +1017,29 @@ export function App() {
   }
 
   const requestLinkedDeviceSources = async () => {
-    setPlayerMenu(null)
-    const result = await receiverRef.current?.requestDeviceSourceChange(selected, playerRef.current.position) ?? 'open-client'
+    setDeviceSourceOptions(undefined)
+    const sourceMedia = activeLoadRef.current?.media ?? selected
+    const result = await receiverRef.current?.requestDeviceSourceChange(sourceMedia, playerRef.current.position) ?? 'open-client'
     if (typeof result !== 'string') {
       setSourceChoices(result.sources)
       setActiveSourceId(result.selectedId)
       await startAvPlay({ ...result.request, positionSeconds: playerRef.current.position })
-    } else if (result === 'local') showNotice('Choose the replacement source on your linked device.')
+    } else if (result === 'local') showNotice('Finding linked-device sources…')
     else if (result === 'notified') showNotice('A source-picker notification was sent to your linked phone.')
     else if (result === 'queued') showNotice('Open Izumi on your linked phone to choose a source.')
     else if (result === 'worker-error') showNotice('Your private Izumi Worker could not send the source request.')
     else if (result === 'no-source') showNotice('Linked-device sources are disabled in Cloudflare-only mode.')
     else showNotice('Open Izumi on your linked device to choose a source.')
+  }
+
+  const selectLinkedDeviceSource = (choice: LinkedDeviceSourceChoice) => {
+    const requestId = deviceSourceOptions?.requestId
+    if (!requestId || !receiverRef.current?.selectDeviceSource(requestId, choice.id)) {
+      showNotice('That linked-device source request expired. Refresh the list and try again.')
+      return
+    }
+    setPlayerMenu(null)
+    showNotice(`Opening ${choice.label}`)
   }
 
   const togglePlayback = () => {
@@ -1000,7 +1054,7 @@ export function App() {
   }
 
   const playerMenuLength = playerMenu === 'source'
-    ? sourceChoices.length + Number(deviceSourceChangeAvailable)
+    ? sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) + Number(deviceSourceChangeAvailable)
     : playerMenu === 'audio'
     ? audioTracks.length
     : playerMenu === 'subtitles' ? subtitleChoices.length : 3
@@ -1009,7 +1063,12 @@ export function App() {
     if (playerMenu === 'source') {
       const source = sourceChoices[playerMenuFocus]
       if (source) selectPlaybackSource(source)
-      else if (deviceSourceChangeAvailable && playerMenuFocus === sourceChoices.length) void requestLinkedDeviceSources()
+      else {
+        const deviceSource = deviceSourceOptions?.choices[playerMenuFocus - sourceChoices.length]
+        if (deviceSource) selectLinkedDeviceSource(deviceSource)
+        else if (deviceSourceChangeAvailable
+          && playerMenuFocus === sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0)) void requestLinkedDeviceSources()
+      }
     } else if (playerMenu === 'audio') {
       const track = audioTracks[playerMenuFocus]
       if (track) selectAudioTrack(track)
@@ -1588,6 +1647,7 @@ export function App() {
           menu={playerMenu}
           menuFocus={playerMenuFocus}
           sourceChoices={sourceChoices}
+          deviceSourceOptions={deviceSourceOptions}
           activeSourceId={activeSourceId}
           deviceSourceChangeAvailable={deviceSourceChangeAvailable}
           audioTracks={audioTracks}
@@ -1606,6 +1666,7 @@ export function App() {
           onControl={activatePlayerControl}
           onMenuFocus={setPlayerMenuFocus}
           onSource={selectPlaybackSource}
+          onDeviceSource={selectLinkedDeviceSource}
           onDeviceSources={() => void requestLinkedDeviceSources()}
           onAudio={selectAudioTrack}
           onSubtitle={selectSubtitleChoice}

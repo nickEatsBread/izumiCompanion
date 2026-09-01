@@ -158,6 +158,7 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
       positionSeconds: resumePosition(media),
       subtitles: candidate.subtitles,
       activeTrackIds: [],
+      media,
       cookies: candidate.cookies,
       userAgent: candidate.userAgent,
     },
