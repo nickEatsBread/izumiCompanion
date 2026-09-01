@@ -17,6 +17,24 @@ function errorMessage(error: unknown): string {
   return String(error || 'Unknown AVPlay error')
 }
 
+function sourceKind(request: CastLoadRequest): string {
+  if (/mpegurl|m3u8/i.test(`${request.contentType || ''} ${request.url}`)) return 'HLS stream'
+  if (/dash|\.mpd(?:$|\?)/i.test(`${request.contentType || ''} ${request.url}`)) return 'DASH stream'
+  if (/matroska|\.mkv(?:$|\?)/i.test(`${request.contentType || ''} ${request.url}`)) return 'Matroska video'
+  return 'video source'
+}
+
+function sourceHost(request: CastLoadRequest): string {
+  try { return new URL(request.url).hostname } catch { return 'the selected provider' }
+}
+
+function playbackError(request: CastLoadRequest, error: unknown, stage: 'prepare' | 'playback'): string {
+  const raw = errorMessage(error).trim()
+  if (raw && raw !== 'Unknown AVPlay error' && raw !== 'PLAYER_ERROR_NONE') return raw
+  const action = stage === 'prepare' ? 'prepare' : 'play'
+  return `Samsung AVPlay could not ${action} this ${sourceKind(request)} from ${sourceHost(request)}.`
+}
+
 function adaptiveValue(request: CastLoadRequest): string {
   const options: string[] = []
   const start = request.adaptive?.startBitrate ?? 'AVERAGE'
@@ -93,13 +111,31 @@ export class AvPlayController {
         },
         onstreamcompleted: () => generation === this.generation && events.onComplete(),
         onsubtitlechange: (duration, text) => generation === this.generation && events.onSubtitle(text, duration),
-        onerror: (error) => this.handleRuntimeError(errorMessage(error), generation),
-        onerrormsg: (code, message) => this.handleRuntimeError(message || errorMessage(code), generation),
+        onerror: (error) => this.handleRuntimeError(playbackError(request, error, 'playback'), generation),
+        onerrormsg: (code, message) => this.handleRuntimeError(playbackError(request, message || code, 'playback'), generation),
       })
       player.setDisplayRect(0, 0, 1920, 1080)
       player.setDisplayMethod?.('PLAYER_DISPLAY_MODE_LETTER_BOX')
       this.configureIdlePlayer(player, request)
-      await new Promise<void>((resolve, reject) => player.prepareAsync(resolve, reject))
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        const finish = (callback: () => void) => {
+          if (settled) return
+          settled = true
+          globalThis.clearTimeout(timer)
+          callback()
+        }
+        // Some firmware never invokes either prepare callback for an unreadable/ambiguous URL.
+        // Bound that state so automatic source recovery can try the next candidate instead of
+        // leaving both the phone and TV on an infinite loading screen.
+        const timer = globalThis.setTimeout(() => finish(() => reject(new Error(
+          `Samsung AVPlay timed out while preparing this ${sourceKind(request)} from ${sourceHost(request)}.`,
+        ))), 20_000)
+        player.prepareAsync(
+          () => finish(resolve),
+          (error) => finish(() => reject(new Error(playbackError(request, error, 'prepare')))),
+        )
+      })
       if (generation !== this.generation) return
       this.clearBufferingTimeout()
       events.onTracks(this.tracks())
@@ -113,7 +149,7 @@ export class AvPlayController {
       events.onState('playing')
     } catch (error) {
       if (generation !== this.generation) return
-      throw new Error(errorMessage(error))
+      throw new Error(playbackError(request, error, 'prepare'))
     }
   }
 

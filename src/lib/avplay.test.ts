@@ -77,4 +77,29 @@ describe('AVPlay setup', () => {
     expect(player.open).toHaveBeenCalledTimes(2)
     expect(player.play).toHaveBeenCalledTimes(1)
   })
+
+  it('turns Samsung\'s empty prepare error into actionable source context', async () => {
+    const player = {
+      open: vi.fn(), close: vi.fn(), stop: vi.fn(), getState: vi.fn(() => 'IDLE'),
+      setListener: vi.fn(), setDisplayRect: vi.fn(), setDisplayMethod: vi.fn(),
+      setBufferingParam: vi.fn(), setStreamingProperty: vi.fn(),
+      prepareAsync: vi.fn((_success: () => void, failure: (error: unknown) => void) => failure(undefined)),
+      play: vi.fn(), getDuration: vi.fn(() => 0), getTotalTrackInfo: vi.fn(() => []),
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player }, setTimeout } })
+    const controller = new AvPlayController()
+    await expect(controller.load({
+      sessionId: 'unknown-error',
+      url: 'https://video.example/master.m3u8',
+      title: 'Test',
+      contentType: 'application/vnd.apple.mpegurl',
+      positionSeconds: 0,
+      subtitles: [],
+      activeTrackIds: [],
+    }, {
+      onBuffering: vi.fn(), onState: vi.fn(), onTime: vi.fn(), onTracks: vi.fn(),
+      onSubtitle: vi.fn(), onComplete: vi.fn(), onError: vi.fn(),
+    })).rejects.toThrow('could not prepare this HLS stream from video.example')
+    expect(player.open).toHaveBeenCalledTimes(2)
+  })
 })
