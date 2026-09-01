@@ -1365,6 +1365,11 @@ body.avplay-visible #av-player {
   transition: transform 190ms cubic-bezier(.18, .82, .2, 1), box-shadow 160ms ease;
 }
 
+.browse-card-placeholder {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .browse-card.is-focused,
 .browse-card:hover {
   z-index: 3;
@@ -2025,6 +2030,13 @@ body.avplay-visible #av-player {
   display: flex;
   flex-direction: column;
   gap: .55vh;
+}
+
+.series-episode-window-spacer {
+  display: block;
+  flex: 0 0 auto;
+  min-height: 0;
+  pointer-events: none;
 }
 
 .series-episode {

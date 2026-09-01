@@ -16,9 +16,11 @@ import {
   Tv,
   X,
 } from 'lucide-preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { memo } from 'preact/compat'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CompanionMedia, FocusLocation } from '../types'
 import { episodeCountsFor, episodeDetailsFor, seasonNumberFor } from '../lib/catalog'
+import { gridItemVisible, linearWindow } from '../lib/windowing'
 import { NavRail } from './NavRail'
 
 export type TrailerControlAction = 'toggle' | 'play' | 'pause' | 'seek-back' | 'seek-forward'
@@ -236,29 +238,31 @@ function TrailerPlayer({
 
 export const SEARCH_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'SPACE', 'DELETE', 'CLEAR']
 
-function MediaTile({
+function eventIndex(event: Event, attribute: string): number | undefined {
+  if (!(event.target instanceof Element) || !(event.currentTarget instanceof Element)) return undefined
+  const target = event.target.closest<HTMLElement>(`[${attribute}]`)
+  if (!target || !event.currentTarget.contains(target)) return undefined
+  const index = Number(target.getAttribute(attribute))
+  return Number.isInteger(index) && index >= 0 ? index : undefined
+}
+
+const MediaTile = memo(function MediaTile({
   item,
   index,
   focused,
-  onFocus,
-  onSelect,
 }: {
   item: CompanionMedia
   index: number
   focused: boolean
-  onFocus(index: number): void
-  onSelect(media: CompanionMedia): void
 }) {
   return (
     <button
       type="button"
       class={`browse-card${focused ? ' is-focused' : ''}`}
       data-focus-id={`grid-${index}`}
+      data-grid-index={index}
       tabIndex={focused ? 0 : -1}
       aria-label={item.title}
-      onFocus={() => onFocus(index)}
-      onMouseEnter={() => onFocus(index)}
-      onClick={() => onSelect(item)}
     >
       {item.poster ? <img src={item.poster} alt="" /> : <span>{item.title}</span>}
       <span class="browse-card-shade" />
@@ -266,7 +270,7 @@ function MediaTile({
       {item.placement?.position && <small>#{item.placement.position}</small>}
     </button>
   )
-}
+})
 
 const catalogIcons = {
   trending: TrendingUp,
@@ -303,6 +307,7 @@ export function CatalogScreen({
   const Icon = catalogIcons[mode]
   const isEmpty = items.length === 0
   const contextualPlacement = mode === 'trending' || mode === 'my-list' ? selected.placement : undefined
+  const focusIndex = focus.zone === 'grid' ? focus.index : 0
   const reason = contextualPlacement
     ? `${contextualPlacement.position ? `#${contextualPlacement.position} in ` : ''}${contextualPlacement.label}`
     : mode === 'series' ? 'Series selected for your catalog' : mode === 'movies' ? 'Feature films' : title
@@ -334,17 +339,30 @@ export function CatalogScreen({
           <div><p>{mode === 'my-list' ? 'Your library' : 'Browse'}</p><h2>{title}</h2></div>
           <span>{items.length} titles</span>
         </div>
-        {items.length ? <div class="browse-grid">
-          {items.map((item, index) => (
-            <MediaTile
-              item={item}
-              index={index}
-              focused={focus.zone === 'grid' && focus.index === index}
-              onFocus={onFocus}
-              onSelect={onSelect}
-              key={`${item.ref.provider}-${item.ref.id}`}
-            />
-          ))}
+        {items.length ? <div
+          class="browse-grid"
+          onFocusCapture={(event) => {
+            const index = eventIndex(event, 'data-grid-index')
+            if (index !== undefined) onFocus(index)
+          }}
+          onMouseOver={(event) => {
+            const index = eventIndex(event, 'data-grid-index')
+            if (index !== undefined) onFocus(index)
+          }}
+          onClick={(event) => {
+            const index = eventIndex(event, 'data-grid-index')
+            const item = index === undefined ? undefined : items[index]
+            if (item) onSelect(item)
+          }}
+        >
+          {items.map((item, index) => gridItemVisible(index, focusIndex, 6, 1)
+            ? <MediaTile
+                item={item}
+                index={index}
+                focused={focus.zone === 'grid' && focus.index === index}
+                key={`${item.ref.provider}-${item.ref.id}`}
+              />
+            : <span class="browse-card browse-card-placeholder" aria-hidden="true" key={`${item.ref.provider}-${item.ref.id}`} />)}
         </div> : (
           <div class="catalog-empty" role="status">
             <Icon size={34} strokeWidth={1.6} />
@@ -407,12 +425,15 @@ export function SeriesScreen({
   onTrailerOpen(): void
   onTrailerClose(): void
 }) {
-  const seasonCounts = episodeCountsFor(selected)
+  const seasonCounts = useMemo(() => episodeCountsFor(selected), [selected])
   const hasEpisodeMetadata = seasonCounts.length > 0
   const activeSeason = hasEpisodeMetadata ? Math.min(season, seasonCounts.length - 1) : 0
   const episodeCount = seasonCounts[activeSeason] ?? 0
   const seasonNumber = hasEpisodeMetadata ? seasonNumberFor(selected, activeSeason, seasonCounts) : selected.season ?? 1
-  const episodes = hasEpisodeMetadata ? episodeDetailsFor(selected, activeSeason, seasonCounts) : []
+  const episodes = useMemo(
+    () => hasEpisodeMetadata ? episodeDetailsFor(selected, activeSeason, seasonCounts) : [],
+    [selected, activeSeason, seasonCounts, hasEpisodeMetadata],
+  )
   const resumeSeason = selected.season ?? 1
   const resumeEpisode = resumeSeason === seasonNumber && selected.episode ? selected.episode : -1
   const resumeDetails = episodes.find((episode) => episode.episode === resumeEpisode)
@@ -420,6 +441,11 @@ export function SeriesScreen({
     ? `Episode ${resumeEpisode}`
     : selected.episodeTitle || resumeDetails?.title || `Episode ${resumeEpisode}`
   const relations = selected.relations ?? []
+  const relationFocus = focus.zone === 'relation' ? focus.index : 0
+  const relationWindow = linearWindow(relations.length, relationFocus, 4)
+  const resumeIndex = Math.max(0, episodes.findIndex((episode) => episode.episode === resumeEpisode))
+  const episodeFocus = focus.zone === 'episode' ? focus.index : resumeIndex
+  const episodeWindow = linearWindow(episodes.length, episodeFocus, 4)
   const reason = selected.placement
     ? `${selected.placement.position ? `#${selected.placement.position} in ` : ''}${selected.placement.label}`
     : 'Series in your catalog'
@@ -499,7 +525,8 @@ export function SeriesScreen({
                     onClick={() => onRelationSelect(relationMedia)}
                     key={`${relation.relationType}-${relationMedia.ref.provider}-${relationMedia.ref.id}`}
                   >
-                    {(relationMedia.backdrop || relationMedia.poster) && <img src={relationMedia.backdrop || relationMedia.poster} alt="" />}
+                    {index >= relationWindow.start && index < relationWindow.end && (relationMedia.backdrop || relationMedia.poster)
+                      && <img src={relationMedia.backdrop || relationMedia.poster} alt="" />}
                     <span class="relation-card-shade" />
                     <span class="relation-card-copy">
                       <small>{relationLabel(relation.relationType)}</small>
@@ -538,7 +565,9 @@ export function SeriesScreen({
 
         <div class="series-library-scroll">
           {episodes.length ? <div class="series-episode-list">
-          {episodes.map((episode, index) => {
+          {episodeWindow.start > 0 && <span class="series-episode-window-spacer" style={{ height: `${episodeWindow.start * 13.55}vh` }} aria-hidden="true" />}
+          {episodes.slice(episodeWindow.start, episodeWindow.end).map((episode, offset) => {
+            const index = episodeWindow.start + offset
             const focused = focus.zone === 'episode' && focus.index === index
             const current = seasonNumber === resumeSeason && episode.episode === resumeEpisode
             const watched = episode.watched ?? (seasonNumber === resumeSeason && episode.episode < resumeEpisode)
@@ -574,6 +603,7 @@ export function SeriesScreen({
               </button>
             )
           })}
+          {episodeWindow.end < episodes.length && <span class="series-episode-window-spacer" style={{ height: `${(episodes.length - episodeWindow.end) * 13.55}vh` }} aria-hidden="true" />}
           </div> : (
             <div class="series-episodes-empty" role="status">
               <Tv size={30} strokeWidth={1.6} />
@@ -675,17 +705,31 @@ export function SearchScreen({
               {Array.from({ length: 10 }, (_, index) => <span class="search-result-skeleton" key={index} />)}
             </div>
           ) : error ? <p class="search-empty search-error">{error}</p> : results.length ? (
-            <div class="search-result-grid" key={`results-${query}`}>
-              {results.map((item, index) => (
-                <MediaTile
-                  item={item}
-                  index={index}
-                  focused={focus.zone === 'grid' && focus.index === index}
-                  onFocus={onResultFocus}
-                  onSelect={onResultSelect}
-                  key={`${item.ref.provider}-${item.ref.id}`}
-                />
-              ))}
+            <div
+              class="search-result-grid"
+              key={`results-${query}`}
+              onFocusCapture={(event) => {
+                const index = eventIndex(event, 'data-grid-index')
+                if (index !== undefined) onResultFocus(index)
+              }}
+              onMouseOver={(event) => {
+                const index = eventIndex(event, 'data-grid-index')
+                if (index !== undefined) onResultFocus(index)
+              }}
+              onClick={(event) => {
+                const index = eventIndex(event, 'data-grid-index')
+                const item = index === undefined ? undefined : results[index]
+                if (item) onResultSelect(item)
+              }}
+            >
+              {results.map((item, index) => gridItemVisible(index, focus.zone === 'grid' ? focus.index : 0, 4, 2)
+                ? <MediaTile
+                    item={item}
+                    index={index}
+                    focused={focus.zone === 'grid' && focus.index === index}
+                    key={`${item.ref.provider}-${item.ref.id}`}
+                  />
+                : <span class="browse-card browse-card-placeholder" aria-hidden="true" key={`${item.ref.provider}-${item.ref.id}`} />)}
             </div>
           ) : <p class="search-empty">No matches yet. Try another title.</p>}
         </section>

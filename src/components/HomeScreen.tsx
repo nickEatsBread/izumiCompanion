@@ -1,5 +1,7 @@
 import { History, Info, Play, TrendingUp } from 'lucide-preact'
+import { memo } from 'preact/compat'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
+import { linearWindow } from '../lib/windowing'
 import type { CompanionCatalogOption, CompanionHomeSnapshot, CompanionMedia, FocusLocation } from '../types'
 import { NavRail } from './NavRail'
 
@@ -34,6 +36,69 @@ function minutesRemaining(media: CompanionMedia): number | undefined {
   if (!media.episodeRuntimeMinutes || !media.episodeProgress) return undefined
   return Math.max(1, Math.ceil(media.episodeRuntimeMinutes * (1 - media.episodeProgress)))
 }
+
+function eventIndex(event: Event, attribute: string): number | undefined {
+  if (!(event.target instanceof Element) || !(event.currentTarget instanceof Element)) return undefined
+  const target = event.target.closest<HTMLElement>(`[${attribute}]`)
+  if (!target || !event.currentTarget.contains(target)) return undefined
+  const index = Number(target.getAttribute(attribute))
+  return Number.isInteger(index) && index >= 0 ? index : undefined
+}
+
+/** Memoization makes a horizontal D-pad move update the old tile, the new tile, and at most the
+ * two artwork-window edges instead of patching every visible card in all three resident rows. */
+const HomeMediaCard = memo(function HomeMediaCard({
+  item,
+  rowIndex,
+  index,
+  episodeCard,
+  topTenRow,
+  focused,
+}: {
+  item: CompanionMedia
+  rowIndex: number
+  index: number
+  episodeCard: boolean
+  topTenRow: boolean
+  focused: boolean
+}) {
+  const cardProgress = episodeCard ? item.episodeProgress : item.progress
+  const inProgress = typeof cardProgress === 'number' && cardProgress > 0 && cardProgress < 1
+  const itemMinutesRemaining = minutesRemaining(item)
+  const image = episodeCard ? item.episodeImage || item.backdrop || item.poster : item.poster
+  const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
+  return (
+    <button
+      type="button"
+      class={`media-card${episodeCard ? ' continue-card' : ''}${topTenRow ? ' top-ten-card' : ''}${inProgress ? ' has-progress' : ''}${focusClass(focused)}`}
+      data-focus-id={`row-${rowIndex}-${index}`}
+      data-media-index={index}
+      tabIndex={focused ? 0 : -1}
+      aria-label={`${rank ? `Number ${rank}, ` : ''}${item.title}${item.episode ? `, episode ${item.episode}` : ''}`}
+    >
+      {rank && <span class="top-ten-rank" aria-hidden="true">{rank}</span>}
+      {image
+        ? <img src={image} alt="" />
+        : <span class="media-card-placeholder">{item.title}</span>}
+      <span class="media-card-fade" />
+      {episodeCard
+        ? (
+          <span class="episode-card-copy">
+            <small>{item.title}</small>
+            <strong>{item.episodeTitle || (item.episode ? `Episode ${item.episode}` : 'Continue watching')}</strong>
+            <span class="episode-card-meta">
+              {episodeLabel(item) && <b>{episodeLabel(item)}</b>}
+              {itemMinutesRemaining && <small>{itemMinutesRemaining} min left</small>}
+            </span>
+          </span>
+        )
+        : <span class="media-card-title">{item.title}</span>}
+      {inProgress && (
+        <span class="media-progress"><span style={{ width: `${Math.round(cardProgress * 100)}%` }} /></span>
+      )}
+    </button>
+  )
+})
 
 export function HomeScreen({
   snapshot,
@@ -164,14 +229,30 @@ export function HomeScreen({
         {snapshot.rows.map((row, rowIndex) => {
           const topTenRow = row.presentation === 'top-10'
           const rowVisible = Math.abs(rowIndex - activeRow) <= 1
+          const horizontalWindow = linearWindow(row.items.length, horizontalCenter, 6)
           return (
           <section class={`media-row${row.kind === 'continue' ? ' continue-row' : ''}${topTenRow ? ' top-ten-row' : ''}${rowIndex > activeRow ? ' is-upcoming' : ''}`} key={row.id} aria-labelledby={`row-title-${row.id}`}>
             <h2 id={`row-title-${row.id}`}>{row.title}</h2>
             {!rowVisible
               ? <div class="media-strip is-placeholder" aria-hidden="true" />
-              : <div class="media-strip">
+              : <div
+                  class="media-strip"
+                  onFocusCapture={(event) => {
+                    const index = eventIndex(event, 'data-media-index')
+                    if (index !== undefined) onFocus({ zone: 'row', row: rowIndex, index })
+                  }}
+                  onMouseOver={(event) => {
+                    const index = eventIndex(event, 'data-media-index')
+                    if (index !== undefined) onFocus({ zone: 'row', row: rowIndex, index })
+                  }}
+                  onClick={(event) => {
+                    const index = eventIndex(event, 'data-media-index')
+                    const item = index === undefined ? undefined : row.items[index]
+                    if (item) (row.kind === 'continue' ? onPlay : onOpenSeries)(item)
+                  }}
+                >
               {row.items.map((item, index) => {
-                const itemVisible = Math.abs(index - horizontalCenter) <= 6
+                const itemVisible = index >= horizontalWindow.start && index < horizontalWindow.end
                 if (!itemVisible) return (
                   <span
                     class={`media-card-slot${row.kind === 'continue' ? ' continue-slot' : ''}${topTenRow ? ' top-ten-slot' : ''}`}
@@ -181,44 +262,16 @@ export function HomeScreen({
                 )
                 const focused = focus.zone === 'row' && focus.row === rowIndex && focus.index === index
                 const episodeCard = row.kind === 'continue'
-                const cardProgress = episodeCard ? item.episodeProgress : item.progress
-                const inProgress = typeof cardProgress === 'number' && cardProgress > 0 && cardProgress < 1
-                const itemMinutesRemaining = minutesRemaining(item)
-                const image = episodeCard ? item.episodeImage || item.backdrop || item.poster : item.poster
-                const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
                 return (
-                  <button
-                    type="button"
-                    class={`media-card${episodeCard ? ' continue-card' : ''}${topTenRow ? ' top-ten-card' : ''}${inProgress ? ' has-progress' : ''}${focusClass(focused)}`}
+                  <HomeMediaCard
                     key={`${item.ref.provider}-${item.ref.id}`}
-                    data-focus-id={`row-${rowIndex}-${index}`}
-                    tabIndex={focused ? 0 : -1}
-                    aria-label={`${rank ? `Number ${rank}, ` : ''}${item.title}${item.episode ? `, episode ${item.episode}` : ''}`}
-                    onFocus={() => onFocus({ zone: 'row', row: rowIndex, index })}
-                    onMouseEnter={() => onFocus({ zone: 'row', row: rowIndex, index })}
-                    onClick={() => episodeCard ? onPlay(item) : onOpenSeries(item)}
-                  >
-                    {rank && <span class="top-ten-rank" aria-hidden="true">{rank}</span>}
-                    {image
-                      ? <img src={image} alt="" loading={rowIndex > 0 ? 'lazy' : 'eager'} />
-                      : <span class="media-card-placeholder">{item.title}</span>}
-                    <span class="media-card-fade" />
-                    {episodeCard
-                      ? (
-                        <span class="episode-card-copy">
-                          <small>{item.title}</small>
-                          <strong>{item.episodeTitle || (item.episode ? `Episode ${item.episode}` : 'Continue watching')}</strong>
-                          <span class="episode-card-meta">
-                            {episodeLabel(item) && <b>{episodeLabel(item)}</b>}
-                            {itemMinutesRemaining && <small>{itemMinutesRemaining} min left</small>}
-                          </span>
-                        </span>
-                      )
-                      : <span class="media-card-title">{item.title}</span>}
-                    {inProgress && (
-                      <span class="media-progress"><span style={{ width: `${Math.round(cardProgress! * 100)}%` }} /></span>
-                    )}
-                  </button>
+                    item={item}
+                    rowIndex={rowIndex}
+                    index={index}
+                    episodeCard={episodeCard}
+                    topTenRow={topTenRow}
+                    focused={focused}
+                  />
                 )
               })}
             </div>}

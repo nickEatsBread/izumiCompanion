@@ -1,5 +1,5 @@
 import QRCode from 'qrcode'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
   CatalogScreen,
   DetailScreen,
@@ -122,11 +122,11 @@ function initialScreen(): ScreenName {
 }
 
 export function App() {
-  const previewParameters = new URLSearchParams(location.search)
+  const previewParameters = useMemo(() => new URLSearchParams(location.search), [])
   const showPreviewTools = import.meta.env.DEV || previewParameters.has('preview')
   const showPreviewToolbar = showPreviewTools && !previewParameters.has('capture')
   const requestedPreviewCatalog = previewParameters.get('catalog') ?? previewSnapshot.catalog.screen
-  const initialPreviewSnapshot = previewSnapshotForCatalog(requestedPreviewCatalog)
+  const initialPreviewSnapshot = useMemo(() => previewSnapshotForCatalog(requestedPreviewCatalog), [requestedPreviewCatalog])
   const [screen, setScreen] = useState<ScreenName>(initialScreen)
   const [snapshot, setSnapshot] = useState<CompanionHomeSnapshot>(initialPreviewSnapshot)
   const [selected, setSelected] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
@@ -197,6 +197,7 @@ export function App() {
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
   const focusRef = useRef<FocusLocation>(focus)
+  const appliedFocusRef = useRef<{ focus: FocusLocation; screen: ScreenName }>()
   const remoteHandlerRef = useRef<(action: RemoteAction) => void>()
 
   const setFocusLocation = (next: FocusLocation) => {
@@ -577,31 +578,49 @@ export function App() {
   useEffect(() => {
     const element = document.querySelector<HTMLElement>(`[data-focus-id="${focusId(focus)}"]`)
     if (!element || ['ready', 'loading', 'player', 'error'].includes(screen)) return
-    if (document.activeElement !== element) element.focus()
+    const previous = appliedFocusRef.current
+    appliedFocusRef.current = { focus, screen }
+    if (document.activeElement !== element) {
+      try { element.focus({ preventScroll: true }) }
+      catch { element.focus() }
+    }
     if (focus.zone === 'row') {
       const strip = element.parentElement
+      let stripTarget: number | undefined
       if (strip) {
         const left = element.offsetLeft
         const right = left + element.offsetWidth
-        if (left < strip.scrollLeft) animateScroll(strip, 'scrollLeft', Math.max(0, left - 24), 220)
-        else if (right > strip.scrollLeft + strip.clientWidth) animateScroll(strip, 'scrollLeft', right - strip.clientWidth + 24, 220)
+        if (left < strip.scrollLeft) stripTarget = Math.max(0, left - 24)
+        else if (right > strip.scrollLeft + strip.clientWidth) stripTarget = right - strip.clientWidth + 24
       }
       const rows = element.closest<HTMLElement>('.catalog-rows')
-      if (rows) {
+      let rowsTarget: number | undefined
+      const rowChanged = previous?.screen !== screen
+        || previous.focus.zone !== 'row'
+        || previous.focus.row !== focus.row
+      if (rows && rowChanged) {
         const bounds = element.getBoundingClientRect()
         const container = rows.getBoundingClientRect()
-        if (focus.row === 0) animateScroll(rows, 'scrollTop', 0, 240)
-        else if (bounds.bottom > container.bottom - 24) animateScroll(rows, 'scrollTop', rows.scrollTop + bounds.bottom - container.bottom + 48, 300)
-        else if (bounds.top < container.top + 20) animateScroll(rows, 'scrollTop', Math.max(0, rows.scrollTop + bounds.top - container.top - 24), 300)
+        if (focus.row === 0) rowsTarget = 0
+        else if (bounds.bottom > container.bottom - 24) rowsTarget = rows.scrollTop + bounds.bottom - container.bottom + 48
+        else if (bounds.top < container.top + 20) rowsTarget = Math.max(0, rows.scrollTop + bounds.top - container.top - 24)
       }
+      // Read all geometry before either write. The former horizontal write followed by a vertical
+      // getBoundingClientRect forced a synchronous second layout on every D-pad row movement.
+      if (strip && stripTarget !== undefined) animateScroll(strip, 'scrollLeft', stripTarget)
+      if (rows && rowsTarget !== undefined) animateScroll(rows, 'scrollTop', rowsTarget)
     }
     if (focus.zone === 'grid') {
       const gridScroller = element.closest<HTMLElement>('.browse-catalog, .search-results')
-      if (gridScroller) {
+      const columns = screen === 'search' ? 4 : 6
+      const gridRowChanged = previous?.screen !== screen
+        || previous.focus.zone !== 'grid'
+        || Math.floor(previous.focus.index / columns) !== Math.floor(focus.index / columns)
+      if (gridScroller && gridRowChanged) {
         const bounds = element.getBoundingClientRect()
         const container = gridScroller.getBoundingClientRect()
-        if (bounds.bottom > container.bottom - 20) animateScroll(gridScroller, 'scrollTop', gridScroller.scrollTop + bounds.bottom - container.bottom + 28, 260)
-        else if (bounds.top < container.top + 20) animateScroll(gridScroller, 'scrollTop', Math.max(0, gridScroller.scrollTop + bounds.top - container.top - 24), 260)
+        if (bounds.bottom > container.bottom - 20) animateScroll(gridScroller, 'scrollTop', gridScroller.scrollTop + bounds.bottom - container.bottom + 28)
+        else if (bounds.top < container.top + 20) animateScroll(gridScroller, 'scrollTop', Math.max(0, gridScroller.scrollTop + bounds.top - container.top - 24))
       }
     }
     if (focus.zone === 'episode') {
@@ -652,33 +671,37 @@ export function App() {
     setFocusLocation(detailReturnFocusRef.current)
   }
 
-  const collections = catalogCollections(snapshot)
+  // Focus moves many times per second on a remote. None of these catalogue/search projections
+  // depend on focus, so keep their arrays stable until the paired device sends a new snapshot.
+  const collections = useMemo(() => catalogCollections(snapshot), [snapshot])
   const allMedia = collections.search
-  const normalizedSearch = searchQuery.trim().toLowerCase()
-  const localSearchResults = allMedia.filter((item) => {
+  const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
+  const localSearchResults = useMemo(() => allMedia.filter((item) => {
     const searchable = [item.title, item.subtitle, item.placement?.label].filter(Boolean).join(' ').toLowerCase()
     return !normalizedSearch || searchable.includes(normalizedSearch)
-  })
+  }), [allMedia, normalizedSearch])
   const searchResults = normalizedSearch && remoteSearchResults !== undefined ? remoteSearchResults : localSearchResults
-  const searchSuggestionPool = Array.from(new Set(allMedia.flatMap((item) => [
-    item.title,
-    ...(item.subtitle?.split('·').map((value) => value.trim()).filter((value) => value.length > 2 && !/^\d/.test(value) && !/episodes?/i.test(value)) ?? []),
-    item.placement?.label,
-  ].filter((value): value is string => Boolean(value)))))
-  const searchSuggestions = searchSuggestionPool
-    .filter((value) => !normalizedSearch || value.toLowerCase().includes(normalizedSearch))
-    .sort((left, right) => {
-      if (!normalizedSearch) return left.localeCompare(right)
-      return Number(right.toLowerCase().startsWith(normalizedSearch)) - Number(left.toLowerCase().startsWith(normalizedSearch)) || left.localeCompare(right)
-    })
-    .slice(0, 4)
+  const searchSuggestions = useMemo(() => {
+    const pool = Array.from(new Set(allMedia.flatMap((item) => [
+      item.title,
+      ...(item.subtitle?.split('·').map((value) => value.trim()).filter((value) => value.length > 2 && !/^\d/.test(value) && !/episodes?/i.test(value)) ?? []),
+      item.placement?.label,
+    ].filter((value): value is string => Boolean(value)))))
+    return pool
+      .filter((value) => !normalizedSearch || value.toLowerCase().includes(normalizedSearch))
+      .sort((left, right) => {
+        if (!normalizedSearch) return left.localeCompare(right)
+        return Number(right.toLowerCase().startsWith(normalizedSearch)) - Number(left.toLowerCase().startsWith(normalizedSearch)) || left.localeCompare(right)
+      })
+      .slice(0, 4)
+  }, [allMedia, normalizedSearch])
   const trendingItems = collections.trending
   const seriesItems = collections.series
   const movieItems = collections.movies
   const myListItems = collections.myList
-  const catalogOptions = snapshot.catalog.options?.length
+  const catalogOptions = useMemo(() => snapshot.catalog.options?.length
     ? snapshot.catalog.options
-    : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }]
+    : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }], [snapshot])
 
   const changeFocus = (next: FocusLocation) => {
     if (focusId(focusRef.current) === focusId(next)) return
