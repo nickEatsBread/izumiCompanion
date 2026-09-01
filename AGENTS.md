@@ -44,7 +44,7 @@ existing TV pairing/storage upgrade path.
 After packaging, install with the tested local installer helper:
 
 ```powershell
-npm --prefix ..\izumi-companion\installer run install-only -- `
+node ..\izumi-companion\installer\src\install-only.cjs `
   --ip 192.0.2.30 `
   --package "$PWD\artifacts\izumi-companion.wgt" `
   --certificate-dir "$env:APPDATA\izumi-tv-installer\samsung-certificates"
