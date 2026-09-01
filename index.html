@@ -19,10 +19,21 @@
     </div>
     <script>
       (function () {
-        window.setTimeout(function () {
+        function showLaunchError(message) {
           var fallback = document.getElementById('launch-fallback')
           var detail = document.getElementById('launch-fallback-detail')
-          if (fallback && detail) detail.textContent = 'The application bundle did not start. Reinstall or update izumi companion.'
+          if (fallback && detail) detail.textContent = message
+        }
+        window.onerror = function (message, source, line, column) {
+          showLaunchError('Startup error: ' + String(message) + ' (' + String(line || 0) + ':' + String(column || 0) + ')')
+          return false
+        }
+        window.onunhandledrejection = function (event) {
+          var reason = event && event.reason
+          showLaunchError('Startup error: ' + String(reason && reason.message ? reason.message : reason || 'Promise rejected'))
+        }
+        window.setTimeout(function () {
+          showLaunchError('The application bundle did not start. Reinstall or update izumi companion.')
         }, 12000)
       }())
     </script>

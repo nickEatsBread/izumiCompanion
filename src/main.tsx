@@ -31,6 +31,7 @@ function renderStartupFailure(error: unknown): void {
 if (!root) throw new Error('The #app launch container is missing.')
 
 try {
+  root.innerHTML = ''
   render(<App />, root)
 } catch (error) {
   renderStartupFailure(error)
