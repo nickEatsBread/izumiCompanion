@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Captions,
+  Check,
   LogOut,
   MonitorUp,
   Pause,
@@ -164,7 +165,8 @@ export function LoadingScreen({
           aria-valuemax={100}
           aria-valuenow={Math.round(clampedProgress)}
         >
-          <span style={{ width: `${visualProgress}%` }} />
+          <span class="loading-progress-value" style={{ width: `${visualProgress}%` }} />
+          <i class="loading-progress-indicator" aria-hidden="true" />
         </div>
       </div>
       <p class="back-hint"><RotateCcw size={19} /> Back to cancel</p>
@@ -288,7 +290,7 @@ export function PlayerScreen({
       {previewBackdrop && <img class="player-preview-backdrop" src={previewBackdrop} alt="" />}
       <div class={`player-vignette${controlsVisible ? ' is-visible' : ''}`} />
       {subtitleText && !menu && (
-        <div class={`player-subtitle subtitle-${subtitlePreferences.size} subtitle-bg-${subtitlePreferences.background}`} style={subtitleStyle}>
+        <div class={`player-subtitle${controlsVisible ? ' is-controls-visible' : ''} subtitle-${subtitlePreferences.size} subtitle-bg-${subtitlePreferences.background}`} style={subtitleStyle}>
           {subtitleText}
         </div>
       )}
@@ -324,7 +326,15 @@ export function PlayerScreen({
 
       {menu && (
         <section class="player-menu" aria-label={`${menu} options`}>
-          <p>{menu === 'source' ? 'Change source' : menu === 'audio' ? 'Audio' : menu === 'subtitles' ? 'Subtitles' : 'Subtitle appearance'}</p>
+          <header class="player-menu-heading">
+            <span class="player-menu-heading-icon">
+              {menu === 'source' ? <RefreshCcw size={28} /> : menu === 'audio' ? <Volume2 size={29} /> : menu === 'subtitles' ? <Captions size={30} /> : <SlidersHorizontal size={29} />}
+            </span>
+            <span>
+              <p>{menu === 'source' ? 'Change source' : menu === 'audio' ? 'Audio' : menu === 'subtitles' ? 'Subtitles' : 'Subtitle appearance'}</p>
+              <small>{menu === 'source' ? 'Choose where this title plays from' : menu === 'audio' ? 'Choose an audio track' : menu === 'subtitles' ? 'Choose a language or turn subtitles off' : 'Adjust how subtitles appear on this TV'}</small>
+            </span>
+          </header>
           {menu === 'source' && (
             <div class="player-menu-options">
               {sourceChoices.map((source, index) => (
@@ -395,7 +405,11 @@ export function PlayerScreen({
                   onClick={() => onSubtitle(choice)}
                   key={choice.id}
                 >
-                  <span>{choice.label}</span><small>{activeSubtitle === choice.id ? 'Current' : ''}</small>
+                  <span class="player-menu-option-copy">
+                    <span>{choice.label}</span>
+                    <small>{choice.kind === 'off' ? 'No subtitles' : choice.kind === 'external' ? 'From izumi' : 'Included track'}</small>
+                  </span>
+                  {activeSubtitle === choice.id && <Check class="player-menu-check" size={27} strokeWidth={3} aria-label="Selected" />}
                 </button>
               ))}
             </div>

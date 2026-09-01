@@ -135,6 +135,52 @@ afterEach(() => {
 })
 
 describe('companion play routing', () => {
+  it('only sends catalogue switches while the paired client channel is connected', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    expect(receiver.requestCatalog('stremio')).toBe(false)
+
+    await receiver.connect()
+
+    expect(receiver.requestCatalog('stremio')).toBe(true)
+    expect(channel.publish).toHaveBeenCalledWith('izumi.companion.catalog', {
+      screen: 'stremio',
+      pairingId: credential.slice(0, 16),
+    }, 'broadcast')
+    receiver.disconnect()
+  })
+
+  it('surfaces an authenticated catalogue load failure from izumi', async () => {
+    const channel = new FakeSmartViewChannel()
+    const receiverEvents = { ...events(), onCatalogError: vi.fn() }
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(receiverEvents)
+    await receiver.connect()
+
+    channel.emit('izumi.companion.catalog-result', {
+      pairingId: 'wrong-pairing',
+      screen: 'stremio',
+      error: 'Wrong sender',
+    })
+    channel.emit('izumi.companion.catalog-result', {
+      pairingId: credential.slice(0, 16),
+      screen: 'stremio',
+      error: 'Stremio could not load. Check its enabled sources in izumi.',
+    })
+
+    expect(receiverEvents.onCatalogError).toHaveBeenCalledTimes(1)
+    expect(receiverEvents.onCatalogError).toHaveBeenCalledWith(
+      'stremio',
+      'Stremio could not load. Check its enabled sources in izumi.',
+    )
+    receiver.disconnect()
+  })
+
   it('accepts playback from older firmware when Samsung omits the event peer', async () => {
     const channel = new FakeSmartViewChannel()
     const receiverEvents = events()

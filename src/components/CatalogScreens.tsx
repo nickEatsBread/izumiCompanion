@@ -236,7 +236,63 @@ function TrailerPlayer({
   )
 }
 
-export const SEARCH_KEYS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'SPACE', 'DELETE', 'CLEAR']
+export interface SearchKeyDefinition {
+  value: string
+  row: number
+  column: number
+  span: number
+}
+
+const searchKey = (value: string, row: number, column: number, span = 1): SearchKeyDefinition => ({
+  value,
+  row,
+  column,
+  span,
+})
+
+/** QWERTY keeps remote muscle-memory intact and gives every row a stable ten-column geometry.
+ * Space is deliberately double-width while Delete and Clear stay on the right edge, where a
+ * viewer can find them without scanning the alphabet. */
+export const SEARCH_KEYS: SearchKeyDefinition[] = [
+  ...[...'QWERTYUIOP'].map((value, column) => searchKey(value, 0, column)),
+  ...[...'ASDFGHJKL'].map((value, column) => searchKey(value, 1, column)),
+  searchKey('DELETE', 1, 9),
+  ...[...'ZXCVBNM'].map((value, column) => searchKey(value, 2, column)),
+  searchKey('SPACE', 2, 7, 2),
+  searchKey('CLEAR', 2, 9),
+]
+
+export function adjacentSearchKey(index: number, direction: 'left' | 'right' | 'up' | 'down'): number | undefined {
+  const current = SEARCH_KEYS[index]
+  if (!current) return undefined
+  if (direction === 'left' || direction === 'right') {
+    const sameRow = SEARCH_KEYS
+      .map((key, keyIndex) => ({ key, keyIndex }))
+      .filter(({ key }) => key.row === current.row)
+      .sort((left, right) => left.key.column - right.key.column)
+    const position = sameRow.findIndex(({ keyIndex }) => keyIndex === index)
+    return sameRow[position + (direction === 'left' ? -1 : 1)]?.keyIndex
+  }
+  const targetRow = current.row + (direction === 'up' ? -1 : 1)
+  const center = current.column + current.span / 2
+  return SEARCH_KEYS
+    .map((key, keyIndex) => ({ key, keyIndex }))
+    .filter(({ key }) => key.row === targetRow)
+    .sort((left, right) => (
+      Math.abs(left.key.column + left.key.span / 2 - center)
+      - Math.abs(right.key.column + right.key.span / 2 - center)
+    ))[0]?.keyIndex
+}
+
+export function nearestSearchKey(row: number, column: number): number {
+  return SEARCH_KEYS
+    .map((key, keyIndex) => ({ key, keyIndex }))
+    .filter(({ key }) => key.row === Math.max(0, Math.min(2, row)))
+    .sort((left, right) => (
+      Math.abs(left.key.column + left.key.span / 2 - column)
+      - Math.abs(right.key.column + right.key.span / 2 - column)
+    ))[0]?.keyIndex ?? 0
+}
 
 function eventIndex(event: Event, attribute: string): number | undefined {
   if (!(event.target instanceof Element) || !(event.currentTarget instanceof Element)) return undefined
@@ -474,7 +530,7 @@ export function SeriesScreen({
       </div>
 
       <section class="series-overview">
-        <p class="series-eyebrow"><ReasonIcon size={19} /> {reason}</p>
+        <p class="series-eyebrow"><ReasonIcon size={19} /><span>{reason}</span></p>
         <h1>{selected.title}</h1>
         <div class="series-meta">
             <span>{selected.subtitle || (episodeCount ? `${episodeCount} episodes` : 'Episode information pending')}</span>
@@ -667,16 +723,17 @@ export function SearchScreen({
             {SEARCH_KEYS.map((key, index) => (
               <button
                 type="button"
-                class={`${focus.zone === 'keyboard' && focus.index === index ? 'is-focused' : ''}${key.length > 1 ? ' is-wide' : ''}`}
+                class={`${focus.zone === 'keyboard' && focus.index === index ? 'is-focused' : ''}${key.span > 1 || key.value.length > 1 ? ' is-wide' : ''}${key.span > 1 ? ` is-span-${key.span}` : ''}`}
                 data-focus-id={`keyboard-${index}`}
                 tabIndex={focus.zone === 'keyboard' && focus.index === index ? 0 : -1}
-                aria-label={key === 'DELETE' ? 'Delete character' : key === 'SPACE' ? 'Space' : key === 'CLEAR' ? 'Clear search' : key}
+                aria-label={key.value === 'DELETE' ? 'Delete character' : key.value === 'SPACE' ? 'Space' : key.value === 'CLEAR' ? 'Clear search' : key.value}
                 onFocus={() => onKeyFocus(index)}
                 onMouseEnter={() => onKeyFocus(index)}
                 onClick={() => onKey(index)}
-                key={key}
+                style={{ gridColumn: `${key.column + 1} / span ${key.span}`, gridRow: key.row + 1 }}
+                key={key.value}
               >
-                {key === 'DELETE' ? <Delete size={21} /> : key === 'SPACE' ? <Space size={21} /> : key === 'CLEAR' ? 'Clear' : key}
+                {key.value === 'DELETE' ? <Delete size={24} /> : key.value === 'SPACE' ? <Space size={25} /> : key.value === 'CLEAR' ? 'Clear' : key.value}
               </button>
             ))}
           </div>

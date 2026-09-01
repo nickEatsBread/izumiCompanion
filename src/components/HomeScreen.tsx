@@ -183,7 +183,7 @@ export function HomeScreen({
         </div>
         <div class="hero-shade" />
         <div class="hero-copy" key={`copy-${heroKey}`}>
-          <p class="hero-eyebrow"><ReasonIcon size={17} aria-hidden="true" />{reason}</p>
+          <p class="hero-eyebrow"><ReasonIcon size={20} aria-hidden="true" /><span>{reason}</span></p>
           <h1>{hero.title}</h1>
           {isContinueHero && hero.episode && (
             <div class="hero-resume">

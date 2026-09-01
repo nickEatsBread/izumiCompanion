@@ -7,6 +7,8 @@ import {
   SearchScreen,
   SeriesScreen,
   SettingsScreen,
+  adjacentSearchKey,
+  nearestSearchKey,
   type SettingsConfirmation,
   TRAILER_CONTROL_EVENT,
   type TrailerControlAction,
@@ -193,7 +195,7 @@ export function App() {
   const previewSelectionTimerRef = useRef<number>()
   const searchQueryRef = useRef(searchQuery)
   const playerControlsTimerRef = useRef<number>()
-  const catalogRequestRef = useRef<{ screen: string; label: string; timer: number }>()
+  const catalogRequestRef = useRef<{ screen: string; label: string; timer: number; previousIndex: number }>()
   const externalSubtitlesRef = useRef(new ExternalSubtitleController())
   const activeSubtitleRef = useRef(activeSubtitle)
   const appliedAudioPreferenceRef = useRef('')
@@ -488,6 +490,7 @@ export function App() {
       onPairingInfo: setPairing,
       onSnapshot: (next) => {
         const pendingCatalog = catalogRequestRef.current
+        if (pendingCatalog && next.catalog.screen !== pendingCatalog.screen) return
         if (pendingCatalog && next.catalog.screen === pendingCatalog.screen) {
           window.clearTimeout(pendingCatalog.timer)
           catalogRequestRef.current = undefined
@@ -497,6 +500,17 @@ export function App() {
         setSelected(next.hero ?? next.rows[0]?.items[0] ?? fallbackMedia)
         setFocusLocation({ zone: 'hero', index: 0 })
         setScreen('home')
+      },
+      onCatalogError: (catalogScreen, message) => {
+        const pendingCatalog = catalogRequestRef.current
+        if (!pendingCatalog || pendingCatalog.screen !== catalogScreen) return
+        window.clearTimeout(pendingCatalog.timer)
+        catalogRequestRef.current = undefined
+        setNavigationPhase('idle')
+        setCatalogMenuOpen(true)
+        setCatalogMenuFocus(pendingCatalog.previousIndex)
+        setFocusLocation({ zone: 'catalog', index: pendingCatalog.previousIndex })
+        showNotice(message)
       },
       onSearchResults: (query, items, error) => {
         if (query.trim().toLowerCase() !== searchQueryRef.current.trim().toLowerCase()) return
@@ -808,7 +822,7 @@ export function App() {
       return
     }
     if (!receiverRef.current?.requestCatalog(option.screen)) {
-      showNotice('Pair izumi before changing catalogues')
+      showNotice('Open izumi on the paired device to change catalogues')
       return
     }
     if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
@@ -818,7 +832,8 @@ export function App() {
       setNavigationPhase('idle')
       showNotice(`${option.label} did not respond. Still showing ${snapshot.catalog.label}.`)
     }, 8_000)
-    catalogRequestRef.current = { screen: option.screen, label: option.label, timer }
+    const previousIndex = Math.max(0, catalogOptions.findIndex((catalog) => catalog.screen === snapshot.catalog.screen))
+    catalogRequestRef.current = { screen: option.screen, label: option.label, timer, previousIndex }
     setCatalogMenuOpen(false)
     changeFocus({ zone: 'nav', index: -1 })
     beginNavigationTransition()
@@ -1198,7 +1213,7 @@ export function App() {
   }
 
   const applySearchKey = (index: number) => {
-    const key = SEARCH_KEYS[index]
+    const key = SEARCH_KEYS[index]?.value
     if (!key) return
     if (key === 'DELETE') setSearchQuery((value) => value.slice(0, -1))
     else if (key === 'CLEAR') setSearchQuery('')
@@ -1221,19 +1236,32 @@ export function App() {
       return
     }
     if (focus.zone === 'keyboard') {
-      const columns = 5
-      let index = focus.index
+      const currentKey = SEARCH_KEYS[focus.index]
+      if (!currentKey) return changeFocus({ zone: 'keyboard', index: 0 })
       if (action === 'left') {
-        if (index % columns === 0) return changeFocus({ zone: 'nav', index: activeNav })
-        index -= 1
-      } else if (action === 'right') index = Math.min(SEARCH_KEYS.length - 1, index + 1)
-      else if (action === 'up') index = Math.max(0, index - columns)
-      else if (action === 'down') {
-        if (index + columns >= SEARCH_KEYS.length && searchSuggestions.length) return changeFocus({ zone: 'suggestion', index: 0 })
-        if (index + columns >= SEARCH_KEYS.length && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
-        index = Math.min(SEARCH_KEYS.length - 1, index + columns)
+        const next = adjacentSearchKey(focus.index, 'left')
+        return next === undefined
+          ? changeFocus({ zone: 'nav', index: activeNav })
+          : changeFocus({ zone: 'keyboard', index: next })
       }
-      return changeFocus({ zone: 'keyboard', index })
+      if (action === 'right') {
+        const next = adjacentSearchKey(focus.index, 'right')
+        if (next !== undefined) return changeFocus({ zone: 'keyboard', index: next })
+        if (searchResults.length) return changeFocus({ zone: 'grid', index: Math.min(searchResults.length - 1, currentKey.row * 4) })
+        return
+      }
+      if (action === 'up') {
+        const next = adjacentSearchKey(focus.index, 'up')
+        if (next !== undefined) changeFocus({ zone: 'keyboard', index: next })
+        return
+      }
+      if (action === 'down') {
+        const next = adjacentSearchKey(focus.index, 'down')
+        if (next !== undefined) return changeFocus({ zone: 'keyboard', index: next })
+        if (searchSuggestions.length) return changeFocus({ zone: 'suggestion', index: 0 })
+        if (searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
+      }
+      return
     }
     if (focus.zone === 'suggestion') {
       if (action === 'left') return changeFocus({ zone: 'nav', index: activeNav })
@@ -1252,12 +1280,12 @@ export function App() {
       const columns = 4
       let index = focus.index
       if (action === 'left') {
-        if (index % columns === 0) return changeFocus({ zone: 'keyboard', index: Math.min(SEARCH_KEYS.length - 1, 4) })
+        if (index % columns === 0) return changeFocus({ zone: 'keyboard', index: nearestSearchKey(Math.floor(index / columns), 9) })
         index -= 1
       } else if (action === 'right') index = Math.min(searchResults.length - 1, index + 1)
       else if (action === 'up') {
         if (index < columns && searchSuggestions.length) return changeFocus({ zone: 'suggestion', index: Math.min(searchSuggestions.length - 1, index) })
-        if (index < columns) return changeFocus({ zone: 'keyboard', index: Math.min(SEARCH_KEYS.length - 1, 25 + index) })
+        if (index < columns) return changeFocus({ zone: 'keyboard', index: nearestSearchKey(2, 6 + index) })
         index -= columns
       } else if (action === 'down') index = Math.min(searchResults.length - 1, index + columns)
       changeFocus({ zone: 'grid', index })

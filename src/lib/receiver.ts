@@ -34,6 +34,7 @@ export interface ReceiverEvents {
   onPaired(paired: boolean): void
   onPairingInfo(info: PairingInfo): void
   onSnapshot(snapshot: CompanionHomeSnapshot): void
+  onCatalogError?(screen: string, message: string): void
   onSearchResults(query: string, items: CompanionMedia[], error?: string): void
   onLoad(request: CastLoadRequest, senderId: string): void
   onControl(request: CastControlRequest, senderId: string): void
@@ -388,6 +389,16 @@ export class CompanionReceiver {
       }, peerId(from) || 'host')
     })
     this.channel.on('izumi.companion.snapshot', (value) => this.receiveSnapshot(value))
+    this.channel.on('izumi.companion.catalog-result', (value) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      if (!this.credential
+        || input.pairingId !== this.credential.slice(0, 16)
+        || typeof input.screen !== 'string'
+        || typeof input.error !== 'string') return
+      this.events.onCatalogError?.(input.screen.slice(0, 40), input.error.slice(0, 240))
+    })
     this.channel.on('izumi.companion.search-results', (value) => {
       const message = parseMessage(value)
       if (!message || typeof message !== 'object') return
@@ -557,7 +568,7 @@ export class CompanionReceiver {
   }
 
   requestCatalog(screen: string): boolean {
-    if (!this.credential || !screen || screen.length > 40) return false
+    if (!this.credential || !this.connected || !screen || screen.length > 40) return false
     this.publish('izumi.companion.catalog', {
       screen,
       pairingId: this.credential.slice(0, 16),
