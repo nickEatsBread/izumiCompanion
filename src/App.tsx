@@ -97,23 +97,14 @@ function hasSubtitleAppearanceOverride(preferences: SubtitlePreferences): boolea
     || preferences.background !== 'source'
 }
 
-const scrollAnimations = new WeakMap<HTMLElement, number>()
+function animateScroll(element: HTMLElement, property: 'scrollLeft' | 'scrollTop', target: number, _duration = 0): void {
+  // A 2018 TV has one browser thread for focus, layout, images and animation. Queued rAF scrolls
+  // made repeated D-pad presses visibly trail behind focus, so TV navigation deliberately snaps.
+  element[property] = Math.round(target)
+}
 
-function animateScroll(element: HTMLElement, property: 'scrollLeft' | 'scrollTop', target: number, duration = 260): void {
-  const previous = scrollAnimations.get(element)
-  if (previous) cancelAnimationFrame(previous)
-  const start = element[property]
-  const distance = target - start
-  if (Math.abs(distance) < 2) return
-  const startedAt = performance.now()
-  const tick = (now: number) => {
-    const elapsed = Math.min(1, (now - startedAt) / duration)
-    const eased = 1 - Math.pow(1 - elapsed, 3)
-    element[property] = start + distance * eased
-    if (elapsed < 1) scrollAnimations.set(element, requestAnimationFrame(tick))
-    else scrollAnimations.delete(element)
-  }
-  scrollAnimations.set(element, requestAnimationFrame(tick))
+function sameMedia(left: CompanionMedia, right: CompanionMedia): boolean {
+  return left.ref.provider === right.ref.provider && left.ref.type === right.ref.type && left.ref.id === right.ref.id
 }
 
 function focusId(focus: FocusLocation): string {
@@ -131,8 +122,10 @@ function initialScreen(): ScreenName {
 }
 
 export function App() {
-  const showPreviewTools = import.meta.env.DEV || new URLSearchParams(location.search).has('preview')
-  const requestedPreviewCatalog = new URLSearchParams(location.search).get('catalog') ?? previewSnapshot.catalog.screen
+  const previewParameters = new URLSearchParams(location.search)
+  const showPreviewTools = import.meta.env.DEV || previewParameters.has('preview')
+  const showPreviewToolbar = showPreviewTools && !previewParameters.has('capture')
+  const requestedPreviewCatalog = previewParameters.get('catalog') ?? previewSnapshot.catalog.screen
   const initialPreviewSnapshot = previewSnapshotForCatalog(requestedPreviewCatalog)
   const [screen, setScreen] = useState<ScreenName>(initialScreen)
   const [snapshot, setSnapshot] = useState<CompanionHomeSnapshot>(initialPreviewSnapshot)
@@ -193,6 +186,7 @@ export function App() {
   const subtitleTimerRef = useRef<number>()
   const searchTimerRef = useRef<number>()
   const searchResponseTimerRef = useRef<number>()
+  const previewSelectionTimerRef = useRef<number>()
   const searchQueryRef = useRef(searchQuery)
   const playerControlsTimerRef = useRef<number>()
   const catalogRequestRef = useRef<{ screen: string; label: string; timer: number }>()
@@ -501,6 +495,7 @@ export function App() {
       if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current)
       if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
+      if (previewSelectionTimerRef.current) window.clearTimeout(previewSelectionTimerRef.current)
       receiver.disconnect()
       avplayRef.current.close()
     }
@@ -680,9 +675,11 @@ export function App() {
 
   const changeFocus = (next: FocusLocation) => {
     setFocus(next)
+    if (previewSelectionTimerRef.current) window.clearTimeout(previewSelectionTimerRef.current)
     if (next.zone === 'row') {
       const item = snapshot.rows[next.row]?.items[next.index]
-      if (item) setSelected(item)
+      // Keep focus instant while deferring the expensive hero-art swap until the user pauses.
+      if (item) previewSelectionTimerRef.current = window.setTimeout(() => setSelected(item), 160)
     }
   }
 
@@ -810,6 +807,14 @@ export function App() {
     }
   }
 
+  const requestSeriesDetails = (media: CompanionMedia) => {
+    if (showPreviewTools) return
+    void receiverRef.current?.requestDetails(media).then((details) => {
+      if (!details) return
+      setSelected((current) => sameMedia(current, media) ? details : current)
+    })
+  }
+
   const openSeries = (media: CompanionMedia) => {
     setTrailerOpen(false)
     setSelected(media)
@@ -818,6 +823,7 @@ export function App() {
     setCatalogMenuOpen(false)
     setScreen('series')
     changeFocus({ zone: 'series-season', index: 0 })
+    requestSeriesDetails(media)
   }
 
   const selectCatalogMedia = (media: CompanionMedia) => {
@@ -856,9 +862,11 @@ export function App() {
       changeFocus({ zone: 'hero', index: 0 })
     } else if (destination === 'search') changeFocus({ zone: 'keyboard', index: 0 })
     else if (destination === 'series') {
+      const firstSeries = seriesItems[0] ?? fallbackMedia
       setSeriesSeason(0)
-      setSelected(seriesItems[0] ?? fallbackMedia)
+      setSelected(firstSeries)
       changeFocus({ zone: 'series-season', index: 0 })
+      requestSeriesDetails(firstSeries)
     }
     else if (destination === 'settings') changeFocus({ zone: 'setting', index: 0 })
     else {
@@ -1057,7 +1065,7 @@ export function App() {
       return
     }
     if (focus.zone !== 'grid') return
-    const columns = 7
+    const columns = 6
     let index = focus.index
     if (action === 'left') {
       if (index % columns === 0) return changeFocus({ zone: 'nav', index: activeNav })
@@ -1093,7 +1101,7 @@ export function App() {
       return
     }
     if (focus.zone === 'keyboard') {
-      const columns = 6
+      const columns = 5
       let index = focus.index
       if (action === 'left') {
         if (index % columns === 0) return changeFocus({ zone: 'nav', index: activeNav })
@@ -1121,15 +1129,15 @@ export function App() {
       return
     }
     if (focus.zone === 'grid') {
-      const columns = 5
+      const columns = 4
       let index = focus.index
       if (action === 'left') {
-        if (index % columns === 0) return changeFocus({ zone: 'keyboard', index: Math.min(SEARCH_KEYS.length - 1, 5) })
+        if (index % columns === 0) return changeFocus({ zone: 'keyboard', index: Math.min(SEARCH_KEYS.length - 1, 4) })
         index -= 1
       } else if (action === 'right') index = Math.min(searchResults.length - 1, index + 1)
       else if (action === 'up') {
         if (index < columns && searchSuggestions.length) return changeFocus({ zone: 'suggestion', index: Math.min(searchSuggestions.length - 1, index) })
-        if (index < columns) return changeFocus({ zone: 'keyboard', index: Math.min(SEARCH_KEYS.length - 1, 24 + index) })
+        if (index < columns) return changeFocus({ zone: 'keyboard', index: Math.min(SEARCH_KEYS.length - 1, 25 + index) })
         index -= columns
       } else if (action === 'down') index = Math.min(searchResults.length - 1, index + columns)
       changeFocus({ zone: 'grid', index })
@@ -1435,6 +1443,7 @@ export function App() {
       {screen === 'series' && (
         <SeriesScreen
           selected={selected}
+          hideSpoilers={snapshot.spoilersHidden === true}
           season={seriesSeason}
           focus={focus}
           activeNav={activeNav}
@@ -1550,7 +1559,7 @@ export function App() {
           onExit={exitApplication}
         />
       )}
-      {showPreviewTools && (
+      {showPreviewToolbar && (
         <PreviewToolbar
           screen={screen}
           safeArea={safeArea}

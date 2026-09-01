@@ -372,6 +372,7 @@ function relationLabel(value: string): string {
 
 export function SeriesScreen({
   selected,
+  hideSpoilers,
   season,
   focus,
   activeNav,
@@ -389,6 +390,7 @@ export function SeriesScreen({
   onTrailerClose,
 }: {
   selected: CompanionMedia
+  hideSpoilers: boolean
   season: number
   focus: FocusLocation
   activeNav: number
@@ -413,6 +415,10 @@ export function SeriesScreen({
   const episodes = hasEpisodeMetadata ? episodeDetailsFor(selected, activeSeason, seasonCounts) : []
   const resumeSeason = selected.season ?? 1
   const resumeEpisode = resumeSeason === seasonNumber && selected.episode ? selected.episode : -1
+  const resumeDetails = episodes.find((episode) => episode.episode === resumeEpisode)
+  const resumeTitle = hideSpoilers && resumeDetails?.spoiler
+    ? `Episode ${resumeEpisode}`
+    : selected.episodeTitle || resumeDetails?.title || `Episode ${resumeEpisode}`
   const relations = selected.relations ?? []
   const reason = selected.placement
     ? `${selected.placement.position ? `#${selected.placement.position} in ` : ''}${selected.placement.label}`
@@ -467,7 +473,7 @@ export function SeriesScreen({
         {resumeEpisode > 0 && (
           <div class="series-current">
             <span>Continue watching</span>
-            <strong>S{resumeSeason}:E{resumeEpisode} · {selected.episodeTitle || episodes.find((episode) => episode.episode === resumeEpisode)?.title || `Episode ${resumeEpisode}`}</strong>
+            <strong>S{resumeSeason}:E{resumeEpisode} · {resumeTitle}</strong>
             {typeof selected.episodeProgress === 'number' && <div><i style={{ width: `${Math.round(selected.episodeProgress * 100)}%` }} /></div>}
           </div>
         )}
@@ -537,12 +543,15 @@ export function SeriesScreen({
             const current = seasonNumber === resumeSeason && episode.episode === resumeEpisode
             const watched = episode.watched ?? (seasonNumber === resumeSeason && episode.episode < resumeEpisode)
             const progress = episode.progress ?? (current ? selected.episodeProgress : watched ? 1 : 0)
-            const title = current && selected.episodeTitle ? selected.episodeTitle : episode.title || `Episode ${episode.episode}`
+            const spoiler = hideSpoilers && (episode.spoiler ?? !watched)
+            const title = spoiler
+              ? `Episode ${episode.episode}`
+              : current && selected.episodeTitle ? selected.episodeTitle : episode.title || `Episode ${episode.episode}`
             const status = current ? 'Continue watching' : watched ? 'Watched' : episode.runtimeMinutes ? `${episode.runtimeMinutes} min` : 'Not started'
             return (
               <button
                 type="button"
-                class={`series-episode${focused ? ' is-focused' : ''}${current ? ' is-current' : ''}`}
+                class={`series-episode${focused ? ' is-focused' : ''}${current ? ' is-current' : ''}${spoiler ? ' is-spoiler' : ''}`}
                 data-focus-id={`episode-${index}`}
                 tabIndex={focused ? 0 : -1}
                 aria-label={`Play ${selected.title}, season ${seasonNumber}, episode ${episode.episode}, ${title}`}
@@ -558,7 +567,7 @@ export function SeriesScreen({
                 </span>
                 <span class="series-episode-copy">
                   <span><strong>{episode.episode}. {title}</strong>{episode.runtimeMinutes && <small>{episode.runtimeMinutes} min</small>}</span>
-                  {episode.description && <p>{episode.description}</p>}
+                  {spoiler ? <p>Episode details hidden to avoid spoilers.</p> : episode.description && <p>{episode.description}</p>}
                   <em>{status}</em>
                   {typeof progress === 'number' && progress > 0 && progress < 1 && <i><b style={{ width: `${Math.round(progress * 100)}%` }} /></i>}
                 </span>

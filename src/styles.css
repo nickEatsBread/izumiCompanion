@@ -92,6 +92,8 @@ body.avplay-visible #av-player {
   top: 0;
   bottom: 0;
   left: 0;
+  height: 100vh;
+  min-height: 100%;
   z-index: 20;
   width: clamp(58px, 4.25vw, 82px);
   display: flex;
@@ -585,7 +587,7 @@ body.avplay-visible #av-player {
 .hero-copy {
   position: relative;
   z-index: 2;
-  width: 40vw;
+  width: 45vw;
   padding: 13.1vh 0 0 9.2vw;
   animation: hero-copy-enter 320ms cubic-bezier(.2, .75, .2, 1) both;
 }
@@ -596,7 +598,7 @@ body.avplay-visible #av-player {
   top: 6.5vh;
   left: 9.2vw;
   display: block;
-  width: 6.3vw;
+  width: 7.2vw;
   max-width: 132px;
   min-width: 88px;
   height: auto;
@@ -625,7 +627,7 @@ body.avplay-visible #av-player {
   max-width: 39vw;
   margin: 0;
   color: #fff;
-  font-size: 2.8vw;
+  font-size: 3.35vw;
   font-weight: 800;
   line-height: .98;
   letter-spacing: -.045em;
@@ -634,7 +636,7 @@ body.avplay-visible #av-player {
 .hero-meta {
   margin: 1.2vh 0 0;
   color: #ececec;
-  font-size: 1.05vw;
+  font-size: 1.14vw;
   font-weight: 800;
 }
 
@@ -642,7 +644,7 @@ body.avplay-visible #av-player {
   max-width: 35vw;
   margin: 1vh 0 0;
   color: #e0e0e0;
-  font-size: 1.05vw;
+  font-size: 1.14vw;
   font-weight: 600;
   line-height: 1.42;
 }
@@ -791,7 +793,7 @@ body.avplay-visible #av-player {
 .media-row h2 {
   margin: 0 0 1vh;
   color: #eee;
-  font-size: 1.25vw;
+  font-size: 1.45vw;
   font-weight: 800;
   letter-spacing: -.015em;
 }
@@ -806,8 +808,8 @@ body.avplay-visible #av-player {
 
 .media-card {
   position: relative;
-  width: 11.5vw;
-  height: 17.2vw;
+  width: 14vw;
+  height: 20.95vw;
   min-width: 147px;
   min-height: 220px;
   padding: 0;
@@ -911,7 +913,7 @@ body.avplay-visible #av-player {
   z-index: 2;
   overflow: hidden;
   color: #fff;
-  font-size: .83vw;
+  font-size: .96vw;
   font-weight: 800;
   line-height: 1.12;
   text-align: left;
@@ -931,14 +933,18 @@ body.avplay-visible #av-player {
 .media-card.has-progress .media-card-title { bottom: 1.35vw; }
 
 .continue-card {
-  width: 15.2vw;
-  height: 8.55vw;
+  width: 17vw;
+  height: 9.56vw;
   min-width: 232px;
   min-height: 131px;
 }
 
 .continue-card .media-card-fade {
   inset: 28% 0 0;
+  top: 28%;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: linear-gradient(0deg, rgba(0, 0, 0, .96), rgba(0, 0, 0, .04));
 }
 
@@ -1268,7 +1274,7 @@ body.avplay-visible #av-player {
   display: flex;
   flex-wrap: wrap;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 2.3vh .9vw;
   padding: 9px 9px 30px;
 }
@@ -1277,7 +1283,7 @@ body.avplay-visible #av-player {
   position: relative;
   width: 100%;
   min-height: 15.6vw;
-  height: 17.35vw;
+  height: 19.2vw;
   aspect-ratio: 2 / 3;
   padding: 0;
   overflow: hidden;
@@ -1344,10 +1350,10 @@ body.avplay-visible #av-player {
 .series-overview {
   position: absolute;
   z-index: 3;
-  top: 8vh;
+  top: 7vh;
   bottom: 4.5vh;
-  left: 10.5vw;
-  width: 40.5vw;
+  left: 8.4vw;
+  width: 39.5vw;
   display: flex;
   flex-direction: column;
   animation: hero-copy-enter 330ms cubic-bezier(.2, .75, .2, 1) both;
@@ -1359,14 +1365,14 @@ body.avplay-visible #av-player {
   align-items: center;
   gap: .55vw;
   color: #d2d2d2;
-  font-size: .9vw;
+  font-size: 1.02vw;
   font-weight: 700;
 }
 
 .series-overview > h1 {
   max-width: 39vw;
   margin: 0;
-  font-size: 3.25vw;
+  font-size: 3.7vw;
   line-height: 1.02;
   letter-spacing: -.045em;
   text-wrap: balance;
@@ -1378,7 +1384,7 @@ body.avplay-visible #av-player {
   align-items: center;
   gap: .75vw;
   color: #e4e4e4;
-  font-size: 1vw;
+  font-size: 1.12vw;
   font-weight: 750;
 }
 
@@ -1394,7 +1400,7 @@ body.avplay-visible #av-player {
   max-width: 37vw;
   margin: 1.8vh 0 0;
   color: #d7d7d7;
-  font-size: 1.05vw;
+  font-size: 1.14vw;
   font-weight: 600;
   line-height: 1.48;
   text-wrap: pretty;
@@ -1403,7 +1409,7 @@ body.avplay-visible #av-player {
 .series-trailer-action {
   width: max-content;
   min-width: 13.2vw;
-  min-height: 48px;
+  min-height: 58px;
   margin-top: 2vh;
   padding: .6vw .9vw;
   border: 0;
@@ -1425,13 +1431,13 @@ body.avplay-visible #av-player {
 }
 
 .series-trailer-action strong {
-  font-size: .9vw;
+  font-size: 1vw;
   font-weight: 850;
 }
 
 .series-trailer-action small {
   color: #c7c7c7;
-  font-size: .65vw;
+  font-size: .74vw;
   font-weight: 700;
 }
 
@@ -1447,7 +1453,7 @@ body.avplay-visible #av-player {
 .series-trailer-action:hover small { color: #4b4b4b; }
 
 .series-current {
-  width: 24vw;
+  width: 30vw;
   margin-top: 2.5vh;
   display: flex;
   flex-direction: column;
@@ -1456,7 +1462,7 @@ body.avplay-visible #av-player {
 
 .series-current > span {
   color: #a9a9a9;
-  font-size: .74vw;
+  font-size: .82vw;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -1464,7 +1470,7 @@ body.avplay-visible #av-player {
 
 .series-current > strong {
   overflow: hidden;
-  font-size: .96vw;
+  font-size: 1.08vw;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1494,13 +1500,13 @@ body.avplay-visible #av-player {
 
 .series-relation-heading h2 {
   margin: 0;
-  font-size: 1.25vw;
+  font-size: 1.42vw;
   letter-spacing: -.018em;
 }
 
 .series-relation-heading span {
   color: #9c9c9c;
-  font-size: .72vw;
+  font-size: .8vw;
   font-weight: 700;
 }
 
@@ -1515,8 +1521,8 @@ body.avplay-visible #av-player {
 
 .relation-card {
   position: relative;
-  width: 12.55vw;
-  height: 7.05vw;
+  width: 14vw;
+  height: 7.88vw;
   min-width: 150px;
   min-height: 84px;
   padding: 0;
@@ -1559,7 +1565,7 @@ body.avplay-visible #av-player {
 
 .relation-card-copy > small {
   color: #d0d0d0;
-  font-size: .58vw;
+  font-size: .68vw;
   font-weight: 800;
   letter-spacing: .055em;
   text-transform: uppercase;
@@ -1568,7 +1574,7 @@ body.avplay-visible #av-player {
 .relation-card-copy > strong {
   margin-top: 2px;
   overflow: hidden;
-  font-size: .73vw;
+  font-size: .84vw;
   line-height: 1.13;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1585,9 +1591,9 @@ body.avplay-visible #av-player {
   position: absolute;
   z-index: 4;
   top: 5.5vh;
-  right: 3.2vw;
+  right: 2vw;
   bottom: 4.5vh;
-  width: 40vw;
+  width: 45vw;
   min-width: 520px;
   display: flex;
   flex-direction: column;
@@ -1596,7 +1602,6 @@ body.avplay-visible #av-player {
   border-radius: 3px 0 0 3px;
   background: rgba(7, 7, 7, .86);
   box-shadow: -2.4vw 0 5vw rgba(0, 0, 0, .35);
-  backdrop-filter: blur(12px);
 }
 
 .series-library-header {
@@ -1614,7 +1619,7 @@ body.avplay-visible #av-player {
 
 .series-library-header p {
   color: #a7a7a7;
-  font-size: .73vw;
+  font-size: .82vw;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -1622,7 +1627,7 @@ body.avplay-visible #av-player {
 
 .series-library-header h2 {
   margin-top: .25vh;
-  font-size: 1.7vw;
+  font-size: 2vw;
   letter-spacing: -.025em;
 }
 
@@ -1632,13 +1637,13 @@ body.avplay-visible #av-player {
 }
 
 .season-options button {
-  min-height: 37px;
+  min-height: 46px;
   padding: .43vw .72vw;
   border: 1px solid transparent;
   border-radius: 2px;
   color: #bdbdbd;
   background: transparent;
-  font-size: .76vw;
+  font-size: .86vw;
   font-weight: 800;
   cursor: pointer;
   transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease;
@@ -1949,12 +1954,12 @@ body.avplay-visible #av-player {
 
 .series-episode {
   width: 100%;
-  min-height: 10.4vh;
+  min-height: 13vh;
   padding: .7vh .55vw;
   display: -webkit-flex;
   display: flex;
   display: grid;
-  grid-template-columns: 9.1vw minmax(0, 1fr);
+  grid-template-columns: 12vw minmax(0, 1fr);
   align-items: center;
   gap: .9vw;
   border: 0;
@@ -1980,8 +1985,8 @@ body.avplay-visible #av-player {
 
 .series-episode-art {
   position: relative;
-  width: 9.1vw;
-  height: 5.12vw;
+  width: 12vw;
+  height: 6.75vw;
   aspect-ratio: 16 / 9;
   display: block;
   overflow: hidden;
@@ -2040,7 +2045,7 @@ body.avplay-visible #av-player {
 
 .series-episode-copy strong {
   overflow: hidden;
-  font-size: .86vw;
+  font-size: 1vw;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2048,7 +2053,7 @@ body.avplay-visible #av-player {
 .series-episode-copy small,
 .series-episode-copy em {
   color: #aaa;
-  font-size: .65vw;
+  font-size: .76vw;
   font-style: normal;
   font-weight: 700;
   white-space: nowrap;
@@ -2059,7 +2064,7 @@ body.avplay-visible #av-player {
   margin: .45vh 0 0;
   overflow: hidden;
   color: #bdbdbd;
-  font-size: .69vw;
+  font-size: .79vw;
   font-weight: 600;
   line-height: 1.3;
   -webkit-box-orient: vertical;
@@ -2088,24 +2093,24 @@ body.avplay-visible #av-player {
 .search-layout {
   position: absolute;
   z-index: 3;
-  top: 17vh;
+  top: 15vh;
   right: 3.5vw;
   bottom: 3.5vh;
-  left: 10.5vw;
+  left: 8.4vw;
   display: -webkit-flex;
   display: flex;
   display: grid;
-  grid-template-columns: 30vw 1fr;
+  grid-template-columns: 34vw 1fr;
   gap: 2.5vw;
 }
 
 .search-query {
-  min-height: 60px;
-  padding: 14px 18px;
+  min-height: 76px;
+  padding: 19px 22px;
   border-bottom: 3px solid #fff;
   color: #fff;
   background: #171717;
-  font-size: 1.38vw;
+  font-size: 1.55vw;
   font-weight: 750;
 }
 .search-query.is-empty { color: #777; font-weight: 650; }
@@ -2116,11 +2121,11 @@ body.avplay-visible #av-player {
   display: flex;
   flex-wrap: wrap;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: .42vw;
 }
 .search-keyboard button {
-  min-height: 47px;
+  min-height: 58px;
   border: 1px solid #3e3e3e;
   border-radius: 3px;
   display: -webkit-flex;
@@ -2131,11 +2136,11 @@ body.avplay-visible #av-player {
   place-items: center;
   color: #e6e6e6;
   background: #1a1a1a;
-  font-size: 1.08vw;
+  font-size: 1.2vw;
   font-weight: 800;
   cursor: pointer;
 }
-.search-keyboard button.is-wide { font-size: .7vw; }
+.search-keyboard button.is-wide { font-size: .8vw; }
 .search-keyboard button.is-focused,
 .search-keyboard button:hover {
   color: #050505;
@@ -2155,7 +2160,7 @@ body.avplay-visible #av-player {
 .search-suggestions > p {
   margin: 0 0 .65vh;
   color: #8f8f8f;
-  font-size: .78vw;
+  font-size: .86vw;
   font-weight: 800;
   letter-spacing: .09em;
   text-transform: uppercase;
@@ -2163,7 +2168,7 @@ body.avplay-visible #av-player {
 
 .search-suggestions > button {
   width: 100%;
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 10px;
   border: 0;
   border-left: 3px solid transparent;
@@ -2171,7 +2176,7 @@ body.avplay-visible #av-player {
   overflow: hidden;
   color: #c9c9c9;
   background: transparent;
-  font-size: 1vw;
+  font-size: 1.08vw;
   font-weight: 700;
   text-align: left;
   text-overflow: ellipsis;
@@ -2193,24 +2198,24 @@ body.avplay-visible #av-player {
   scrollbar-width: none;
 }
 .search-result-heading { margin-bottom: 1.6vh; }
-.search-result-heading h2 { margin: 0; font-size: 1.62vw; }
+.search-result-heading h2 { margin: 0; font-size: 1.9vw; }
 .search-result-grid {
   display: -webkit-flex;
   display: flex;
   flex-wrap: wrap;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1.8vh .7vw;
   padding: 8px;
   animation: search-content-enter 200ms ease both;
 }
 .search-result-grid .browse-card {
-  height: 14.5vw;
+  height: 18.2vw;
   min-height: 0;
   aspect-ratio: auto;
 }
-.search-result-grid .browse-card strong { right: .5vw; bottom: .5vw; left: .5vw; font-size: .75vw; }
-.search-empty { color: #999; font-size: 1.1vw; }
+.search-result-grid .browse-card strong { right: .65vw; bottom: .65vw; left: .65vw; font-size: .92vw; }
+.search-empty { color: #999; font-size: 1.2vw; }
 
 .settings-panel {
   position: relative;
@@ -2307,6 +2312,11 @@ body.avplay-visible #av-player {
   opacity: .64;
   transform: rotate(-2deg);
   will-change: transform;
+}
+
+.series-episode.is-spoiler .series-episode-art img {
+  filter: blur(13px) brightness(.5) saturate(.45);
+  transform: scale(1.12);
 }
 
 .pairing-poster-track-one {
@@ -3305,14 +3315,89 @@ body.avplay-visible #av-player {
 .player-actions > button > * + * { margin-left: 13px; }
 
 .navigation-skeleton.is-utility .skeleton-card { width: 23%; }
-.browse-grid > .browse-card { width: 12%; margin: 0 .9vw 2.3vh 0; }
-.search-layout > :first-child { width: 30vw; flex: 0 0 30vw; }
+.browse-grid > .browse-card { width: 15%; margin: 0 .9vw 2.3vh 0; }
+.search-layout > :first-child { width: 34vw; flex: 0 0 34vw; }
 .search-layout > :last-child { flex: 1 1 auto; }
-.search-keyboard > button { width: 15.3%; margin: 0 .42vw .42vw 0; }
+.search-keyboard > button { width: 19.2%; margin: 0 .42vw .42vw 0; }
 .search-result-grid > .browse-card,
-.search-result-grid > .search-result-skeleton { width: 18.5%; margin: 0 .7vw 1.8vh 0; }
-.series-episode-art { flex: 0 0 9.1vw; }
+.search-result-grid > .search-result-skeleton { width: 23.5%; margin: 0 .7vw 1.8vh 0; }
+.series-episode-art { flex: 0 0 12vw; }
 .series-episode-copy { flex: 1 1 auto; min-width: 0; }
+
+/* Samsung's 2018 Chromium engine predates clamp() and the inset shorthand. Explicit fallbacks
+ * keep the physical-TV layout at the same 10-foot scale as the browser preview. */
+@supports not (width: clamp(1px, 2px, 3px)) {
+  .nav-rail { width: 4.25vw; min-width: 58px; max-width: 82px; }
+  .nav-rail.is-open { width: 18.3vw; min-width: 218px; max-width: 352px; }
+  .nav-rail.is-open::before { left: 18.3vw; }
+  .nav-mark-button { width: 3vw; height: 8vh; min-width: 44px; max-width: 58px; min-height: 52px; max-height: 72px; }
+  .nav-mark { width: 1.8vw; height: 1.8vw; min-width: 25px; max-width: 34px; min-height: 25px; max-height: 34px; }
+  .nav-mark-button > span { left: 5.35vw; max-width: calc(100% - 6.2vw); font-size: 1.02vw; }
+  .nav-rail.is-open .nav-mark-button,
+  .nav-rail.is-open .nav-item { padding-left: 2vw; }
+  .nav-item { width: 3vw; height: 7.5vh; min-width: 44px; max-width: 58px; min-height: 50px; max-height: 68px; margin-left: .625vw; }
+  .nav-item-glyph { width: 1.3vw; height: 1.3vw; min-width: 20px; max-width: 25px; min-height: 20px; max-height: 25px; }
+  .nav-item-glyph::after { width: 1.25vw; min-width: 18px; max-width: 24px; }
+  .nav-item-label { left: 5.35vw; max-width: calc(100% - 6.2vw); font-size: 1.12vw; }
+  .catalog-picker > p { font-size: .72vw; }
+  .catalog-picker > h2 { font-size: 1.65vw; }
+  .catalog-picker-options > button { font-size: .96vw; }
+  .catalog-picker-options > button small,
+  .catalog-picker > small { font-size: .72vw; }
+  .hero-resume > p strong { font-size: .78vw; }
+  .hero-resume > p span { font-size: .96vw; }
+  .top-ten-rank { width: 7.7vw; font-size: 14.8vw; }
+  .media-card.top-ten-card img,
+  .media-card.top-ten-card .media-card-fade { width: 10.9vw; }
+  .media-card.top-ten-card .media-card-title { width: 9.5vw; }
+  .episode-card-copy > small { font-size: .68vw; }
+  .episode-card-copy > strong { font-size: .82vw; }
+  .episode-card-meta { font-size: .65vw; }
+  .series-trailer-center-control { width: 6.2vw; }
+  .loading-rating-badge { font-size: 1.35vw; }
+  .loading-rating-copy small { font-size: .72vw; }
+  .loading-rating-copy strong { font-size: .92vw; }
+  .player-actions > button > svg { width: 1.35vw; height: 1.35vw; min-width: 23px; min-height: 23px; }
+  .player-actions strong { font-size: .95vw; }
+  .player-actions small { font-size: .7vw; }
+  .player-menu > p { font-size: 1.18vw; }
+  .player-menu-options button { font-size: 1vw; }
+  .player-menu-options small { font-size: .76vw; }
+  .hero-art-stage,
+  .hero-copy,
+  .media-row,
+  .search-result-grid,
+  .search-suggestions { animation: none; transition: none; }
+  .media-row.is-upcoming { filter: none; }
+  .media-card,
+  .browse-card,
+  .nav-item,
+  .nav-rail { transition-duration: 90ms; }
+}
+
+@supports not (inset: 0) {
+  .navigation-skeleton { top: 0; right: 0; bottom: 0; left: 4.25vw; }
+  .catalog-picker-scrim,
+  .hero-art-stage,
+  .browse-screen,
+  .utility-screen,
+  .detail-screen,
+  .detail-art,
+  .detail-art span,
+  .series-hero-art,
+  .relation-card-shade,
+  .series-trailer-overlay,
+  .series-trailer-overlay iframe,
+  .series-trailer-hit-area,
+  .series-trailer-youtube-mask,
+  .series-trailer-native-cover,
+  .series-trailer-hud,
+  .settings-confirm-backdrop,
+  .exit-confirmation-backdrop,
+  .state-screen { top: 0; right: 0; bottom: 0; left: 0; }
+  .hero,
+  .browse-hero-art { top: 0; right: 0; left: 0; }
+}
 
 @supports (gap: 1px) {
   .skeleton-copy > * + *,
