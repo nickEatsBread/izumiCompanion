@@ -16,6 +16,7 @@ const PAIRING_LIFETIME_MS = 5 * 60_000
 const LOCAL_PLAY_ACK_MS = 1_200
 const REMOTE_REQUEST_TTL_MS = 5 * 60_000
 const SNAPSHOT_STORAGE_KEY = 'izumi.companion.snapshot'
+const DETAILS_TIMEOUT_MS = 8_000
 
 export type CompanionPlayResult =
   | 'local'
@@ -188,7 +189,7 @@ function validUrl(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 8192 && /^https?:\/\//i.test(value)
 }
 
-function validSearchMedia(value: unknown): value is CompanionMedia {
+function validCompanionMedia(value: unknown): value is CompanionMedia {
   if (!value || typeof value !== 'object') return false
   const media = value as Partial<CompanionMedia>
   return typeof media.title === 'string'
@@ -280,6 +281,7 @@ export class CompanionReceiver {
   private pairing = this.createPairingInfo()
   private pairingTimer?: number
   private playAcknowledgements = new Map<string, (accepted: boolean) => void>()
+  private detailRequests = new Map<string, (media: CompanionMedia | null) => void>()
 
   constructor(private readonly events: ReceiverEvents) {
     this.events.onPairingInfo(this.pairing)
@@ -303,7 +305,7 @@ export class CompanionReceiver {
     this.channel = service.channel(CHANNEL_ID)
     this.channel.on('izumi.load', (value, from) => {
       const request = normalizeLoad(value)
-      const sender = peerId(from)
+      const sender = this.messageSender(value, from)
       if (!request || !sender) return
       this.activeSenderId = sender
       this.activeSessionId = request.sessionId
@@ -311,9 +313,18 @@ export class CompanionReceiver {
     })
     this.channel.on('izumi.control', (value, from) => {
       const request = normalizeControl(value)
-      const sender = peerId(from)
+      const sender = this.messageSender(value, from)
       if (!request || sender !== this.activeSenderId || request.sessionId !== this.activeSessionId) return
       this.events.onControl(request, sender)
+    })
+    this.channel.on('izumi.resume', (value, from) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      const sender = this.messageSender(value, from)
+      if (!sender || input.sessionId !== this.activeSessionId) return
+      this.activeSenderId = sender
+      this.events.onControl({ sessionId: this.activeSessionId, action: 'status' }, sender)
     })
     this.channel.on('izumi.companion.pair', (value, from) => this.receivePair(value, peerId(from)))
     this.channel.on('izumi.companion.transport', (value, from) => {
@@ -335,8 +346,17 @@ export class CompanionReceiver {
       if (!message || typeof message !== 'object') return
       const input = message as Record<string, unknown>
       if (!this.credential || input.credential !== this.credential || typeof input.query !== 'string') return
-      const items = Array.isArray(input.items) ? input.items.slice(0, 40).filter(validSearchMedia) : []
+      const items = Array.isArray(input.items) ? input.items.slice(0, 40).filter(validCompanionMedia) : []
       this.events.onSearchResults(input.query.slice(0, 80), items, typeof input.error === 'string' ? input.error.slice(0, 240) : undefined)
+    })
+    this.channel.on('izumi.companion.details-result', (value) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      if (!this.credential || input.credential !== this.credential || typeof input.requestId !== 'string') return
+      const finish = this.detailRequests.get(input.requestId)
+      if (!finish) return
+      finish(validCompanionMedia(input.media) ? input.media : null)
     })
     this.channel.on('izumi.companion.unpair', (value) => {
       const message = parseMessage(value)
@@ -366,6 +386,25 @@ export class CompanionReceiver {
 
   requestRefresh(): void {
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
+  }
+
+  requestDetails(media: CompanionMedia): Promise<CompanionMedia | null> {
+    if (!this.credential || !this.connected) return Promise.resolve(null)
+    const requestId = randomHex(12)
+    return new Promise((resolve) => {
+      const finish = (details: CompanionMedia | null) => {
+        window.clearTimeout(timer)
+        this.detailRequests.delete(requestId)
+        resolve(details)
+      }
+      const timer = window.setTimeout(() => finish(null), DETAILS_TIMEOUT_MS)
+      this.detailRequests.set(requestId, finish)
+      this.publish('izumi.companion.details', {
+        pairingId: this.credential.slice(0, 16),
+        requestId,
+        media,
+      }, 'broadcast')
+    })
   }
 
   async requestPlay(media: CompanionMedia): Promise<CompanionPlayResult> {
@@ -478,6 +517,15 @@ export class CompanionReceiver {
       pairingId: this.credential.slice(0, 16),
     }, 'broadcast')
     return true
+  }
+
+  private messageSender(value: unknown, from: unknown): string {
+    const direct = peerId(from)
+    if (direct) return direct
+    const message = parseMessage(value)
+    if (!message || typeof message !== 'object') return ''
+    const senderId = (message as Record<string, unknown>).senderId
+    return typeof senderId === 'string' && senderId.length > 0 && senderId.length <= 128 ? senderId : ''
   }
 
   publishStatus(snapshot: PlaybackSnapshot): void {

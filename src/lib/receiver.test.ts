@@ -135,6 +135,49 @@ afterEach(() => {
 })
 
 describe('companion play routing', () => {
+  it('accepts playback from older firmware when Samsung omits the event peer', async () => {
+    const channel = new FakeSmartViewChannel()
+    const receiverEvents = events()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(receiverEvents)
+    await receiver.connect()
+
+    channel.emit('izumi.load', {
+      sessionId: 'session-one',
+      senderId: 'sender-one',
+      url: 'https://media.example/episode.mp4',
+      title: 'Episode 2',
+      positionSeconds: 0,
+      subtitles: [],
+      activeTrackIds: [],
+    })
+
+    expect(receiverEvents.onLoad).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-one' }), 'sender-one')
+    receiver.disconnect()
+  })
+
+  it('requests and receives full episode details from the paired client', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+    const request = receiver.requestDetails(media)
+    const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.details')?.[1] as {
+      requestId: string
+      pairingId: string
+    }
+    expect(sent.pairingId).toBe(credential.slice(0, 16))
+
+    const details = { ...media, episodes: [{ season: 1, episode: 1, image: 'https://img.example/1.jpg' }] }
+    channel.emit('izumi.companion.details-result', { credential, requestId: sent.requestId, media: details })
+    await expect(request).resolves.toEqual(details)
+    receiver.disconnect()
+  })
+
   it('accepts a credential-authenticated Worker route for an already-paired TV', async () => {
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {

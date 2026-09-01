@@ -66,6 +66,8 @@ export interface CompanionEpisode {
   /** Normalized 0–1 position for this episode. */
   progress?: number
   watched?: boolean
+  /** The paired client marked this unwatched episode for spoiler-safe presentation. */
+  spoiler?: boolean
 }
 
 export interface CompanionRelation {
@@ -94,6 +96,8 @@ export interface CompanionHomeSnapshot {
   revision: string
   generatedAt: number
   catalog: { screen: string; label: string; options?: CompanionCatalogOption[] }
+  /** Mirrors the paired Izumi client's interface preference. */
+  spoilersHidden?: boolean
   hero?: CompanionMedia
   rows: CompanionHomeRow[]
   /** Optional provider-authored collections for TV navigation; never inferred from recommendations. */
