@@ -18,7 +18,17 @@ Open `http://127.0.0.1:4173/`. Use the preview bar, mouse, or the arrow keys, En
 npm run build
 ```
 
-The finished `dist/` contains the app, `config.xml`, icon, Samsung Smart View receiver library, legacy browser chunks, and the AVPlay bootstrap. Package that directory with the Tizen CLI or Tizen Studio.
+The completed `dist/` directory contains the production app, `config.xml`, icon, Samsung Smart
+View receiver library, legacy browser chunks, license notices, and the AVPlay bootstrap. Package
+it as an unsigned Tizen widget with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-tizen.ps1
+```
+
+The resulting `artifacts/izumi-companion.wgt` must be signed for the target Samsung TV before it is
+installed. Local development-TV prerequisites and the verified signing/deployment commands are in
+[`AGENTS.md`](AGENTS.md); signing keys remain outside this repository.
 
 The production app opens on the pairing/ready state. A companion snapshot opens the home UI; a cast request is handed to the typed AVPlay controller.
 
