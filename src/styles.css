@@ -859,10 +859,8 @@ body.avplay-visible #av-player {
   color: #fff;
   background: #222;
   cursor: pointer;
-  transform: translateZ(0);
   transform-origin: center bottom;
-  transition: transform 150ms cubic-bezier(.2, .75, .2, 1), box-shadow 150ms ease;
-  will-change: transform;
+  transition: transform 150ms cubic-bezier(.2, .75, .2, 1);
 }
 
 .media-card.is-focused,
@@ -870,8 +868,7 @@ body.avplay-visible #av-player {
   z-index: 3;
   outline: 4px solid #fff;
   outline-offset: -4px;
-  transform: translateY(-.35vw) scale(1.045) translateZ(0);
-  box-shadow: 0 .8vw 1.8vw rgba(0, 0, 0, .55);
+  transform: translateY(-.35vw) scale(1.045);
 }
 
 .top-ten-card {
@@ -1223,10 +1220,11 @@ body.avplay-visible #av-player {
   font-size: 1.02vw;
   font-weight: 800;
   cursor: pointer;
+  transition: transform 160ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .detail-actions button:first-child { color: #050505; background: #fff; }
-.detail-actions button.is-focused { box-shadow: 0 0 0 4px #fff, 0 0 0 7px rgba(255,255,255,.22); transform: scale(1.025); }
+.detail-actions button.is-focused { outline: 4px solid #fff; outline-offset: 3px; transform: scale(1.025); }
 
 .detail-poster {
   position: absolute;
@@ -1362,7 +1360,7 @@ body.avplay-visible #av-player {
   color: #fff;
   background: #1e1e1e;
   cursor: pointer;
-  transition: transform 190ms cubic-bezier(.18, .82, .2, 1), box-shadow 160ms ease;
+  transition: transform 190ms cubic-bezier(.18, .82, .2, 1);
 }
 
 .browse-card-placeholder {
@@ -1373,7 +1371,8 @@ body.avplay-visible #av-player {
 .browse-card.is-focused,
 .browse-card:hover {
   z-index: 3;
-  box-shadow: 0 0 0 4px #fff, 0 0 0 7px rgba(255, 255, 255, .22);
+  outline: 4px solid #fff;
+  outline-offset: 3px;
   transform: scale(1.035);
 }
 
@@ -1501,7 +1500,7 @@ body.avplay-visible #av-player {
   background: rgba(82, 82, 82, .76);
   cursor: pointer;
   text-align: left;
-  transition: color 160ms ease, background 160ms ease, transform 180ms cubic-bezier(.2, .8, .2, 1), box-shadow 160ms ease;
+  transition: color 160ms ease, background 160ms ease, transform 180ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .series-trailer-action > span {
@@ -1525,7 +1524,8 @@ body.avplay-visible #av-player {
 .series-trailer-action:hover {
   color: #050505;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, .28);
+  outline: 3px solid rgba(255, 255, 255, .85);
+  outline-offset: 3px;
   transform: scale(1.025);
 }
 
@@ -1613,7 +1613,7 @@ body.avplay-visible #av-player {
   color: #fff;
   background: #181818;
   cursor: pointer;
-  transition: box-shadow 170ms ease, filter 170ms ease;
+  transition: transform 170ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .relation-card img {
@@ -1621,7 +1621,6 @@ body.avplay-visible #av-player {
   height: 100%;
   object-fit: cover;
   object-position: center 24%;
-  filter: brightness(.72) saturate(.78);
 }
 
 .relation-card > * { pointer-events: none; }
@@ -1629,7 +1628,7 @@ body.avplay-visible #av-player {
 .relation-card-shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(0deg, rgba(0, 0, 0, .96), rgba(0, 0, 0, .08) 76%);
+  background: linear-gradient(0deg, rgba(0, 0, 0, .96), rgba(0, 0, 0, .28) 76%);
 }
 
 .relation-card-copy {
@@ -1663,8 +1662,9 @@ body.avplay-visible #av-player {
 .relation-card.is-focused,
 .relation-card:hover {
   z-index: 2;
-  box-shadow: 0 0 0 3px #fff;
-  filter: brightness(1.08);
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+  transform: scale(1.025);
 }
 
 .series-library {
@@ -1726,7 +1726,7 @@ body.avplay-visible #av-player {
   font-size: .86vw;
   font-weight: 800;
   cursor: pointer;
-  transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+  transition: color 150ms ease, background 150ms ease;
 }
 
 .season-options button.is-selected {
@@ -1737,7 +1737,8 @@ body.avplay-visible #av-player {
 .season-options button.is-focused {
   color: #070707;
   background: #f3f3f3;
-  box-shadow: 0 0 0 3px #fff;
+  outline: 3px solid #fff;
+  outline-offset: 2px;
 }
 
 .series-library-scroll {
@@ -2055,7 +2056,7 @@ body.avplay-visible #av-player {
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: background 160ms ease, box-shadow 160ms ease;
+  transition: background 160ms ease;
 }
 
 .series-episode:hover { background: rgba(255, 255, 255, .08); }
@@ -2063,7 +2064,8 @@ body.avplay-visible #av-player {
 .series-episode.is-focused {
   z-index: 2;
   background: rgba(255, 255, 255, .13);
-  box-shadow: 0 0 0 3px #fff;
+  outline: 3px solid #fff;
+  outline-offset: -3px;
 }
 
 .series-episode.is-current:not(.is-focused) {
@@ -2341,7 +2343,7 @@ body.avplay-visible #av-player {
 .settings-options strong { font-size: 1.05vw; }
 .settings-options small { margin-top: 3px; color: #999; font-size: .82vw; }
 .settings-options > button.is-focused,
-.settings-options > button:hover { color: #050505; background: #fff; border-color: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,.22); }
+.settings-options > button:hover { color: #050505; background: #fff; border-color: #fff; outline: 4px solid rgba(255,255,255,.34); outline-offset: 2px; }
 .settings-options > button.is-focused small,
 .settings-options > button:hover small { color: #555; }
 
@@ -2390,15 +2392,22 @@ body.avplay-visible #av-player {
   background: #06101d;
 }
 
+.pairing-poster-stage {
+  position: absolute;
+  top: -4vh;
+  right: -8vw;
+  bottom: -4vh;
+  left: -8vw;
+  animation: pairing-backdrop-drift 36s linear infinite alternate;
+}
+
 .pairing-poster-track {
   position: absolute;
   left: -12vw;
-  width: 180vw;
+  width: 150vw;
   display: flex;
   gap: 1vw;
   opacity: .64;
-  transform: rotate(-2deg);
-  will-change: transform;
 }
 
 .series-episode.is-spoiler .series-episode-art img {
@@ -2408,12 +2417,10 @@ body.avplay-visible #av-player {
 
 .pairing-poster-track-one {
   top: 7vh;
-  animation: pairing-drift-one 34s linear infinite alternate;
 }
 
 .pairing-poster-track-two {
   bottom: -4vh;
-  animation: pairing-drift-two 38s linear infinite alternate;
 }
 
 .pairing-poster-track img {
@@ -2423,7 +2430,6 @@ body.avplay-visible #av-player {
   min-height: 225px;
   flex: 0 0 auto;
   object-fit: cover;
-  filter: saturate(.7) contrast(1.08);
 }
 
 .pairing-blue-wash {
@@ -2447,9 +2453,8 @@ body.avplay-visible #av-player {
   justify-content: space-between;
   gap: 5vw;
   z-index: 2;
-  background: rgba(8, 13, 20, .9);
+  background: rgba(8, 13, 20, .96);
   border: 1px solid rgba(165, 198, 230, .25);
-  backdrop-filter: blur(10px);
 }
 
 .ready-copy {
@@ -2608,7 +2613,6 @@ body.avplay-visible #av-player {
   gap: .85vw;
   animation: loading-rating-visibility 4.4s cubic-bezier(.2, .75, .25, 1) both;
   pointer-events: none;
-  will-change: opacity, transform;
 }
 
 .loading-rating-badge {
@@ -3188,15 +3192,14 @@ body.avplay-visible #av-player {
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pairing-drift-one {
-  from { transform: translateX(0) rotate(-2deg); }
-  to { transform: translateX(-24vw) rotate(-2deg); }
+@keyframes pairing-backdrop-drift {
+  from { transform: translate3d(0, 0, 0) rotate(-2deg); }
+  to { transform: translate3d(-5vw, 0, 0) rotate(-2deg); }
 }
 
-@keyframes pairing-drift-two {
-  from { transform: translateX(-22vw) rotate(-2deg); }
-  to { transform: translateX(0) rotate(-2deg); }
-}
+html.is-document-hidden *,
+html.is-document-hidden *::before,
+html.is-document-hidden *::after { animation-play-state: paused !important; }
 
 @keyframes receiver-status-pulse {
   from { opacity: .45; transform: scale(.82); }

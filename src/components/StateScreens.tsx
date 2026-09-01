@@ -45,15 +45,20 @@ export function ReadyScreen({
     return () => window.clearInterval(timer)
   }, [expiresAt])
   const remainingLabel = `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`
-  const posterLoop = [...posters.slice(0, 8), ...posters.slice(0, 8)]
+  const posterSource = posters.slice(0, 8)
+  const posterLoop = posterSource.length
+    ? Array.from({ length: 12 }, (_, index) => posterSource[index % posterSource.length])
+    : []
   return (
     <main class="state-screen ready-screen">
       <div class="pairing-backdrop" aria-hidden="true">
-        <div class="pairing-poster-track pairing-poster-track-one">
-          {posterLoop.map((poster, index) => <img src={poster} alt="" key={`${poster}-${index}`} />)}
-        </div>
-        <div class="pairing-poster-track pairing-poster-track-two">
-          {posterLoop.slice().reverse().map((poster, index) => <img src={poster} alt="" key={`reverse-${poster}-${index}`} />)}
+        <div class="pairing-poster-stage">
+          <div class="pairing-poster-track pairing-poster-track-one">
+            {posterLoop.map((poster, index) => <img src={poster} alt="" key={`${poster}-${index}`} />)}
+          </div>
+          <div class="pairing-poster-track pairing-poster-track-two">
+            {posterLoop.slice().reverse().map((poster, index) => <img src={poster} alt="" key={`reverse-${poster}-${index}`} />)}
+          </div>
         </div>
         <div class="pairing-blue-wash" />
       </div>

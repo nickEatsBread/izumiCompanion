@@ -568,11 +568,16 @@ export function App() {
   useEffect(() => {
     const playerController = avplayRef.current
     const onVisibility = () => {
+      document.documentElement.classList.toggle('is-document-hidden', document.hidden)
       if (document.hidden) playerController.suspend()
       else void playerController.restore()
     }
+    document.documentElement.classList.toggle('is-document-hidden', document.hidden)
     document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      document.documentElement.classList.remove('is-document-hidden')
+    }
   }, [])
 
   useEffect(() => {
