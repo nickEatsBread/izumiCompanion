@@ -131,6 +131,17 @@ export interface CastSubtitleTrack {
   contentType?: string
 }
 
+export interface CastTrackPreference {
+  language?: string
+  title?: string
+  codec?: string
+}
+
+export interface CastTrackPreferences {
+  audio?: CastTrackPreference
+  subtitle?: CastTrackPreference
+}
+
 export interface CastLoadRequest {
   sessionId: string
   url: string
@@ -140,6 +151,8 @@ export interface CastLoadRequest {
   positionSeconds: number
   subtitles: CastSubtitleTrack[]
   activeTrackIds: number[]
+  media?: CompanionMedia
+  trackPreferences?: CastTrackPreferences
   subtitleStyle?: SubtitleStyle
   adaptive?: {
     minBitrateKbps?: number
@@ -181,6 +194,10 @@ export interface PlaybackSnapshot {
   durationSeconds?: number
   volume?: number
   muted?: boolean
+  subtitleState?: 'off' | 'loading' | 'ready' | 'error'
+  subtitleTitle?: string
+  activeTrackIds?: number[]
+  subtitleError?: string
   error?: string
   forced?: boolean
 }
@@ -209,6 +226,21 @@ export interface PlaybackTrack {
   index: number
   label: string
   language?: string
+  codec?: string
+}
+
+/** Opaque source identity owned by the linked device. URLs and credentials remain on that device. */
+export interface LinkedDeviceSourceChoice {
+  id: string
+  label: string
+  detail?: string
+}
+
+export interface LinkedDeviceSourceOptions {
+  requestId: string
+  choices: LinkedDeviceSourceChoice[]
+  resolving: boolean
+  error?: string
 }
 
 export interface SubtitleChoice {

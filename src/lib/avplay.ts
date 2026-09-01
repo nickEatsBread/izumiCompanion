@@ -53,6 +53,8 @@ export class AvPlayController {
   private bufferingTimer?: number
   private suspendedPosition = 0
   private resumeAfterRestore = false
+  private lastTrackSignature = ''
+  private trackRefreshTick = 0
 
   get available(): boolean {
     return Boolean(window.webapis?.avplay)
@@ -68,6 +70,8 @@ export class AvPlayController {
     this.events = events
     this.retryCount = 0
     this.recovering = false
+    this.lastTrackSignature = ''
+    this.trackRefreshTick = 0
     const generation = ++this.generation
     events.onState('buffering')
     try {
@@ -108,6 +112,12 @@ export class AvPlayController {
         oncurrentplaytime: (milliseconds) => {
           if (generation !== this.generation) return
           events.onTime(milliseconds / 1000, Math.max(0, player.getDuration() / 1000))
+          // Adaptive manifests on older Samsung firmware often expose AUDIO/TEXT only after
+          // playback begins. Re-sample a few early callbacks and emit only when metadata changes.
+          this.trackRefreshTick += 1
+          if (this.trackRefreshTick === 1 || this.trackRefreshTick === 4 || this.trackRefreshTick === 8) {
+            this.emitTracks(generation)
+          }
         },
         onstreamcompleted: () => generation === this.generation && events.onComplete(),
         onsubtitlechange: (duration, text) => generation === this.generation && events.onSubtitle(text, duration),
@@ -138,13 +148,13 @@ export class AvPlayController {
       })
       if (generation !== this.generation) return
       this.clearBufferingTimeout()
-      events.onTracks(this.tracks())
       let live = false
       try { live = player.getStreamingProperty?.('IS_LIVE') === 'true' } catch { /* Older firmware can omit this property. */ }
       events.onLive?.(live)
       if (!live && positionSeconds > 0) await this.seek(positionSeconds)
       if (generation !== this.generation) return
       player.play()
+      this.emitTracks(generation)
       this.recovering = false
       events.onState('playing')
     } catch (error) {
@@ -269,16 +279,25 @@ export class AvPlayController {
         try { details = JSON.parse(track.extra_info || '{}') as Record<string, unknown> } catch { /* malformed metadata */ }
         const language = String(details.language || details.track_lang || '').trim()
         const channels = Number(details.channels) || 0
-        const codec = String(details.fourCC || '').trim()
+        const codec = String(details.fourCC || details.codec || details.codec_type || '').trim()
         const fallback = track.type === 'AUDIO' ? 'Audio' : 'Subtitles'
         const parts = [language ? language.toUpperCase() : fallback]
         if (track.type === 'AUDIO' && channels) parts.push(`${channels}ch`)
         else if (codec) parts.push(codec)
-        return [{ type: track.type, index: track.index, language, label: parts.join(' · ') }]
+        return [{ type: track.type, index: track.index, language, codec, label: parts.join(' · ') }]
       })
     } catch {
       return []
     }
+  }
+
+  private emitTracks(generation: number): void {
+    if (generation !== this.generation || !this.events) return
+    const tracks = this.tracks()
+    const signature = JSON.stringify(tracks.map((track) => [track.type, track.index, track.language, track.codec, track.label]))
+    if (signature === this.lastTrackSignature) return
+    this.lastTrackSignature = signature
+    this.events.onTracks(tracks)
   }
 
   selectTrack(type: 'AUDIO' | 'TEXT', index: number): void {
@@ -306,5 +325,7 @@ export class AvPlayController {
     this.events = undefined
     this.recovering = false
     this.resumeAfterRestore = false
+    this.lastTrackSignature = ''
+    this.trackRefreshTick = 0
   }
 }

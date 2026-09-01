@@ -102,4 +102,35 @@ describe('AVPlay setup', () => {
     })).rejects.toThrow('could not prepare this HLS stream from video.example')
     expect(player.open).toHaveBeenCalledTimes(2)
   })
+
+  it('refreshes adaptive track metadata after playback starts', async () => {
+    let listener: { oncurrentplaytime(milliseconds: number): void } | undefined
+    let trackInfo: { type: 'AUDIO' | 'TEXT'; index: number; extra_info: string }[] = []
+    const player = {
+      open: vi.fn(), close: vi.fn(), stop: vi.fn(), getState: vi.fn(() => 'READY'),
+      setListener: vi.fn((value) => { listener = value }), setDisplayRect: vi.fn(), setDisplayMethod: vi.fn(),
+      setBufferingParam: vi.fn(), setStreamingProperty: vi.fn(), getStreamingProperty: vi.fn(() => 'false'),
+      prepareAsync: vi.fn((success: () => void) => success()), play: vi.fn(), pause: vi.fn(),
+      seekTo: vi.fn((_position: number, success: () => void) => success()),
+      getDuration: vi.fn(() => 60_000), getCurrentTime: vi.fn(() => 0),
+      getTotalTrackInfo: vi.fn(() => trackInfo), setSelectTrack: vi.fn(),
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player } } })
+    const onTracks = vi.fn()
+    await new AvPlayController().load({
+      sessionId: 'late-tracks', url: 'https://example.test/master.mpd', title: 'Tracks',
+      contentType: 'application/dash+xml', positionSeconds: 0, subtitles: [], activeTrackIds: [],
+    }, {
+      onBuffering: vi.fn(), onState: vi.fn(), onTime: vi.fn(), onTracks,
+      onSubtitle: vi.fn(), onComplete: vi.fn(), onError: vi.fn(),
+    })
+    expect(onTracks).toHaveBeenLastCalledWith([])
+
+    trackInfo = [{ type: 'AUDIO', index: 4, extra_info: JSON.stringify({ language: 'jpn', fourCC: 'AAC', channels: 2 }) }]
+    listener?.oncurrentplaytime(250)
+
+    expect(onTracks).toHaveBeenLastCalledWith([
+      { type: 'AUDIO', index: 4, language: 'jpn', codec: 'AAC', label: 'JPN · 2ch' },
+    ])
+  })
 })
