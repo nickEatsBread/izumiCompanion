@@ -22,12 +22,39 @@ if (Test-Path -LiteralPath $resolvedOutput) {
   Remove-Item -LiteralPath $resolvedOutput -Force
 }
 
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-  $distPath,
+$archive = [System.IO.Compression.ZipFile]::Open(
   $resolvedOutput,
-  [System.IO.Compression.CompressionLevel]::Optimal,
-  $false
+  [System.IO.Compression.ZipArchiveMode]::Create
 )
+
+try {
+  Get-ChildItem -LiteralPath $distPath -Recurse -File |
+    Sort-Object FullName |
+    ForEach-Object {
+      $entryName = $_.FullName.Substring($distPath.Length).TrimStart('\', '/').Replace('\', '/')
+      [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $archive,
+        $_.FullName,
+        $entryName,
+        [System.IO.Compression.CompressionLevel]::Optimal
+      ) | Out-Null
+    }
+}
+finally {
+  $archive.Dispose()
+}
+
+$verificationArchive = [System.IO.Compression.ZipFile]::OpenRead($resolvedOutput)
+try {
+  $invalidEntries = @($verificationArchive.Entries | Where-Object { $_.FullName.Contains('\') })
+  if ($invalidEntries.Count -gt 0) {
+    throw "Widget contains invalid Windows-style entry paths: $($invalidEntries.FullName -join ', ')"
+  }
+}
+finally {
+  $verificationArchive.Dispose()
+}
 
 Write-Output "Created $resolvedOutput"

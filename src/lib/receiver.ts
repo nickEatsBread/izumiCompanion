@@ -293,8 +293,10 @@ export class CompanionReceiver {
     return this.pairing
   }
 
-  async connect(): Promise<boolean> {
-    if (!window.msf?.local) return false
+  async connect(): Promise<void> {
+    if (!window.msf?.local) {
+      throw new Error('The Samsung Smart View receiver library did not load.')
+    }
     const service = await new Promise<SamsungSmartViewService>((resolve, reject) => {
       window.msf!.local((error, value) => error || !value ? reject(error || new Error('Smart View is unavailable')) : resolve(value))
     })
@@ -354,13 +356,12 @@ export class CompanionReceiver {
       this.sendChallenge(target)
     })
     await new Promise<void>((resolve, reject) => {
-      this.channel!.connect({ name: 'Izumi Companion' }, (error) => error ? reject(error) : resolve())
+      this.channel!.connect({ name: 'izumi companion' }, (error) => error ? reject(error) : resolve())
     })
     this.connected = true
     this.events.onConnection(true)
     this.sendChallenge('broadcast')
     this.pairingTimer = window.setInterval(() => this.sendChallenge('broadcast'), 10_000)
-    return true
   }
 
   requestRefresh(): void {
