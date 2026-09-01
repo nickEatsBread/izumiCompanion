@@ -31,7 +31,7 @@ existing TV pairing/storage upgrade path.
 
 ## Deploying to the development TV
 
-- Last-known TV address: `192.0.2.30`.
+- Last-known TV address: `192.0.2.10`.
 - The TV's Developer Mode Host PC IP must match this workstation's current Wi-Fi IPv4 address
   (`Get-NetIPAddress -InterfaceAlias 'Wi-Fi' -AddressFamily IPv4`). The last-known value is
   `192.0.2.20`; do not assume it is permanent.
@@ -45,7 +45,7 @@ After packaging, install with the tested local installer helper:
 
 ```powershell
 node ..\izumi-companion\installer\src\install-only.cjs `
-  --ip 192.0.2.30 `
+  --ip 192.0.2.10 `
   --package "$PWD\artifacts\izumi-companion.wgt" `
   --certificate-dir "$env:APPDATA\izumi-tv-installer\samsung-certificates"
 ```

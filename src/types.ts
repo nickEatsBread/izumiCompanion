@@ -241,13 +241,45 @@ export type FocusLocation =
   | { zone: 'setting'; index: number }
   | { zone: 'detail'; index: number }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object'
+}
+
+function isCompanionMedia(value: unknown): value is CompanionMedia {
+  if (!isRecord(value) || typeof value.title !== 'string' || !isRecord(value.ref)) return false
+  return typeof value.ref.provider === 'string'
+    && typeof value.ref.id === 'string'
+    && typeof value.ref.type === 'string'
+}
+
 export function isCompanionSnapshot(value: unknown): value is CompanionHomeSnapshot {
-  if (!value || typeof value !== 'object') return false
-  const snapshot = value as Partial<CompanionHomeSnapshot>
-  return snapshot.app === 'izumi'
-    && snapshot.kind === 'companion-home'
-    && snapshot.version === 1
-    && typeof snapshot.revision === 'string'
-    && typeof snapshot.generatedAt === 'number'
-    && Array.isArray(snapshot.rows)
+  if (!isRecord(value) || !isRecord(value.catalog) || !Array.isArray(value.rows)) return false
+  const catalogOptions = value.catalog.options
+  if (catalogOptions !== undefined && (!Array.isArray(catalogOptions) || !catalogOptions.every((option) => (
+    isRecord(option) && typeof option.screen === 'string' && typeof option.label === 'string'
+  )))) return false
+  const rowsAreValid = value.rows.every((row) => (
+    isRecord(row)
+    && typeof row.id === 'string'
+    && typeof row.title === 'string'
+    && (row.kind === 'continue' || row.kind === 'catalog')
+    && Array.isArray(row.items)
+    && row.items.every(isCompanionMedia)
+  ))
+  const views = isRecord(value.views) ? value.views : null
+  const viewsAreValid = value.views === undefined || (views !== null && (
+    ['search', 'trending', 'series', 'movies', 'myList'] as const
+  ).every((key) => views[key] === undefined || (
+    Array.isArray(views[key]) && views[key].every(isCompanionMedia)
+  )))
+  return value.app === 'izumi'
+    && value.kind === 'companion-home'
+    && value.version === 1
+    && typeof value.revision === 'string'
+    && typeof value.generatedAt === 'number'
+    && typeof value.catalog.screen === 'string'
+    && typeof value.catalog.label === 'string'
+    && (value.hero === undefined || isCompanionMedia(value.hero))
+    && rowsAreValid
+    && viewsAreValid
 }

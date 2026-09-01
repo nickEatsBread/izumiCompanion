@@ -111,8 +111,10 @@ function storedCloudflareTransport(): CompanionCloudflareTransport | null {
 function storedSnapshot(): CompanionHomeSnapshot | null {
   try {
     const value = JSON.parse(localStorage.getItem(SNAPSHOT_STORAGE_KEY) || 'null')
-    return isCompanionSnapshot(value) ? value : null
-  } catch { return null }
+    if (isCompanionSnapshot(value)) return value
+  } catch { /* Invalid upgrade data is removed below. */ }
+  localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
+  return null
 }
 
 function storeSnapshot(snapshot: CompanionHomeSnapshot): void {

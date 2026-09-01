@@ -309,4 +309,21 @@ describe('companion play routing', () => {
     await expect(pending).resolves.toBe('open-client')
     expect(FakeXmlHttpRequest.sent).toHaveLength(0)
   })
+
+  it('discards an incompatible cached catalog before startup renders it', () => {
+    storage.setItem('izumi.companion.snapshot', JSON.stringify({
+      app: 'izumi',
+      kind: 'companion-home',
+      version: 1,
+      revision: 'legacy',
+      generatedAt: 1,
+      rows: [],
+    }))
+    const receiverEvents = events()
+
+    new CompanionReceiver(receiverEvents)
+
+    expect(storage.getItem('izumi.companion.snapshot')).toBeNull()
+    expect(receiverEvents.onSnapshot).not.toHaveBeenCalled()
+  })
 })

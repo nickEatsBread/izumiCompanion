@@ -10,7 +10,22 @@
   </head>
   <body>
     <object id="av-player" type="application/avplayer"></object>
-    <div id="app"></div>
+    <div id="app">
+      <main id="launch-fallback" role="status" style="width:100%;height:100%;padding:9vh 8vw;background:#07111e;color:#f6f6f6;font-family:Arial,sans-serif;box-sizing:border-box">
+        <p style="margin:0 0 18px;color:#7dd3fc;font-size:20px;font-weight:700;letter-spacing:3px">IZUMI COMPANION</p>
+        <h1 style="margin:0 0 22px;font-size:54px;line-height:1.05">Starting TV client…</h1>
+        <p id="launch-fallback-detail" style="margin:0;color:#d4d9df;font-size:26px;line-height:1.45">Preparing your paired library and receiver.</p>
+      </main>
+    </div>
+    <script>
+      (function () {
+        window.setTimeout(function () {
+          var fallback = document.getElementById('launch-fallback')
+          var detail = document.getElementById('launch-fallback-detail')
+          if (fallback && detail) detail.textContent = 'The application bundle did not start. Reinstall or update izumi companion.'
+        }, 12000)
+      }())
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
