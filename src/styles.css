@@ -95,17 +95,18 @@ body.avplay-visible #av-player {
   height: 100vh;
   min-height: 100%;
   z-index: 20;
-  width: clamp(58px, 4.25vw, 82px);
+  width: clamp(72px, 5vw, 96px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   overflow: visible;
   background: linear-gradient(90deg, #030303 0%, rgba(3, 3, 3, .97) 74%, rgba(3, 3, 3, 0) 100%);
-  transition: width 210ms cubic-bezier(.2, .75, .2, 1), background-color 160ms ease;
+  transition: none;
 }
 
 .nav-rail.is-open {
-  width: clamp(218px, 18.3vw, 352px);
+  width: clamp(360px, 22vw, 440px);
   background: #2d2d2d;
 }
 
@@ -116,7 +117,7 @@ body.avplay-visible #av-player {
   top: 0;
   right: 0;
   bottom: 0;
-  left: clamp(218px, 18.3vw, 352px);
+  left: clamp(360px, 22vw, 440px);
   background: rgba(0, 0, 0, .72);
   pointer-events: none;
 }
@@ -139,7 +140,7 @@ body.avplay-visible #av-player {
   color: #fff;
   background: transparent;
   cursor: pointer;
-  transition: width 210ms cubic-bezier(.2, .75, .2, 1), background-color 130ms ease;
+  transition: none;
 }
 
 .nav-mark-button.is-focused { background: rgba(255, 255, 255, .12); }
@@ -181,10 +182,12 @@ body.avplay-visible #av-player {
 
 .nav-items {
   width: 100%;
-  margin: auto 0;
+  margin: 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: center;
   gap: 0;
 }
 
@@ -206,7 +209,7 @@ body.avplay-visible #av-player {
   color: #b6b6b6;
   background: transparent;
   cursor: pointer;
-  transition: width 210ms cubic-bezier(.2, .75, .2, 1), color 130ms ease, background-color 130ms ease;
+  transition: none;
 }
 
 .nav-item-glyph {
@@ -285,7 +288,7 @@ body.avplay-visible #av-player {
   opacity: 0;
   pointer-events: none;
   transform: translateX(-8px);
-  transition: opacity 150ms ease 50ms, transform 200ms cubic-bezier(.2, .75, .2, 1);
+  transition: none;
 }
 
 .nav-rail.is-open .nav-item-label {
@@ -544,9 +547,7 @@ body.avplay-visible #av-player {
   height: 100%;
   object-fit: cover;
   object-position: center 28%;
-  filter: saturate(.88) contrast(1.03) brightness(.82);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, .28) 12%, #000 34%, #000 100%);
-  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, .28) 12%, #000 34%, #000 100%);
+  filter: none;
 }
 
 .hero-art-stage {
@@ -647,6 +648,11 @@ body.avplay-visible #av-player {
   font-size: 1.14vw;
   font-weight: 600;
   line-height: 1.42;
+  display: -webkit-box;
+  max-height: 4.86vw;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .hero-resume {
@@ -781,13 +787,13 @@ body.avplay-visible #av-player {
 .media-row {
   margin: 0 0 2.6vh;
   opacity: 1;
-  filter: saturate(1);
-  transition: opacity 240ms ease, filter 260ms ease;
+  filter: none;
+  transition: none;
 }
 
 .media-row.is-upcoming {
-  opacity: .46;
-  filter: saturate(.62);
+  opacity: 1;
+  filter: none;
 }
 
 .media-row h2 {
@@ -806,6 +812,34 @@ body.avplay-visible #av-player {
   overflow-y: visible;
 }
 
+.media-strip.is-placeholder {
+  min-height: calc(20.95vw + 22px);
+}
+
+.continue-row .media-strip.is-placeholder {
+  min-height: calc(9.56vw + 22px);
+}
+
+.media-card-slot {
+  width: 14vw;
+  height: 20.95vw;
+  min-width: 147px;
+  min-height: 220px;
+  flex: 0 0 auto;
+}
+
+.media-card-slot.continue-slot {
+  width: 17vw;
+  height: 9.56vw;
+  min-width: 232px;
+  min-height: 131px;
+}
+
+.media-card-slot.top-ten-slot {
+  width: 17.3vw;
+  min-width: 260px;
+}
+
 .media-card {
   position: relative;
   width: 14vw;
@@ -821,14 +855,15 @@ body.avplay-visible #av-player {
   background: #222;
   cursor: pointer;
   transform-origin: center;
-  transition: transform 190ms cubic-bezier(.18, .82, .2, 1), opacity 150ms ease;
+  transition: none;
 }
 
 .media-card.is-focused,
 .media-card:hover {
   z-index: 3;
-  box-shadow: 0 0 0 2px #fff;
-  transform: scale(1.025);
+  outline: 4px solid #fff;
+  outline-offset: -4px;
+  transform: none;
 }
 
 .top-ten-card {
@@ -1132,6 +1167,11 @@ body.avplay-visible #av-player {
   font-size: 1.13vw;
   font-weight: 600;
   line-height: 1.5;
+  display: -webkit-box;
+  max-height: 6.78vw;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
 }
 
 .detail-actions {
@@ -1404,6 +1444,11 @@ body.avplay-visible #av-player {
   font-weight: 600;
   line-height: 1.48;
   text-wrap: pretty;
+  display: -webkit-box;
+  max-height: 6.75vw;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
 }
 
 .series-trailer-action {
@@ -3324,45 +3369,10 @@ body.avplay-visible #av-player {
 .series-episode-art { flex: 0 0 12vw; }
 .series-episode-copy { flex: 1 1 auto; min-width: 0; }
 
-/* Samsung's 2018 Chromium engine predates clamp() and the inset shorthand. Explicit fallbacks
- * keep the physical-TV layout at the same 10-foot scale as the browser preview. */
+/* The build inserts the middle clamp()/min()/max() value immediately before every modern
+ * declaration. This block only removes expensive motion on Samsung's older browser; repeating
+ * pixel caps here made the physical rail and typography smaller than the 10-foot layout. */
 @supports not (width: clamp(1px, 2px, 3px)) {
-  .nav-rail { width: 4.25vw; min-width: 58px; max-width: 82px; }
-  .nav-rail.is-open { width: 18.3vw; min-width: 218px; max-width: 352px; }
-  .nav-rail.is-open::before { left: 18.3vw; }
-  .nav-mark-button { width: 3vw; height: 8vh; min-width: 44px; max-width: 58px; min-height: 52px; max-height: 72px; }
-  .nav-mark { width: 1.8vw; height: 1.8vw; min-width: 25px; max-width: 34px; min-height: 25px; max-height: 34px; }
-  .nav-mark-button > span { left: 5.35vw; max-width: calc(100% - 6.2vw); font-size: 1.02vw; }
-  .nav-rail.is-open .nav-mark-button,
-  .nav-rail.is-open .nav-item { padding-left: 2vw; }
-  .nav-item { width: 3vw; height: 7.5vh; min-width: 44px; max-width: 58px; min-height: 50px; max-height: 68px; margin-left: .625vw; }
-  .nav-item-glyph { width: 1.3vw; height: 1.3vw; min-width: 20px; max-width: 25px; min-height: 20px; max-height: 25px; }
-  .nav-item-glyph::after { width: 1.25vw; min-width: 18px; max-width: 24px; }
-  .nav-item-label { left: 5.35vw; max-width: calc(100% - 6.2vw); font-size: 1.12vw; }
-  .catalog-picker > p { font-size: .72vw; }
-  .catalog-picker > h2 { font-size: 1.65vw; }
-  .catalog-picker-options > button { font-size: .96vw; }
-  .catalog-picker-options > button small,
-  .catalog-picker > small { font-size: .72vw; }
-  .hero-resume > p strong { font-size: .78vw; }
-  .hero-resume > p span { font-size: .96vw; }
-  .top-ten-rank { width: 7.7vw; font-size: 14.8vw; }
-  .media-card.top-ten-card img,
-  .media-card.top-ten-card .media-card-fade { width: 10.9vw; }
-  .media-card.top-ten-card .media-card-title { width: 9.5vw; }
-  .episode-card-copy > small { font-size: .68vw; }
-  .episode-card-copy > strong { font-size: .82vw; }
-  .episode-card-meta { font-size: .65vw; }
-  .series-trailer-center-control { width: 6.2vw; }
-  .loading-rating-badge { font-size: 1.35vw; }
-  .loading-rating-copy small { font-size: .72vw; }
-  .loading-rating-copy strong { font-size: .92vw; }
-  .player-actions > button > svg { width: 1.35vw; height: 1.35vw; min-width: 23px; min-height: 23px; }
-  .player-actions strong { font-size: .95vw; }
-  .player-actions small { font-size: .7vw; }
-  .player-menu > p { font-size: 1.18vw; }
-  .player-menu-options button { font-size: 1vw; }
-  .player-menu-options small { font-size: .76vw; }
   .hero-art-stage,
   .hero-copy,
   .media-row,
@@ -3372,7 +3382,7 @@ body.avplay-visible #av-player {
   .media-card,
   .browse-card,
   .nav-item,
-  .nav-rail { transition-duration: 90ms; }
+  .nav-rail { transition: none; }
 }
 
 @supports not (inset: 0) {

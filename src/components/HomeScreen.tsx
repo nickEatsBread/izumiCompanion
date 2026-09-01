@@ -64,6 +64,8 @@ export function HomeScreen({
     ? `${hero.placement.position ? `#${hero.placement.position} in ` : ''}${hero.placement.label}`
     : snapshot.catalog.label
   const heroKey = `${hero.ref.provider}-${hero.ref.id}`
+  const activeRow = focus.zone === 'row' ? focus.row : 0
+  const horizontalCenter = focus.zone === 'row' ? focus.index : 0
 
   return (
     <main class="home-screen">
@@ -160,13 +162,23 @@ export function HomeScreen({
 
       <div class="catalog-rows">
         {snapshot.rows.map((row, rowIndex) => {
-          const activeRow = focus.zone === 'row' ? focus.row : 0
           const topTenRow = row.presentation === 'top-10'
+          const rowVisible = Math.abs(rowIndex - activeRow) <= 1
           return (
           <section class={`media-row${row.kind === 'continue' ? ' continue-row' : ''}${topTenRow ? ' top-ten-row' : ''}${rowIndex > activeRow ? ' is-upcoming' : ''}`} key={row.id} aria-labelledby={`row-title-${row.id}`}>
             <h2 id={`row-title-${row.id}`}>{row.title}</h2>
-            <div class="media-strip">
+            {!rowVisible
+              ? <div class="media-strip is-placeholder" aria-hidden="true" />
+              : <div class="media-strip">
               {row.items.map((item, index) => {
+                const itemVisible = Math.abs(index - horizontalCenter) <= 6
+                if (!itemVisible) return (
+                  <span
+                    class={`media-card-slot${row.kind === 'continue' ? ' continue-slot' : ''}${topTenRow ? ' top-ten-slot' : ''}`}
+                    aria-hidden="true"
+                    key={`${item.ref.provider}-${item.ref.id}`}
+                  />
+                )
                 const focused = focus.zone === 'row' && focus.row === rowIndex && focus.index === index
                 const episodeCard = row.kind === 'continue'
                 const cardProgress = episodeCard ? item.episodeProgress : item.progress
@@ -209,7 +221,7 @@ export function HomeScreen({
                   </button>
                 )
               })}
-            </div>
+            </div>}
           </section>
           )
         })}
