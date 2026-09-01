@@ -11,7 +11,7 @@ import {
   Volume2,
 } from 'lucide-preact'
 import { useEffect, useState } from 'preact/hooks'
-import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
+import companionLockup from '../../brand/png/izumi-companion-lockup-dark-936.png'
 import type {
   PlaybackState,
   PlaybackSourceChoice,
@@ -45,7 +45,7 @@ export function ReadyScreen({
     return () => window.clearInterval(timer)
   }, [expiresAt])
   const remainingLabel = `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`
-  const posterLoop = [...posters, ...posters]
+  const posterLoop = [...posters.slice(0, 8), ...posters.slice(0, 8)]
   return (
     <main class="state-screen ready-screen">
       <div class="pairing-backdrop" aria-hidden="true">
@@ -57,24 +57,24 @@ export function ReadyScreen({
         </div>
         <div class="pairing-blue-wash" />
       </div>
-      <img class="state-brand" src={wordmark} alt="izumi" />
+      <img class="state-brand" src={companionLockup} alt="izumi companion" />
       <div class="ready-panel">
         <div class="ready-copy">
           <MonitorUp size={46} strokeWidth={1.7} aria-hidden="true" />
           <h1>Pair this TV</h1>
-          <p>Scan the QR code in izumi. Check that the code shown on your device matches this TV.</p>
+          <p>{connected
+            ? 'Scan the QR code in izumi. Check that the code shown on your device matches this TV.'
+            : 'Starting the secure Samsung TV receiver…'}</p>
           <div class="pairing-code-block">
             <span>PAIRING CODE</span>
             <strong>{pairingCode || '------'}</strong>
             {expiresAt && <small>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</small>}
           </div>
-          {connected && (
-            <span class="connection-pill online">
-              <span /> Receiver online · {address}
-            </span>
-          )}
+          <span class={`connection-pill ${connected ? 'online' : 'starting'}`}>
+            <span /> {connected ? `Receiver online · ${address}` : 'Receiver starting'}
+          </span>
         </div>
-        {qrCode && (
+        {connected && qrCode && (
           <div class="qr-panel">
             <div class="qr-code-shell">
               <img class="qr-code" src={qrCode} alt="Pair izumi with this TV" />

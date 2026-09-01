@@ -2306,14 +2306,17 @@ body.avplay-visible #av-player {
   gap: 1vw;
   opacity: .64;
   transform: rotate(-2deg);
+  will-change: transform;
 }
 
 .pairing-poster-track-one {
   top: 7vh;
+  animation: pairing-drift-one 34s linear infinite alternate;
 }
 
 .pairing-poster-track-two {
   bottom: -4vh;
+  animation: pairing-drift-two 38s linear infinite alternate;
 }
 
 .pairing-poster-track img {
@@ -2364,8 +2367,9 @@ body.avplay-visible #av-player {
   position: absolute;
   top: 6vh;
   left: 6vw;
-  width: 8vw;
-  min-width: 120px;
+  width: 13.5vw;
+  min-width: 210px;
+  max-width: 280px;
   z-index: 2;
 }
 
@@ -2435,6 +2439,11 @@ body.avplay-visible #av-player {
   background: #55c97a;
 }
 
+.connection-pill.starting > span {
+  background: #e3b341;
+  animation: receiver-status-pulse 1.2s ease-in-out infinite alternate;
+}
+
 .qr-panel {
   padding: 18px;
   display: flex;
@@ -2477,16 +2486,16 @@ body.avplay-visible #av-player {
 
 .loading-title-lockup {
   position: absolute;
-  top: 6.2vh;
-  left: 5.2vw;
+  top: 67px;
+  left: 100px;
   z-index: 2;
-  max-width: 58vw;
+  max-width: 1110px;
 }
 
 .loading-title-lockup h1 {
   margin: 0;
   color: #f7f7f7;
-  font-size: clamp(30px, 2.35vw, 48px);
+  font-size: 45px;
   font-weight: 800;
   line-height: 1.08;
   letter-spacing: -.035em;
@@ -2494,8 +2503,8 @@ body.avplay-visible #av-player {
 
 .loading-rating {
   position: absolute;
-  top: 5.8vh;
-  right: 5.2vw;
+  top: 62px;
+  right: 100px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -3090,6 +3099,11 @@ body.avplay-visible #av-player {
 @keyframes pairing-drift-two {
   from { transform: translateX(-22vw) rotate(-2deg); }
   to { transform: translateX(0) rotate(-2deg); }
+}
+
+@keyframes receiver-status-pulse {
+  from { opacity: .45; transform: scale(.82); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes player-menu-enter {
