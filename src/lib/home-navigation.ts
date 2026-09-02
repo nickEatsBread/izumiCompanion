@@ -1,0 +1,40 @@
+import type { CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
+
+function mediaKey(media: CompanionMedia): string {
+  return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
+}
+
+function rankedRow(row: CompanionHomeRow): boolean {
+  return row.presentation === 'top-10' || /trending|popular|top\s*10|top rated/i.test(`${row.id} ${row.title}`)
+}
+
+/** Continue Watching is always the first downward destination; the strongest ranked row follows. */
+export function orderedHomeRows(rows: CompanionHomeRow[]): CompanionHomeRow[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const priority = (row: CompanionHomeRow) => row.kind === 'continue' ? 0 : rankedRow(row) ? 1 : 2
+      return priority(left.row) - priority(right.row) || left.index - right.index
+    })
+    .map(({ row }) => row)
+}
+
+/** Build a small featured rail from provider-authored hero/trending data without extending protocol v1. */
+export function homeHeroItems(snapshot: CompanionHomeSnapshot, limit = 5): CompanionMedia[] {
+  const ranked = snapshot.views?.trending?.length
+    ? snapshot.views.trending
+    : snapshot.rows.filter(rankedRow).reduce<CompanionMedia[]>((items, row) => items.concat(row.items), [])
+  const candidates = [snapshot.hero, ...ranked].filter((item): item is CompanionMedia => Boolean(item))
+  const seen = new Set<string>()
+  return candidates.filter((item) => {
+    const key = mediaKey(item)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, Math.max(1, limit))
+}
+
+export function wrappedHeroIndex(current: number, direction: -1 | 1, length: number): number {
+  if (length <= 1) return 0
+  return (Math.max(0, current) + direction + length) % length
+}

@@ -61,6 +61,10 @@ interface SamsungSmartViewService {
 }
 
 interface Window {
+  __IZUMI_TV_PROFILE__?: {
+    read(): import('./lib/tv-performance').TvPerformanceEntry[]
+    clear(): void
+  }
   webapis?: {
     avplay?: SamsungAvPlay
     network?: { getIp(): string }
