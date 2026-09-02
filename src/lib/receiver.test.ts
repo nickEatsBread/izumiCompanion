@@ -230,6 +230,47 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
+  it('loads AniList episode details from the private Worker when the paired client is unavailable', async () => {
+    FakeXmlHttpRequest.responder = () => ({
+      status: 200,
+      body: {
+        ok: true,
+        details: {
+          seasonEpisodeCounts: [2],
+          seasonLabels: ['Season 1'],
+          episodes: [
+            { season: 1, episode: 1, title: 'The Journey’s End', image: 'https://img.example/1.jpg', runtimeMinutes: 25 },
+            { season: 1, episode: 2, title: 'It Didn’t Have to Be Magic', image: 'https://img.example/2.jpg', runtimeMinutes: 24 },
+          ],
+        },
+      },
+    })
+    const aniListMedia: CompanionMedia = {
+      ref: { provider: 'anilist', type: 'anime', id: '154587' },
+      title: 'Frieren',
+      episode: 2,
+      episodeProgress: .4,
+    }
+
+    const details = await new CompanionReceiver(events()).requestDetails(aniListMedia)
+
+    expect(details).toMatchObject({
+      seasonEpisodeCounts: [2],
+      seasonLabels: ['Season 1'],
+      episodes: [
+        { season: 1, episode: 1, title: 'The Journey’s End', watched: true, progress: 1 },
+        { season: 1, episode: 2, title: 'It Didn’t Have to Be Magic', watched: false, progress: .4 },
+      ],
+    })
+    expect(FakeXmlHttpRequest.sent[0]).toMatchObject({
+      method: 'POST',
+      url: 'https://private-worker.example/v1/companion/pairings/private_pairing_1/details',
+      timeout: 6_000,
+      headers: { Authorization: `Bearer ${transport.tvToken}` },
+      body: aniListMedia,
+    })
+  })
+
   it('accepts a credential-authenticated Worker route for an already-paired TV', async () => {
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {

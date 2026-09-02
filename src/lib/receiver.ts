@@ -205,6 +205,55 @@ function validCompanionMedia(value: unknown): value is CompanionMedia {
     && typeof media.ref?.id === 'string'
 }
 
+function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedia | null {
+  if (!value || typeof value !== 'object') return null
+  const input = value as Record<string, unknown>
+  const details = input.details && typeof input.details === 'object' ? input.details as Record<string, unknown> : null
+  if (!details || !Array.isArray(details.episodes)) return null
+  const watchedThrough = Math.max(0, (media.episode ?? 1) - 1)
+  let absolute = 0
+  const hideSpoilers = storedSnapshot()?.spoilersHidden === true
+  const episodes = details.episodes.slice(0, 2_000).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const episode = entry as Record<string, unknown>
+    const seasonNumber = Number(episode.season)
+    const episodeNumber = Number(episode.episode)
+    if (!Number.isInteger(seasonNumber) || seasonNumber < 0
+      || !Number.isInteger(episodeNumber) || episodeNumber < 1) return []
+    absolute += 1
+    const watched = absolute <= watchedThrough
+    const runtime = Number(episode.runtimeMinutes)
+    return [{
+      season: seasonNumber,
+      episode: episodeNumber,
+      title: typeof episode.title === 'string' ? episode.title.slice(0, 300) : undefined,
+      description: typeof episode.description === 'string' ? episode.description.slice(0, 1_500) : undefined,
+      image: validUrl(episode.image) ? episode.image : undefined,
+      runtimeMinutes: Number.isFinite(runtime) && runtime > 0 ? Math.max(1, Math.round(runtime)) : undefined,
+      progress: watched ? 1 : absolute === media.episode ? media.episodeProgress : undefined,
+      watched,
+      spoiler: hideSpoilers && !watched,
+    }]
+  })
+  if (!episodes.length) return null
+  const suppliedCounts = Array.isArray(details.seasonEpisodeCounts)
+    ? details.seasonEpisodeCounts.slice(0, 100).map(Number).filter((count) => Number.isInteger(count) && count > 0)
+    : []
+  const derivedCounts = new Map<number, number>()
+  episodes.forEach((episode) => derivedCounts.set(episode.season, Math.max(derivedCounts.get(episode.season) ?? 0, episode.episode)))
+  const labels = Array.isArray(details.seasonLabels)
+    ? details.seasonLabels.slice(0, suppliedCounts.length).map((label) => typeof label === 'string' ? label.slice(0, 80) : '')
+    : undefined
+  return {
+    ...media,
+    episodes,
+    seasonEpisodeCounts: suppliedCounts.length
+      ? suppliedCounts
+      : [...derivedCounts.entries()].sort(([left], [right]) => left - right).map(([, count]) => count),
+    seasonLabels: labels?.every(Boolean) ? labels : undefined,
+  }
+}
+
 function linkedDeviceSourceOptions(value: unknown): LinkedDeviceSourceOptions | undefined {
   const message = parseMessage(value)
   if (!message || typeof message !== 'object') return undefined
@@ -455,8 +504,21 @@ export class CompanionReceiver {
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
   }
 
-  requestDetails(media: CompanionMedia): Promise<CompanionMedia | null> {
-    if (!this.credential || !this.connected) return Promise.resolve(null)
+  async requestDetails(media: CompanionMedia): Promise<CompanionMedia | null> {
+    if (this.cloudflare && media.ref.provider === 'anilist') {
+      try {
+        const result = await workerRequest(
+          this.cloudflare,
+          `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/details`,
+          'POST',
+          media,
+          6_000,
+        )
+        const details = cloudMediaDetails(result, media)
+        if (details) return details
+      } catch { /* The open paired client remains the richer fallback for unsupported/offline metadata. */ }
+    }
+    if (!this.credential || !this.connected) return null
     const requestId = randomHex(12)
     return new Promise((resolve) => {
       const finish = (details: CompanionMedia | null) => {
