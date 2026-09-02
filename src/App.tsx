@@ -28,7 +28,7 @@ import { homeHeroItems, orderedHomeRows, wrappedHeroIndex } from './lib/home-nav
 import { registerRemoteKeys, remoteAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
-import { preferredTrack } from './lib/track-selection'
+import { preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import type {
   CastControlRequest,
@@ -240,6 +240,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const catalogRequestRef = useRef<{ screen: string; label: string; timer: number; previousIndex: number }>()
   const externalSubtitlesRef = useRef(new ExternalSubtitleController())
   const activeSubtitleRef = useRef(activeSubtitle)
+  const activeSubtitleLabelRef = useRef('')
+  const subtitleStateRef = useRef<'off' | 'loading' | 'ready' | 'error'>('off')
+  const subtitleErrorRef = useRef('')
+  const subtitleLoadGenerationRef = useRef(0)
   const appliedAudioPreferenceRef = useRef('')
   const appliedSubtitlePreferenceRef = useRef('')
   const subtitlePreferencesRef = useRef(subtitlePreferences)
@@ -316,10 +320,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       positionSeconds: view.position,
       durationSeconds: view.duration || undefined,
       ...audioSnapshot(),
-      subtitleState: subtitleId === 'off' ? 'off' : 'ready',
-      subtitleTitle: subtitleId === 'off' ? undefined : subtitleId,
+      subtitleState: subtitleStateRef.current,
+      subtitleTitle: subtitleId === 'off' ? undefined : activeSubtitleLabelRef.current,
       activeTrackIds: Number.isFinite(externalTrackId) ? [externalTrackId!] : [],
       error,
+      subtitleError: subtitleErrorRef.current || undefined,
       forced,
     })
   }
@@ -334,7 +339,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const selectSubtitleChoice = (choice: SubtitleChoice) => {
     activeSubtitleRef.current = choice.id
+    const loadGeneration = ++subtitleLoadGenerationRef.current
     setActiveSubtitle(choice.id)
+    activeSubtitleLabelRef.current = choice.kind === 'off' ? '' : choice.label
+    subtitleStateRef.current = choice.kind === 'off' ? 'off' : choice.kind === 'external' ? 'loading' : 'ready'
+    subtitleErrorRef.current = ''
     setSubtitleText('')
     externalSubtitlesRef.current.clear()
     if (choice.kind === 'off') avplayRef.current.hideSubtitles(true)
@@ -346,8 +355,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (showPreviewTools && !activeLoadRef.current) setSubtitleText('Even the smallest journey can change the world.')
     } else if (choice.kind === 'external' && choice.url) {
       avplayRef.current.hideSubtitles(true)
-      void externalSubtitlesRef.current.load(choice.url, choice.contentType).catch(() => {
-        setNotice('That subtitle file could not be loaded on this TV.')
+      void externalSubtitlesRef.current.load(choice.url, choice.contentType).then(() => {
+        if (subtitleLoadGenerationRef.current !== loadGeneration) return
+        subtitleStateRef.current = 'ready'
+        publishStatus(true)
+      }).catch((error) => {
+        if (subtitleLoadGenerationRef.current !== loadGeneration) return
+        const message = error instanceof Error ? error.message : 'That subtitle file could not be loaded on this TV.'
+        subtitleStateRef.current = 'error'
+        subtitleErrorRef.current = message
+        setNotice(message)
+        publishStatus(true)
       })
     }
     setPlayerMenu(null)
@@ -409,6 +427,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     externalSubtitlesRef.current.clear()
     setSubtitleText('')
     setPlayerMenu(null)
+    subtitleLoadGenerationRef.current += 1
+    activeSubtitleRef.current = 'off'
+    activeSubtitleLabelRef.current = ''
+    subtitleStateRef.current = 'off'
+    subtitleErrorRef.current = ''
     setSourceChoices([])
     setDeviceSourceOptions(undefined)
     setActiveSourceId(undefined)
@@ -427,7 +450,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSubtitlePreferences(requestedPreferences)
     const externalChoices: SubtitleChoice[] = request.subtitles.map((track, index) => ({
       id: `external-${track.id ?? index + 1}`,
-      label: track.title || track.lang?.toUpperCase() || `Subtitle ${index + 1}`,
+      label: subtitleTrackLabel(track.title, track.lang, index),
       kind: 'external',
       url: track.url,
       contentType: track.contentType,
@@ -558,7 +581,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         const track = request.subtitles.find((entry, index) => (entry.id ?? index + 1) === trackId)
         if (track) selectSubtitleChoice({
           id: `external-${trackId}`,
-          label: track.title || track.lang?.toUpperCase() || 'Subtitles',
+          label: subtitleTrackLabel(track.title, track.lang, Math.max(0, trackId - 1)),
           kind: 'external',
           url: track.url,
           contentType: track.contentType,

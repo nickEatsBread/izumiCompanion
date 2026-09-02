@@ -19,6 +19,38 @@ export function trackLanguageKey(value: string | undefined): string {
 
 const textKey = (value: string | undefined) => value?.trim().toLowerCase() ?? ''
 
+const subtitleLanguageNames: Record<string, string> = {
+  en: 'English',
+  ja: 'Japanese',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  it: 'Italian',
+  pt: 'Portuguese',
+  ko: 'Korean',
+  zh: 'Chinese',
+  ar: 'Arabic',
+  ru: 'Russian',
+  hi: 'Hindi',
+}
+
+const genericSubtitleTitle = /^(?:full[\s_-]*subtitles?|subtitles?|subtitle[\s_-]*track|regular|default|track[\s_-]*\d+|subrip|srt|ass|ssa|und(?:efined)?)$/i
+
+export function subtitleTrackLabel(
+  title: string | undefined,
+  language: string | undefined,
+  index: number,
+): string {
+  const key = trackLanguageKey(language)
+  const languageLabel = subtitleLanguageNames[key] ?? (key ? key.toUpperCase() : '')
+  const cleanTitle = title?.trim()
+  const distinctive = cleanTitle && !genericSubtitleTitle.test(cleanTitle) ? cleanTitle : ''
+  if (languageLabel && distinctive && !distinctive.toLowerCase().includes(languageLabel.toLowerCase())) {
+    return `${languageLabel} · ${distinctive}`
+  }
+  return languageLabel || distinctive || `Subtitle ${index + 1}`
+}
+
 /** Receiver track indexes are unrelated to mpv's indexes. Match descriptive sender metadata and
  * require at least one positive field so an empty preference never enables a random subtitle. */
 export function preferredTrack(

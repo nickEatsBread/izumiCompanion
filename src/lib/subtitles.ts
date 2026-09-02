@@ -1,4 +1,4 @@
-interface SubtitleCue {
+export interface SubtitleCue {
   start: number
   end: number
   text: string
@@ -21,6 +21,8 @@ function plainText(value: string): string {
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&#39;/gi, "'")
     .trim()
 }
 
@@ -38,30 +40,80 @@ function timedText(source: string): SubtitleCue[] {
 }
 
 function assText(source: string): SubtitleCue[] {
-  return source.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n').flatMap((line) => {
-    if (!/^Dialogue\s*:/i.test(line)) return []
-    const fields = line.slice(line.indexOf(':') + 1).split(',')
-    if (fields.length < 10) return []
-    const start = timecode(fields[1])
-    const end = timecode(fields[2])
-    const text = plainText(fields.slice(9).join(','))
-    return Number.isFinite(start) && Number.isFinite(end) && end >= start && text ? [{ start, end, text }] : []
-  })
+  const cues: SubtitleCue[] = []
+  let fields = ['layer', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text']
+  for (const line of source.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n')) {
+    if (/^Format\s*:/i.test(line)) {
+      const next = line.slice(line.indexOf(':') + 1).split(',').map((value) => value.trim().toLowerCase())
+      if (next.includes('start') && next.includes('end') && next.includes('text')) fields = next
+      continue
+    }
+    if (!/^Dialogue\s*:/i.test(line)) continue
+    const values = line.slice(line.indexOf(':') + 1).split(',')
+    const startIndex = fields.indexOf('start')
+    const endIndex = fields.indexOf('end')
+    const textIndex = fields.indexOf('text')
+    if (startIndex < 0 || endIndex < 0 || textIndex < 0 || values.length <= textIndex) continue
+    const start = timecode(values[startIndex])
+    const end = timecode(values[endIndex])
+    const text = plainText(values.slice(textIndex).join(','))
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start && text) cues.push({ start, end, text })
+  }
+  return cues
+}
+
+function ttmlTime(value: string | undefined): number {
+  const raw = value?.trim() ?? ''
+  const unit = raw.match(/^([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)$/i)
+  if (unit) {
+    const amount = Number(unit[1])
+    return amount * ({ ms: 0.001, s: 1, m: 60, h: 3600 } as Record<string, number>)[unit[2].toLowerCase()]
+  }
+  return timecode(raw)
+}
+
+function ttmlText(source: string): SubtitleCue[] {
+  const cues: SubtitleCue[] = []
+  const paragraphs = /<p\b([^>]*)>([\s\S]*?)<\/p\s*>/gi
+  let paragraph: RegExpExecArray | null
+  while ((paragraph = paragraphs.exec(source))) {
+    const attributes = paragraph[1]
+    const read = (name: string) => attributes.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1]
+    const start = ttmlTime(read('begin'))
+    const declaredEnd = ttmlTime(read('end'))
+    const duration = ttmlTime(read('dur'))
+    const end = Number.isFinite(declaredEnd) ? declaredEnd : start + duration
+    const text = plainText(paragraph[2])
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start && text) cues.push({ start, end, text })
+  }
+  return cues
+}
+
+export function parseSubtitleText(source: string, contentType = '', url = ''): SubtitleCue[] {
+  const cues = /(?:ass|ssa)/i.test(contentType) || /\.(?:ass|ssa)(?:[?#]|$)/i.test(url)
+    ? assText(source)
+    : /(?:ttml|xml)/i.test(contentType) || /\.(?:ttml|dfxp|xml)(?:[?#]|$)/i.test(url)
+      ? ttmlText(source)
+      : timedText(source)
+  return cues.sort((a, b) => a.start - b.start)
 }
 
 export class ExternalSubtitleController {
   private cues: SubtitleCue[] = []
   private key = ''
+  private generation = 0
 
   async load(url: string, contentType = ''): Promise<void> {
-    this.clear()
+    const generation = ++this.generation
+    this.cues = []
+    this.key = ''
     const response = await fetch(url)
     if (!response.ok) throw new Error(`Subtitle download failed (${response.status})`)
     const source = await response.text()
-    this.cues = /(?:ass|ssa)/i.test(contentType) || /\.(?:ass|ssa)(?:[?#]|$)/i.test(url)
-      ? assText(source)
-      : timedText(source)
-    this.cues.sort((a, b) => a.start - b.start)
+    const cues = parseSubtitleText(source, contentType, url)
+    if (!cues.length) throw new Error('The subtitle file contains no supported timed cues.')
+    if (generation !== this.generation) return
+    this.cues = cues
   }
 
   textAt(positionSeconds: number, delayMs = 0): string {
@@ -74,6 +126,7 @@ export class ExternalSubtitleController {
   }
 
   clear(): void {
+    this.generation += 1
     this.cues = []
     this.key = ''
   }

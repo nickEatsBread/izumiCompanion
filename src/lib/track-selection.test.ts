@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { preferredTrack } from './track-selection'
+import { preferredTrack, subtitleTrackLabel } from './track-selection'
 
 describe('receiver track matching', () => {
   const tracks = [
@@ -14,5 +14,11 @@ describe('receiver track matching', () => {
   it('does not select a track for an empty or unrelated preference', () => {
     expect(preferredTrack(tracks, undefined)).toBeUndefined()
     expect(preferredTrack(tracks, { language: 'ko' })).toBeUndefined()
+  })
+
+  it('does not show a generic Subtitles placeholder as the track name', () => {
+    expect(subtitleTrackLabel('Subtitles', 'eng', 0)).toBe('English')
+    expect(subtitleTrackLabel('Signs & Songs', 'eng', 1)).toBe('English · Signs & Songs')
+    expect(subtitleTrackLabel('Full Subtitles', undefined, 2)).toBe('Subtitle 3')
   })
 })
