@@ -35,6 +35,12 @@ function escapeInlineStyle(source) {
 await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
 await cp(resolve(project, 'public'), output, { recursive: true })
+await mkdir(resolve(output, 'brand/png'), { recursive: true })
+await mkdir(resolve(output, 'brand/svg'), { recursive: true })
+await Promise.all([
+  cp(resolve(project, 'brand/png/izumi-favicon-transparent-512.png'), resolve(output, 'brand/png/izumi-favicon-transparent-512.png')),
+  cp(resolve(project, 'brand/svg/izumi-wordmark-white.svg'), resolve(output, 'brand/svg/izumi-wordmark-white.svg')),
+])
 
 const result = await build({
   absWorkingDir: project,
@@ -56,7 +62,9 @@ const result = await build({
     '.woff': 'file',
     '.woff2': 'file',
   },
-  minify: true,
+  // CSS must remain unminified here. esbuild rewrites rgba() colors to 8-digit hex and folds
+  // physical offsets into inset; both forms are ignored by the Chromium 56 TV engine.
+  minify: false,
   outdir: output,
   platform: 'browser',
   stdin: {
@@ -75,7 +83,12 @@ if (!javascript || !stylesheet) {
   throw new Error('The Tizen build did not produce both JavaScript and CSS output.')
 }
 
-const compatibleJavascript = await babelTransform(javascript.text, {
+const minifiedJavascript = await transform(javascript.text, {
+  loader: 'js',
+  minify: true,
+  target: 'es2015',
+})
+const compatibleJavascript = await babelTransform(minifiedJavascript.code, {
   babelrc: false,
   comments: false,
   compact: true,
@@ -97,11 +110,6 @@ const compatibleCss = await postcss([
   legacyTvCss(),
   autoprefixer({ overrideBrowserslist: ['Safari >= 8', 'Chrome >= 47'] }),
 ]).process(stylesheet.text, { from: undefined })
-const minifiedCss = await transform(compatibleCss.css, {
-  loader: 'css',
-  minify: true,
-  target: 'chrome47',
-})
 
 for (const file of result.outputFiles) {
   if (file === javascript || file === stylesheet) continue
@@ -119,7 +127,11 @@ if (!entryPattern.test(template)) {
 
 const html = template.replace(
   entryPattern,
-  () => `\n    <style data-izumi-bundle>${escapeInlineStyle(minifiedCss.code)}</style>\n    <script data-izumi-bundle>${escapeInlineScript(compatibleJavascript.code)}</script>`,
+  // esbuild's CSS minifier folds top/right/bottom/left into the newer `inset` shorthand even
+  // when targeting Chrome 47. Chromium 56 ignores that shorthand, which silently defeats the
+  // explicit legacy declarations emitted above and changes physical-TV geometry. Keep the
+  // PostCSS output intact; the widget-size cost is small and the compatibility rules remain real.
+  () => `\n    <style data-izumi-bundle>${escapeInlineStyle(compatibleCss.css)}</style>\n    <script data-izumi-bundle>${escapeInlineScript(compatibleJavascript.code)}</script>`,
 )
 
 if (/\b(?:type=(['"])module\1|nomodule)\b/i.test(html)) {

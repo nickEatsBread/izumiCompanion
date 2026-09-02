@@ -7,8 +7,32 @@ import { App } from './App'
 import './styles.css'
 
 const root = document.getElementById('app')
+const startupSplash = document.getElementById('startup-splash')
+const startupParameters = new URLSearchParams(location.search)
+const forceStartupPreview = startupParameters.has('preview') && startupParameters.get('screen') === 'startup'
+const startupStartedAt = Number(startupSplash?.getAttribute('data-started-at')) || Date.now()
+const startupMinimumDurationMs = 1_000
+let startupDismissTimer: number | undefined
+
+if (forceStartupPreview) document.documentElement.classList.add('izumi-startup-preview')
+
+function dismissStartupSplash(): void {
+  if (!startupSplash || forceStartupPreview || startupSplash.classList.contains('is-dismissed') || startupDismissTimer) return
+  const dismiss = () => {
+    startupDismissTimer = undefined
+    startupSplash.classList.add('is-dismissed')
+    window.setTimeout(() => {
+      document.documentElement.classList.remove('izumi-starting')
+      startupSplash.remove()
+    }, 160)
+  }
+  const remaining = startupMinimumDurationMs - (Date.now() - startupStartedAt)
+  if (remaining > 0) startupDismissTimer = window.setTimeout(dismiss, remaining)
+  else dismiss()
+}
 
 function renderStartupFailure(error: unknown): void {
+  dismissStartupSplash()
   if (!root) return
   const detail = error instanceof Error ? error.message : String(error || 'Unknown startup error')
   root.innerHTML = ''
@@ -32,7 +56,7 @@ if (!root) throw new Error('The #app launch container is missing.')
 
 try {
   root.innerHTML = ''
-  render(<App />, root)
+  render(<App onStartupSettled={dismissStartupSplash} />, root)
 } catch (error) {
   renderStartupFailure(error)
 }

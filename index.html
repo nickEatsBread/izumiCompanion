@@ -1,28 +1,174 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="izumi-starting">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=1920,user-scalable=no" />
+    <meta name="viewport" content="width=1920,height=1080,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no" />
     <meta name="theme-color" content="#050505" />
-    <title>Izumi Companion</title>
+    <title>izumi companion</title>
+    <style data-izumi-startup>
+      #startup-splash {
+        position: fixed;
+        z-index: 50;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        overflow: hidden;
+        color: #f1f1f1;
+        background:
+          linear-gradient(90deg, rgba(2, 4, 7, .28) 0, transparent 26%, transparent 74%, rgba(2, 4, 7, .4) 100%),
+          radial-gradient(ellipse at 50% 44%, rgba(56, 189, 248, .07) 0, rgba(34, 114, 151, .025) 28%, transparent 60%),
+          #050709;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+      }
+
+      #startup-splash.is-dismissed {
+        -webkit-animation: none !important;
+        animation: none !important;
+        opacity: 0 !important;
+        visibility: visible;
+        pointer-events: none;
+        -webkit-transition: opacity 140ms ease-out;
+        transition: opacity 140ms ease-out;
+      }
+
+      .startup-splash-content {
+        position: relative;
+        z-index: 2;
+        width: 640px;
+        text-align: center;
+      }
+
+      .startup-brand-frame {
+        position: relative;
+        width: 540px;
+        height: 132px;
+        margin: 0 auto;
+      }
+
+      .startup-app-icon {
+        position: absolute;
+        top: 4px;
+        left: 52px;
+        width: 124px;
+        height: 124px;
+      }
+
+      .startup-wordmark-window {
+        position: absolute;
+        top: 16px;
+        left: 190px;
+        width: 304px;
+        height: 96px;
+        overflow: hidden;
+      }
+
+      .startup-wordmark {
+        width: 304px;
+        height: auto;
+        display: block;
+      }
+
+      .startup-loading-indicator {
+        width: 38px;
+        height: 38px;
+        margin: 34px auto 0;
+      }
+
+      .startup-spinner {
+        display: block;
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(130, 188, 213, .16);
+        border-top-color: #4dc4ee;
+        border-right-color: rgba(77, 196, 238, .52);
+        border-radius: 50%;
+        -webkit-animation: startup-spinner 900ms linear infinite;
+        animation: startup-spinner 900ms linear infinite;
+      }
+
+      .startup-status-label {
+        margin: 30px 0 0;
+        display: none;
+        color: #f2cad1;
+        font-family: "Nunito Sans", Arial, sans-serif;
+        font-size: 25px;
+        font-weight: 700;
+        letter-spacing: .025em;
+      }
+
+      .startup-loading-label {
+        margin: 17px 0 0;
+        color: #9aa6ad;
+        font-family: "Nunito Sans", Arial, sans-serif;
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: .035em;
+      }
+
+      .startup-status-detail {
+        max-width: 940px;
+        margin: 24px auto 0;
+        display: none;
+        color: #f0a1ae;
+        font-family: "Nunito Sans", Arial, sans-serif;
+        font-size: 22px;
+        line-height: 1.4;
+      }
+
+      html.izumi-startup-error .startup-loading-indicator,
+      html.izumi-startup-error .startup-loading-label { display: none; }
+      html.izumi-startup-error .startup-status-label,
+      html.izumi-startup-error .startup-status-detail { display: block; }
+
+      @-webkit-keyframes startup-spinner {
+        to { -webkit-transform: rotate(360deg); transform: rotate(360deg); }
+      }
+      @keyframes startup-spinner {
+        to { -webkit-transform: rotate(360deg); transform: rotate(360deg); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .startup-spinner { -webkit-animation: none; animation: none; }
+      }
+    </style>
     <script src="$WEBAPIS/webapis/webapis.js"></script>
     <script src="./libs/msf-2.3.3.min.js"></script>
   </head>
   <body>
+    <section id="startup-splash" role="status" aria-live="polite" aria-label="izumi is loading">
+      <div class="startup-splash-content">
+        <div class="startup-brand-frame" aria-label="izumi">
+          <img class="startup-app-icon" src="./brand/png/izumi-favicon-transparent-512.png" alt="" />
+          <span class="startup-wordmark-window">
+            <img class="startup-wordmark" src="./brand/svg/izumi-wordmark-white.svg" alt="izumi" />
+          </span>
+        </div>
+        <div class="startup-loading-indicator" aria-hidden="true"><span class="startup-spinner"></span></div>
+        <p class="startup-loading-label">Loading izumi</p>
+        <p id="startup-status-label" class="startup-status-label">Startup failed</p>
+        <p id="startup-status-detail" class="startup-status-detail"></p>
+      </div>
+    </section>
     <object id="av-player" type="application/avplayer"></object>
-    <div id="app">
-      <main id="launch-fallback" role="status" style="width:100%;height:100%;padding:9vh 8vw;background:#07111e;color:#f6f6f6;font-family:Arial,sans-serif;box-sizing:border-box">
-        <p style="margin:0 0 18px;color:#7dd3fc;font-size:20px;font-weight:700;letter-spacing:3px">IZUMI COMPANION</p>
-        <h1 style="margin:0 0 22px;font-size:54px;line-height:1.05">Starting TV client…</h1>
-        <p id="launch-fallback-detail" style="margin:0;color:#d4d9df;font-size:26px;line-height:1.45">Preparing your paired library and receiver.</p>
-      </main>
-    </div>
+    <div id="app"></div>
     <script>
       (function () {
+        var splash = document.getElementById('startup-splash')
+        if (splash) splash.setAttribute('data-started-at', String(Date.now()))
         function showLaunchError(message) {
-          var fallback = document.getElementById('launch-fallback')
-          var detail = document.getElementById('launch-fallback-detail')
-          if (fallback && detail) detail.textContent = message
+          if (!document.getElementById('startup-splash')) return
+          var detail = document.getElementById('startup-status-detail')
+          document.documentElement.classList.add('izumi-startup-error')
+          if (detail) detail.textContent = message
         }
         window.onerror = function (message, source, line, column) {
           showLaunchError('Startup error: ' + String(message) + ' (' + String(line || 0) + ':' + String(column || 0) + ')')
@@ -32,9 +178,13 @@
           var reason = event && event.reason
           showLaunchError('Startup error: ' + String(reason && reason.message ? reason.message : reason || 'Promise rejected'))
         }
-        window.setTimeout(function () {
-          showLaunchError('The application bundle did not start. Reinstall or update izumi companion.')
-        }, 12000)
+        var startupPreview = /(?:^|[?&])preview(?:=|&|$)/.test(window.location.search)
+          && /(?:^|[?&])screen=startup(?:&|$)/.test(window.location.search)
+        if (!startupPreview) {
+          window.setTimeout(function () {
+            showLaunchError('The application bundle did not start. Reinstall or update izumi companion.')
+          }, 12000)
+        }
       }())
     </script>
     <script type="module" src="/src/main.tsx"></script>
