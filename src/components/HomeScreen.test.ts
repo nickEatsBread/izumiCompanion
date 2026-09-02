@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionMedia } from '../types'
-import { informativeHeroMeta, leadingEdgeFor } from './HomeScreen'
+import { homeCardContext, homeRowTop, homeRowVisible, informativeHeroMeta } from './HomeScreen'
 
 const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
   ref: { provider: 'preview', type: 'series', id: 'test' },
@@ -11,15 +11,47 @@ const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
 })
 
 describe('TV home presentation', () => {
-  it('keeps a dimmed leading cover whenever focus has content to its left', () => {
-    expect(leadingEdgeFor(0, 6)).toBe(-1)
-    expect(leadingEdgeFor(1, 6)).toBe(0)
-    expect(leadingEdgeFor(6, 6)).toBe(0)
-    expect(leadingEdgeFor(7, 6)).toBe(1)
+  it('renders the active row and its immediate neighbors without mounting distant artwork', () => {
+    expect(homeRowVisible(0, 0)).toBe(true)
+    expect(homeRowVisible(1, 0)).toBe(true)
+    expect(homeRowVisible(2, 0)).toBe(false)
+    expect(homeRowVisible(3, 0)).toBe(false)
+    expect(homeRowVisible(2, 3)).toBe(true)
+  })
+
+  it('pins the focused row high and leaves the next rail visible at TV scale', () => {
+    expect(homeRowTop(2, 2, true)).toBe(52)
+    expect(homeRowTop(3, 2, true)).toBe(638)
+    expect(homeRowTop(4, 2, true)).toBe(1120)
+    expect(homeRowTop(0, 0, false)).toBe(24)
   })
 
   it('removes generic media type labels from the hero metadata', () => {
     expect(informativeHeroMeta(media('TV'))).toBe('')
     expect(informativeHeroMeta(media('TV · 2024 · 12 Episodes', 'TV-14'))).toBe('2024  ·  12 Episodes  ·  TV-14')
+  })
+
+  it('puts episode and time-left copy beneath a focused Continue Watching tile', () => {
+    expect(homeCardContext({
+      ...media(),
+      season: 3,
+      episode: 4,
+      episodeTitle: 'Old Friends',
+      episodeProgress: .5,
+      episodeRuntimeMinutes: 40,
+    }, true)).toEqual({
+      primary: 'S3 E4 · Old Friends',
+      secondary: '20m left',
+    })
+  })
+
+  it('uses title metadata and synopsis beneath other focused home tiles', () => {
+    expect(homeCardContext({
+      ...media('2024 · Fantasy', 'TV-14'),
+      description: 'A deliberately concise synopsis.',
+    }, false)).toEqual({
+      primary: '2024  ·  Fantasy  ·  TV-14',
+      description: 'A deliberately concise synopsis.',
+    })
   })
 })

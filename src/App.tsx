@@ -173,7 +173,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [snapshot, setSnapshot] = useState<CompanionHomeSnapshot>(initialPreviewSnapshot)
   const [selected, setSelected] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
   const [heroIndex, setHeroIndex] = useState(0)
-  const [heroDirection, setHeroDirection] = useState<-1 | 1>(1)
   const [focus, setFocus] = useState<FocusLocation>({ zone: 'hero', index: 0 })
   const [activeNav, setActiveNav] = useState(0)
   const [notice, setNotice] = useState('')
@@ -233,6 +232,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const searchTimerRef = useRef<number>()
   const searchResponseTimerRef = useRef<number>()
   const heroIndexRef = useRef(0)
+  const startupSettledRef = useRef(false)
+  const startupSettleFrameRef = useRef<number>()
+  const startupFallbackTimerRef = useRef<number>()
   const searchQueryRef = useRef(searchQuery)
   const playerControlsTimerRef = useRef<number>()
   const catalogRequestRef = useRef<{ screen: string; label: string; timer: number; previousIndex: number }>()
@@ -251,6 +253,23 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const setFocusLocation = (next: FocusLocation) => {
     focusRef.current = next
     setFocus((current) => focusId(current) === focusId(next) ? current : next)
+  }
+
+  const settleStartupAfterPaint = () => {
+    if (!onStartupSettled || startupSettledRef.current) return
+    startupSettledRef.current = true
+    if (startupFallbackTimerRef.current) window.clearTimeout(startupFallbackTimerRef.current)
+    let settled = false
+    const settle = () => {
+      if (settled) return
+      settled = true
+      if (startupFallbackTimerRef.current) window.clearTimeout(startupFallbackTimerRef.current)
+      onStartupSettled()
+    }
+    startupFallbackTimerRef.current = window.setTimeout(settle, 250)
+    startupSettleFrameRef.current = window.requestAnimationFrame(() => {
+      startupSettleFrameRef.current = window.requestAnimationFrame(settle)
+    })
   }
 
   const revealPlayerControls = (hold = false) => {
@@ -551,7 +570,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     registerRemoteKeys()
-    if (showPreviewTools) onStartupSettled?.()
+    if (showPreviewTools) settleStartupAfterPaint()
     const receiver = new CompanionReceiver({
       onConnection: setConnected,
       onPaired: setPaired,
@@ -567,10 +586,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         setSnapshot(next)
         heroIndexRef.current = 0
         setHeroIndex(0)
-        setHeroDirection(1)
         setSelected(next.hero ?? next.rows[0]?.items[0] ?? fallbackMedia)
         setFocusLocation({ zone: 'hero', index: 0 })
         setScreen('home')
+        settleStartupAfterPaint()
       },
       onCatalogError: (catalogScreen, message) => {
         const pendingCatalog = catalogRequestRef.current
@@ -609,13 +628,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     })
     receiverRef.current = receiver
     void receiver.connect().then(
-      () => onStartupSettled?.(),
+      () => {
+        if (!paired) settleStartupAfterPaint()
+        else if (!startupSettledRef.current) {
+          receiver.requestRefresh()
+          startupFallbackTimerRef.current = window.setTimeout(settleStartupAfterPaint, 4_000)
+        }
+      },
       (error) => {
         if (!showPreviewTools) {
           setErrorMessage(error instanceof Error ? error.message : 'The Samsung receiver service is unavailable.')
           setScreen('error')
         }
-        onStartupSettled?.()
+        settleStartupAfterPaint()
       },
     )
     const statusTimer = window.setInterval(() => {
@@ -635,6 +660,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current)
       if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
+      if (startupSettleFrameRef.current) window.cancelAnimationFrame(startupSettleFrameRef.current)
+      if (startupFallbackTimerRef.current) window.clearTimeout(startupFallbackTimerRef.current)
       receiver.disconnect()
       avplayRef.current.close()
     }
@@ -817,7 +844,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     ? snapshot.catalog.options
     : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }], [snapshot])
 
-  const showHomeHero = (index: number, direction: -1 | 1) => {
+  const showHomeHero = (index: number) => {
     const item = homeHeroRail[index]
     if (!item) return
     const artwork = item.episodeImage || item.backdrop || item.poster
@@ -826,7 +853,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       image.src = artwork
     }
     heroIndexRef.current = index
-    setHeroDirection(direction)
     setHeroIndex(index)
     setSelected(item)
     lastHomeContentFocusRef.current = { zone: 'hero', index }
@@ -835,7 +861,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const stepHomeHero = (direction: -1 | 1) => {
     if (homeHeroRail.length < 2) return
-    showHomeHero(wrappedHeroIndex(heroIndexRef.current, direction, homeHeroRail.length), direction)
+    showHomeHero(wrappedHeroIndex(heroIndexRef.current, direction, homeHeroRail.length))
   }
 
   useEffect(() => {
@@ -854,7 +880,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (screen !== 'home') {
       heroIndexRef.current = 0
       setHeroIndex(0)
-      setHeroDirection(1)
       setSelected(snapshot.hero ?? snapshot.rows[0]?.items[0] ?? fallbackMedia)
       lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
     }
@@ -878,7 +903,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setSnapshot(next)
       heroIndexRef.current = 0
       setHeroIndex(0)
-      setHeroDirection(1)
       setSelected(next.hero ?? next.rows[0]?.items[0] ?? fallbackMedia)
       lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
       setCatalogMenuOpen(false)
@@ -915,7 +939,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       else if (action === 'right') {
         const previous = lastHomeContentFocusRef.current
         if (previous.zone === 'hero') {
-          showHomeHero(Math.min(previous.index, Math.max(0, homeHeroRail.length - 1)), 1)
+          showHomeHero(Math.min(previous.index, Math.max(0, homeHeroRail.length - 1)))
           return
         }
         next = previous
@@ -937,7 +961,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       else if (action === 'up') {
         const upperRow = focus.row - 1
         if (upperRow < 0) {
-          showHomeHero(heroIndexRef.current, -1)
+          showHomeHero(heroIndexRef.current)
           return
         }
         next = { zone: 'row', row: upperRow, index: Math.min(focus.index, homeRows[upperRow].items.length - 1) }
@@ -1061,7 +1085,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (destination === 'home') {
       heroIndexRef.current = 0
       setHeroIndex(0)
-      setHeroDirection(1)
       setSelected(snapshot.hero ?? snapshot.rows[0]?.items[0] ?? fallbackMedia)
       lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
       changeFocus({ zone: 'hero', index: 0 })
@@ -1598,7 +1621,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setActiveNav(0)
       heroIndexRef.current = 0
       setHeroIndex(0)
-      setHeroDirection(1)
       setSelected(snapshot.hero ?? snapshot.rows[0]?.items[0] ?? fallbackMedia)
       lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
       changeFocus({ zone: 'hero', index: 0 })
@@ -1642,7 +1664,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           hero={selected}
           heroIndex={heroIndex}
           heroCount={homeHeroRail.length}
-          heroDirection={heroDirection}
           focus={focus}
           activeNav={activeNav}
           catalogOpen={catalogMenuOpen}
@@ -1653,7 +1674,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onPlay={playMedia}
           onOpenSeries={selectCatalogMedia}
           onDetails={openDetails}
-          onHeroStep={stepHomeHero}
           onCatalogFocus={(index) => {
             setCatalogMenuFocus(index)
             changeFocus({ zone: 'catalog', index })
