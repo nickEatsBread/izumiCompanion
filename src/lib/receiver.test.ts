@@ -230,6 +230,40 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
+  it('requests a token-scoped HTTP trailer bridge from the paired client', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+
+    const pending = receiver.requestTrailer('M7lc1UVf-VE', 'Frieren trailer')
+    const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.trailer')?.[1] as {
+      requestId: string
+      pairingId: string
+      videoId: string
+    }
+    expect(sent).toMatchObject({ pairingId: credential.slice(0, 16), videoId: 'M7lc1UVf-VE' })
+
+    channel.emit('izumi.companion.trailer-result', {
+      credential,
+      requestId: sent.requestId,
+      url: 'http://192.168.1.20:44123/token/youtube?id=M7lc1UVf-VE',
+    })
+    await expect(pending).resolves.toEqual({
+      requestId: sent.requestId,
+      url: 'http://192.168.1.20:44123/token/youtube?id=M7lc1UVf-VE',
+    })
+
+    receiver.releaseTrailer(sent.requestId)
+    expect(channel.publish).toHaveBeenLastCalledWith('izumi.companion.trailer-close', {
+      pairingId: credential.slice(0, 16),
+      requestId: sent.requestId,
+    }, 'broadcast')
+    receiver.disconnect()
+  })
+
   it('loads AniList episode details from the private Worker when the paired client is unavailable', async () => {
     FakeXmlHttpRequest.responder = () => ({
       status: 200,

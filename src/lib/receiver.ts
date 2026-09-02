@@ -19,6 +19,12 @@ const LOCAL_PLAY_ACK_MS = 1_200
 const REMOTE_REQUEST_TTL_MS = 5 * 60_000
 const SNAPSHOT_STORAGE_KEY = 'izumi.companion.snapshot'
 const DETAILS_TIMEOUT_MS = 8_000
+const TRAILER_TIMEOUT_MS = 8_000
+
+export interface CompanionTrailerSource {
+  requestId: string
+  url: string
+}
 
 export type CompanionPlayResult =
   | 'local'
@@ -379,6 +385,7 @@ export class CompanionReceiver {
   private playAcknowledgements = new Map<string, (accepted: boolean) => void>()
   private deviceSourceRequests = new Map<string, number>()
   private detailRequests = new Map<string, (media: CompanionMedia | null) => void>()
+  private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
 
   constructor(private readonly events: ReceiverEvents) {
     this.events.onPairingInfo(this.pairing)
@@ -465,6 +472,16 @@ export class CompanionReceiver {
       if (!finish) return
       finish(validCompanionMedia(input.media) ? input.media : null)
     })
+    this.channel.on('izumi.companion.trailer-result', (value) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      if (!this.credential || input.credential !== this.credential || typeof input.requestId !== 'string') return
+      const finish = this.trailerRequests.get(input.requestId)
+      if (!finish) return
+      finish(validUrl(input.url) ? { requestId: input.requestId, url: input.url } : null,
+        typeof input.error === 'string' ? input.error.slice(0, 240) : undefined)
+    })
     this.channel.on('izumi.companion.unpair', (value) => {
       const message = parseMessage(value)
       if (!message || typeof message !== 'object') return
@@ -534,6 +551,36 @@ export class CompanionReceiver {
         media,
       }, 'broadcast')
     })
+  }
+
+  requestTrailer(videoId: string, title: string): Promise<CompanionTrailerSource> {
+    if (!this.credential || !this.connected) return Promise.reject(new Error('Open izumi on the paired device to play this trailer.'))
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return Promise.reject(new Error('This trailer has an invalid YouTube ID.'))
+    const requestId = randomHex(12)
+    return new Promise((resolve, reject) => {
+      const finish = (source: CompanionTrailerSource | null, error?: string) => {
+        window.clearTimeout(timer)
+        this.trailerRequests.delete(requestId)
+        if (source) resolve(source)
+        else reject(new Error(error || 'The paired device could not prepare this trailer.'))
+      }
+      const timer = window.setTimeout(() => finish(null, 'The paired device did not prepare the trailer in time.'), TRAILER_TIMEOUT_MS)
+      this.trailerRequests.set(requestId, finish)
+      this.publish('izumi.companion.trailer', {
+        pairingId: this.credential.slice(0, 16),
+        requestId,
+        videoId,
+        title: title.slice(0, 160),
+      }, 'broadcast')
+    })
+  }
+
+  releaseTrailer(requestId: string): void {
+    if (!this.credential || !this.connected || !/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) return
+    this.publish('izumi.companion.trailer-close', {
+      pairingId: this.credential.slice(0, 16),
+      requestId,
+    }, 'broadcast')
   }
 
   async requestPlay(media: CompanionMedia): Promise<CompanionPlayResult> {
@@ -687,6 +734,7 @@ export class CompanionReceiver {
     localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
     this.credential = ''
     this.deviceSourceRequests.clear()
+    this.clearTrailerRequests()
     this.cloudflare = null
     this.clearPlayback()
     this.pairing = this.createPairingInfo()
@@ -704,6 +752,7 @@ export class CompanionReceiver {
       .forEach((key) => localStorage.removeItem(key))
     this.credential = ''
     this.cloudflare = null
+    this.clearTrailerRequests()
     this.clearPlayback()
     this.pairing = this.createPairingInfo()
     this.events.onPairingInfo(this.pairing)
@@ -717,7 +766,13 @@ export class CompanionReceiver {
     try { this.channel?.disconnect() } catch { /* disconnected already */ }
     this.channel = undefined
     this.connected = false
+    this.clearTrailerRequests()
     this.events.onConnection(false)
+  }
+
+  private clearTrailerRequests(): void {
+    for (const finish of [...this.trailerRequests.values()]) finish(null, 'The paired device disconnected while preparing the trailer.')
+    this.trailerRequests.clear()
   }
 
   private createPairingInfo(): PairingInfo {

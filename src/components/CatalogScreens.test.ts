@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SEARCH_KEYS, adjacentSearchKey, nearestSearchKey, seriesOverviewActionsFor } from './CatalogScreens'
+import { SEARCH_KEYS, adjacentSearchKey, nearestSearchKey, seriesOverviewActionsFor, youtubeTrailerId } from './CatalogScreens'
 
 describe('TV search keyboard geometry', () => {
   it('uses a six-column alphabetic grid with compact input actions', () => {
@@ -37,5 +37,11 @@ describe('series overview actions', () => {
 
   it('does not expose unsupported trailer providers', () => {
     expect(seriesOverviewActionsFor({ ...media, trailer: { id: '12345', site: 'vimeo' } })).toEqual(['play'])
+  })
+
+  it('accepts only canonical YouTube IDs or URLs', () => {
+    expect(youtubeTrailerId({ ...media, trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' } })).toBe('Iwr1aLEDpe4')
+    expect(youtubeTrailerId({ ...media, trailer: { id: 'https://youtu.be/Iwr1aLEDpe4', site: 'youtube' } })).toBe('Iwr1aLEDpe4')
+    expect(youtubeTrailerId({ ...media, trailer: { id: 'too-short', site: 'youtube' } })).toBeUndefined()
   })
 })

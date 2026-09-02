@@ -12,6 +12,7 @@ import {
   adjacentSearchKey,
   nearestSearchKey,
   seriesOverviewActionsFor,
+  youtubeTrailerId,
   type SeriesOverviewAction,
   type SettingsConfirmation,
   TRAILER_CONTROL_EVENT,
@@ -215,6 +216,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [catalogMenuFocus, setCatalogMenuFocus] = useState(0)
   const [navigationPhase, setNavigationPhase] = useState<'idle' | 'loading' | 'leaving'>('idle')
   const [trailerOpen, setTrailerOpen] = useState(false)
+  const [trailerSource, setTrailerSource] = useState<{ requestId?: string; url: string }>()
+  const [trailerError, setTrailerError] = useState('')
   const [exitConfirmation, setExitConfirmation] = useState(false)
   const [exitFocus, setExitFocus] = useState(0)
   const [focusRestoreEpoch, setFocusRestoreEpoch] = useState(0)
@@ -247,6 +250,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const appliedAudioPreferenceRef = useRef('')
   const appliedSubtitlePreferenceRef = useRef('')
   const subtitlePreferencesRef = useRef(subtitlePreferences)
+  const trailerSourceRef = useRef<{ requestId?: string; url: string }>()
+  const trailerGenerationRef = useRef(0)
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
@@ -827,6 +832,53 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setScreen('details')
   }
 
+  const closeTrailer = () => {
+    trailerGenerationRef.current += 1
+    const source = trailerSourceRef.current
+    if (source?.requestId) receiverRef.current?.releaseTrailer(source.requestId)
+    trailerSourceRef.current = undefined
+    setTrailerSource(undefined)
+    setTrailerError('')
+    setTrailerOpen(false)
+  }
+
+  const openTrailer = (media: CompanionMedia) => {
+    const videoId = youtubeTrailerId(media)
+    if (!videoId) {
+      showNotice('This trailer is unavailable.')
+      return
+    }
+    closeTrailer()
+    const generation = ++trailerGenerationRef.current
+    setTrailerOpen(true)
+    if (showPreviewTools) {
+      const params = new URLSearchParams({
+        autoplay: '1', controls: '0', enablejsapi: '1', playsinline: '1', rel: '0', cc_load_policy: '1', cc_lang_pref: 'en',
+      })
+      if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
+      const source = { url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
+      trailerSourceRef.current = source
+      setTrailerSource(source)
+      return
+    }
+    const receiver = receiverRef.current
+    if (!receiver) {
+      setTrailerError('Open izumi on the paired device to play this trailer.')
+      return
+    }
+    void receiver.requestTrailer(videoId, `${media.title} trailer`).then((source) => {
+      if (generation !== trailerGenerationRef.current) {
+        receiver.releaseTrailer(source.requestId)
+        return
+      }
+      trailerSourceRef.current = source
+      setTrailerSource(source)
+    }).catch((error) => {
+      if (generation !== trailerGenerationRef.current) return
+      setTrailerError(error instanceof Error ? error.message : 'The paired device could not prepare this trailer.')
+    })
+  }
+
   const closeDetails = () => {
     setScreen(detailReturnScreenRef.current)
     setFocusLocation(detailReturnFocusRef.current)
@@ -1059,7 +1111,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const openSeries = (media: CompanionMedia) => {
-    setTrailerOpen(false)
+    closeTrailer()
     setSelected(media)
     const seasonCounts = episodeCountsFor(media)
     const initialSeason = seasonCounts.length > 1
@@ -1097,7 +1149,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const selectNav = (index: number) => {
     if (index === -1) return openCatalogMenu()
-    setTrailerOpen(false)
+    closeTrailer()
     setCatalogMenuOpen(false)
     setActiveNav(index)
     setSettingsConfirmation(null)
@@ -1268,7 +1320,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (action === 'trailer') {
-      setTrailerOpen(true)
+      openTrailer(selected)
       return
     }
     if (action === 'relations' && selected.relations?.length) changeFocus({ zone: 'relation', index: 0 })
@@ -1482,7 +1534,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (trailerOpen) {
-      if (action === 'back' || action === 'stop') setTrailerOpen(false)
+      if (action === 'back' || action === 'stop') closeTrailer()
       else {
         const trailerAction: TrailerControlAction | undefined = action === 'select' || action === 'playPause'
           ? 'toggle'
@@ -1610,7 +1662,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (screen === 'error') {
-      if (action === 'back') paired ? restoreHomeNavigation() : setScreen('ready')
+      if (action === 'back') stopPlayback(paired ? 'home' : 'ready')
       else if (action === 'select') retryPlayback()
       return
     }
@@ -1639,7 +1691,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const previewScreen = (next: ScreenName) => {
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     setCatalogMenuOpen(false)
-    setTrailerOpen(false)
+    closeTrailer()
     if (next === 'home') {
       setActiveNav(0)
       heroIndexRef.current = 0
@@ -1760,7 +1812,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onRelationFocus={(index) => changeFocus({ zone: 'relation', index })}
           onRelationSelect={selectRelatedMedia}
           trailerOpen={trailerOpen}
-          onTrailerClose={() => setTrailerOpen(false)}
+          trailerSource={trailerSource?.url}
+          trailerError={trailerError}
+          onTrailerClose={closeTrailer}
         />
       )}
       {(['trending', 'movies', 'my-list'] as const).map((name) => screen === name && (

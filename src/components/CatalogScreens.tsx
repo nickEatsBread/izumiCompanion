@@ -27,7 +27,7 @@ import { NavRail } from './NavRail'
 export type TrailerControlAction = 'toggle' | 'play' | 'pause' | 'seek-back' | 'seek-forward'
 export const TRAILER_CONTROL_EVENT = 'izumi:trailer-control'
 
-type TrailerPlaybackState = 'buffering' | 'playing' | 'paused' | 'ended'
+type TrailerPlaybackState = 'buffering' | 'playing' | 'paused' | 'ended' | 'error'
 
 function trailerTime(value: number): string {
   const seconds = Math.max(0, Math.floor(value))
@@ -37,11 +37,13 @@ function trailerTime(value: number): string {
 
 function TrailerPlayer({
   videoId,
+  source,
   title,
   backdrop,
   onClose,
 }: {
   videoId: string
+  source: string
   title: string
   backdrop?: string
   onClose(): void
@@ -57,9 +59,19 @@ function TrailerPlayer({
   const [duration, setDuration] = useState(0)
   const [controlsVisible, setControlsVisible] = useState(true)
   const [nativeCoverVisible, setNativeCoverVisible] = useState(true)
+  const bridgeOrigin = useMemo(() => {
+    try {
+      const url = new URL(source)
+      return url.hostname === 'www.youtube.com' || url.hostname === 'www.youtube-nocookie.com' ? '' : url.origin
+    } catch { return '' }
+  }, [source])
 
   const post = (payload: Record<string, unknown>) => {
-    iframeRef.current?.contentWindow?.postMessage(JSON.stringify(payload), '*')
+    const target = iframeRef.current?.contentWindow
+    if (!target) return
+    const serialized = JSON.stringify(payload)
+    if (bridgeOrigin) target.postMessage({ type: 'izumi-youtube-command', payload: serialized }, bridgeOrigin)
+    else target.postMessage(serialized, 'https://www.youtube-nocookie.com')
   }
   const send = (func: string, args: unknown[] = []) => post({ event: 'command', func, args })
 
@@ -97,8 +109,14 @@ function TrailerPlayer({
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return
+      if (bridgeOrigin && event.origin !== bridgeOrigin) return
+      let raw = event.data
+      if (bridgeOrigin) {
+        if (!raw || raw.type !== 'izumi-youtube-event' || typeof raw.payload !== 'string') return
+        raw = raw.payload
+      }
       let payload: { event?: string; info?: Record<string, unknown>; data?: unknown }
-      try { payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data }
+      try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw }
       catch { return }
       if (!payload || typeof payload !== 'object') return
       if (payload.event === 'onReady') {
@@ -112,6 +130,8 @@ function TrailerPlayer({
         else if (state === 0) applyPlayback('ended')
         else if (state === -1 || state === 3 || state === 5) applyPlayback('buffering')
       }
+      if (payload.event === 'onError') applyPlayback('error')
+      if (payload.event === 'onAutoplayBlocked') applyPlayback('paused')
       if (payload.event === 'infoDelivery' && payload.info) {
         const nextPosition = Number(payload.info.currentTime)
         const nextDuration = Number(payload.info.duration)
@@ -144,7 +164,7 @@ function TrailerPlayer({
       window.clearTimeout(captions)
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current)
     }
-  }, [videoId])
+  }, [videoId, bridgeOrigin])
 
   useEffect(() => {
     const onControl = (event: Event) => {
@@ -176,29 +196,13 @@ function TrailerPlayer({
   }, [playback])
 
   const progress = duration ? Math.min(100, position / duration * 100) : 0
-  const status = playback === 'paused' ? 'Paused' : playback === 'ended' ? 'Trailer ended' : playback === 'buffering' ? 'Loading trailer' : 'Trailer'
-  const query = new URLSearchParams({
-    autoplay: '1',
-    controls: '0',
-    autohide: '1',
-    disablekb: '1',
-    enablejsapi: '1',
-    fs: '0',
-    modestbranding: '1',
-    showinfo: '0',
-    playsinline: '1',
-    rel: '0',
-    iv_load_policy: '3',
-    cc_load_policy: '1',
-    cc_lang_pref: 'en',
-    hl: 'en',
-  })
+  const status = playback === 'paused' ? 'Paused' : playback === 'ended' ? 'Trailer ended' : playback === 'error' ? 'Trailer unavailable' : playback === 'buffering' ? 'Loading trailer' : 'Trailer'
 
   return (
     <section class="series-trailer-overlay" role="dialog" aria-modal="true" aria-label={`${title} trailer`}>
       <iframe
         ref={iframeRef}
-        src={`https://www.youtube-nocookie.com/embed/${videoId}?${query}`}
+        src={source}
         title={`${title} trailer`}
         allow="autoplay; encrypted-media"
         referrerPolicy="strict-origin-when-cross-origin"
@@ -216,7 +220,7 @@ function TrailerPlayer({
       <div class={`series-trailer-native-cover${nativeCoverVisible ? ' is-visible' : ''}`} style={backdrop ? { backgroundImage: `url("${backdrop.replace(/"/g, '%22')}")` } : undefined}>
         <span><Play size={32} fill="currentColor" /></span>
       </div>
-      <div class={`series-trailer-center-control${playback === 'paused' || playback === 'ended' ? ' is-visible' : ''}`}>
+      <div class={`series-trailer-center-control${playback === 'paused' || playback === 'ended' || playback === 'error' ? ' is-visible' : ''}`}>
         <Play size={32} fill="currentColor" />
       </div>
       <div class={`series-trailer-hud${controlsVisible ? ' is-visible' : ''}`}>
@@ -459,14 +463,14 @@ function relationLabel(value: string): string {
 
 export type SeriesOverviewAction = 'play' | 'episodes' | 'trailer' | 'relations'
 
-function youtubeTrailerId(media: CompanionMedia): string | undefined {
+export function youtubeTrailerId(media: CompanionMedia): string | undefined {
   const raw = media.trailer?.id?.trim()
   if (!raw || (media.trailer?.site && media.trailer.site.toLowerCase() !== 'youtube')) return undefined
-  if (/^[A-Za-z0-9_-]{6,32}$/.test(raw)) return raw
+  if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw
   try {
     const url = new URL(raw)
     const id = url.hostname.includes('youtu.be') ? url.pathname.slice(1) : url.searchParams.get('v') || url.pathname.split('/').filter(Boolean).pop()
-    return id && /^[A-Za-z0-9_-]{6,32}$/.test(id) ? id : undefined
+    return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : undefined
   } catch { return undefined }
 }
 
@@ -492,6 +496,8 @@ export function SeriesScreen({
   onRelationFocus,
   onRelationSelect,
   trailerOpen,
+  trailerSource,
+  trailerError,
   onTrailerClose,
 }: {
   selected: CompanionMedia
@@ -507,6 +513,8 @@ export function SeriesScreen({
   onRelationFocus(index: number): void
   onRelationSelect(media: CompanionMedia): void
   trailerOpen: boolean
+  trailerSource?: string
+  trailerError?: string
   onTrailerClose(): void
 }) {
   const seasonCounts = useMemo(() => episodeCountsFor(selected), [selected])
@@ -681,7 +689,15 @@ export function SeriesScreen({
 
       <div class="series-back-hint" aria-hidden="true"><i /> <span>Back</span></div>
       {trailerOpen && trailerId && (
-        <TrailerPlayer videoId={trailerId} title={selected.title} backdrop={selected.backdrop || selected.poster} onClose={onTrailerClose} />
+        trailerSource
+          ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={selected.title} backdrop={selected.backdrop || selected.poster} onClose={onTrailerClose} />
+          : <section class="series-trailer-overlay" role="dialog" aria-modal="true" aria-label={`${selected.title} trailer`}>
+              <div class="series-trailer-native-cover is-visible" style={(selected.backdrop || selected.poster) ? { backgroundImage: `url("${(selected.backdrop || selected.poster)!.replace(/"/g, '%22')}")` } : undefined}>
+                <span>{trailerError ? <X size={32} /> : <Film size={32} />}</span>
+              </div>
+              <div class="series-trailer-hud is-visible"><header><div><p>{trailerError ? 'Trailer unavailable' : 'Preparing trailer'}</p><h2>{trailerError || selected.title}</h2></div></header></div>
+              <button class="series-trailer-close" type="button" onClick={onTrailerClose} aria-label="Back to series"><X size={22} /> Back to series</button>
+            </section>
       )}
     </main>
   )
