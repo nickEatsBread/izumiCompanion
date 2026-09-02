@@ -8,7 +8,7 @@ const output = resolve(project, 'dist')
 await mkdir(output, { recursive: true })
 await Promise.all([
   copyFile(resolve(project, 'config.xml'), resolve(output, 'config.xml')),
-  copyFile(resolve(project, 'brand/png/izumi-app-icon-512.png'), resolve(output, 'icon.png')),
+  copyFile(resolve(project, 'brand/steamgriddb/flat/izumi-companion-square-512x512.png'), resolve(output, 'icon.png')),
   copyFile(resolve(project, 'LICENSE'), resolve(output, 'LICENSE')),
   copyFile(
     resolve(project, 'THIRD-PARTY-NOTICES.md'),
