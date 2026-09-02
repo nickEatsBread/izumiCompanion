@@ -238,6 +238,34 @@ export const previewSnapshot: CompanionHomeSnapshot = {
   ],
 }
 
+export function previewDetailsFor(item: CompanionMedia): CompanionMedia {
+  const artwork = continueItems.flatMap((entry) => entry.episodeImage ? [entry.episodeImage] : [])
+  const supplied = new Map((item.episodes ?? []).map((episode) => [`${episode.season}:${episode.episode}`, episode]))
+  const counts = item.seasonEpisodeCounts ?? []
+  let absolute = 0
+  const episodes = counts.flatMap((count, seasonIndex) => {
+    const parsedSeason = Number(item.seasonLabels?.[seasonIndex]?.match(/\d+/)?.[0])
+    const season = Number.isFinite(parsedSeason) ? parsedSeason : counts.length === 1 && item.season ? item.season : seasonIndex + 1
+    return Array.from({ length: count }, (_, episodeIndex) => {
+      absolute += 1
+      const episode = episodeIndex + 1
+      const existing = supplied.get(`${season}:${episode}`)
+      if (existing) return existing
+      return {
+        season,
+        episode,
+        title: `${item.title} · Episode ${episode}`,
+        description: `The story continues as the cast of ${item.title} faces the next turn in their journey.`,
+        image: artwork[(absolute - 1) % Math.max(1, artwork.length)] ?? item.backdrop ?? item.poster,
+        runtimeMinutes: item.episodeRuntimeMinutes ?? 24,
+        watched: absolute < (item.episode ?? 1),
+        progress: absolute < (item.episode ?? 1) ? 1 : absolute === item.episode ? item.episodeProgress : undefined,
+      }
+    })
+  })
+  return { ...item, episodes }
+}
+
 export function previewSnapshotForCatalog(screen: string): CompanionHomeSnapshot {
   const selectedOption = previewSnapshot.catalog.options?.find((option) => option.screen === screen)
   if (screen !== 'stremio') {

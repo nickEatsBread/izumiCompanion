@@ -11,7 +11,7 @@ import {
   SlidersHorizontal,
   Volume2,
 } from 'lucide-preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import companionLockup from '../../brand/png/izumi-companion-lockup-dark-936.png'
 import type {
   LinkedDeviceSourceChoice,
@@ -27,14 +27,12 @@ import type {
 export function ReadyScreen({
   connected,
   qrCode,
-  address,
   pairingCode,
   expiresAt,
   posters,
 }: {
   connected: boolean
   qrCode?: string
-  address: string
   pairingCode: string
   expiresAt?: number
   posters: string[]
@@ -72,15 +70,12 @@ export function ReadyScreen({
           <h1>Pair this TV</h1>
           <p>{connected
             ? 'Scan the QR code in izumi. Check that the code shown on your device matches this TV.'
-            : 'Starting the secure Samsung TV receiver…'}</p>
+            : 'Getting this TV ready to pair…'}</p>
           <div class="pairing-code-block">
             <span>PAIRING CODE</span>
             <strong>{pairingCode || '------'}</strong>
             {expiresAt && <small>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</small>}
           </div>
-          <span class={`connection-pill ${connected ? 'online' : 'starting'}`}>
-            <span /> {connected ? `Receiver online · ${address}` : 'Receiver starting'}
-          </span>
         </div>
         {connected && qrCode && (
           <div class="qr-panel">
@@ -143,7 +138,6 @@ export function LoadingScreen({
 }) {
   const rating = contentRating?.trim() || 'NR'
   const clampedProgress = Math.min(100, Math.max(0, progress))
-  const visualProgress = Math.max(4, clampedProgress)
   return (
     <main class="state-screen loading-screen">
       <header class="loading-title-lockup">
@@ -157,7 +151,7 @@ export function LoadingScreen({
         </span>
       </aside>
       <div class="loading-footer">
-        <div
+        <span
           class="loading-track"
           role="progressbar"
           aria-label={`Loading ${title}`}
@@ -165,9 +159,8 @@ export function LoadingScreen({
           aria-valuemax={100}
           aria-valuenow={Math.round(clampedProgress)}
         >
-          <span class="loading-progress-value" style={{ width: `${visualProgress}%` }} />
           <i class="loading-progress-indicator" aria-hidden="true" />
-        </div>
+        </span>
       </div>
       <p class="back-hint"><RotateCcw size={19} /> Back to cancel</p>
     </main>
@@ -175,6 +168,11 @@ export function LoadingScreen({
 }
 
 export function ErrorScreen({ message, onRetry }: { message: string; onRetry(): void }) {
+  const retryRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => retryRef.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [])
   return (
     <main class="state-screen error-screen">
       <div class="error-lockup">
@@ -182,7 +180,13 @@ export function ErrorScreen({ message, onRetry }: { message: string; onRetry(): 
         <p class="state-kicker">PLAYBACK ERROR</p>
         <h1>We couldn't open that video</h1>
         <p>{message}</p>
-        <button type="button" class="hero-button primary is-focused" onClick={onRetry}>
+        <button
+          ref={retryRef}
+          type="button"
+          class="hero-button primary is-focused"
+          data-focus-id="error-retry"
+          onClick={onRetry}
+        >
           <RefreshCcw size={23} /> Try Again
         </button>
       </div>

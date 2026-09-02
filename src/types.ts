@@ -268,6 +268,7 @@ export type FocusLocation =
   | { zone: 'row'; row: number; index: number }
   | { zone: 'grid'; index: number }
   | { zone: 'keyboard'; index: number }
+  | { zone: 'search-input'; index: number }
   | { zone: 'suggestion'; index: number }
   | { zone: 'catalog'; index: number }
   | { zone: 'series-season'; index: number }
