@@ -501,6 +501,35 @@ async function main() {
     assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
     await capture('m56-home-carousel.png')
 
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=trending&layout=carousel` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.home-screen.page-browse.mode-carousel')")
+    await waitFor("!document.getElementById('startup-splash')")
+    const mergedBrowse = await evaluate(`(() => {
+      var page = document.querySelector('.home-screen.page-browse');
+      var hero = page.querySelector('.hero').getBoundingClientRect();
+      return {
+        label: page.getAttribute('aria-label'),
+        catalogue: page.querySelector('.nav-mark-button span').textContent.trim(),
+        activeNavigation: page.querySelector('.nav-item.is-active').getAttribute('aria-label'),
+        hero: [hero.left, hero.top, hero.width, hero.height],
+        pips: page.querySelectorAll('.hero-carousel-pips > i').length,
+        rows: Array.from(page.querySelectorAll('.media-row > h2')).map(function (heading) { return heading.textContent.trim(); }),
+        legacyGrid: Boolean(page.querySelector('.browse-catalog, .browse-grid'))
+      };
+    })()`)
+    assert(mergedBrowse.label === 'Browse merged catalogue', `Browse does not identify its merged catalogue: ${JSON.stringify(mergedBrowse)}.`)
+    assert(mergedBrowse.catalogue === 'Merged' && mergedBrowse.activeNavigation === 'Browse', `Browse did not select Merged: ${JSON.stringify(mergedBrowse)}.`)
+    assert(JSON.stringify(mergedBrowse.hero) === '[0,0,1920,640]' && mergedBrowse.pips >= 2, `Browse is missing the Home carousel: ${JSON.stringify(mergedBrowse)}.`)
+    assert(mergedBrowse.rows.length >= 3 && !mergedBrowse.legacyGrid, `Browse still uses the legacy grid: ${JSON.stringify(mergedBrowse)}.`)
+    await press('ArrowDown')
+    await waitFor("document.querySelector('.page-browse .home-poster-card.is-focused')")
+    const browseRail = await evaluate(`(() => {
+      var card = document.querySelector('.page-browse .home-poster-card.is-focused');
+      return { title: card.getAttribute('aria-label'), hero: document.querySelector('.page-browse .hero h1').textContent };
+    })()`)
+    assert(browseRail.title.includes(browseRail.hero), `Browse rail focus did not update its hero: ${JSON.stringify(browseRail)}.`)
+    await capture('m56-browse-merged.png')
+
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=search` })
     await waitFor("document.readyState === 'complete' && document.querySelector('[data-search-key=\"b\"]')")
     await waitFor("!document.getElementById('startup-splash')")
@@ -631,7 +660,7 @@ async function main() {
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write('Chromium 56 check passed: Home geometry, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
+    process.stdout.write('Chromium 56 check passed: Home geometry, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()

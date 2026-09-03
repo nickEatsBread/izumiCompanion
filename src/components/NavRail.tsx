@@ -11,7 +11,7 @@ import izumiMark from '../../brand/svg/izumi-mark-color.svg'
 const items = [
   { label: 'Home', detail: 'Continue and discover', icon: House },
   { label: 'Search', detail: 'Find any title', icon: Search },
-  { label: 'Browse', detail: 'Trending, series and films', icon: Compass },
+  { label: 'Browse', detail: 'Merged catalogue', icon: Compass },
   { label: 'My List', detail: 'Saved for later', icon: Bookmark },
   { label: 'Settings', detail: 'Playback and pairing', icon: Settings },
 ]

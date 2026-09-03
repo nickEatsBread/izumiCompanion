@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
-import { homeHeroItems, orderedHomeRows, rememberedHomeRowIndex, wrappedHeroIndex } from './home-navigation'
+import {
+  homeHeroItems,
+  isMergedCatalog,
+  mergedCatalogOption,
+  orderedHomeRows,
+  rememberedHomeRowIndex,
+  wrappedHeroIndex,
+} from './home-navigation'
 
 const media = (id: string): CompanionMedia => ({
   ref: { provider: 'preview', type: 'series', id },
@@ -48,5 +55,42 @@ describe('TV home navigation model', () => {
     expect(rememberedHomeRowIndex(popularRow, { continue: 1 })).toBe(0)
     expect(rememberedHomeRowIndex(popularRow, { continue: 1, popular: 2 })).toBe(2)
     expect(rememberedHomeRowIndex(continueRow, { continue: 20 })).toBe(1)
+  })
+
+  it('resolves Browse to the linked client merged catalogue', () => {
+    const snapshot: CompanionHomeSnapshot = {
+      app: 'izumi',
+      kind: 'companion-home',
+      version: 1,
+      revision: 'catalogues',
+      generatedAt: 1,
+      catalog: {
+        screen: 'auto',
+        label: 'Automatic anime',
+        options: [
+          { screen: 'auto', label: 'Automatic anime' },
+          { screen: 'all-providers', label: 'Merged' },
+        ],
+      },
+      rows: [],
+    }
+
+    expect(mergedCatalogOption(snapshot)).toEqual({ screen: 'all-providers', label: 'Merged' })
+    expect(isMergedCatalog(snapshot)).toBe(false)
+    expect(isMergedCatalog({ ...snapshot, catalog: { ...snapshot.catalog, screen: 'all-providers', label: 'Merged' } })).toBe(true)
+  })
+
+  it('uses the stable merged screen id when an older client omits catalogue options', () => {
+    const snapshot: CompanionHomeSnapshot = {
+      app: 'izumi',
+      kind: 'companion-home',
+      version: 1,
+      revision: 'legacy',
+      generatedAt: 1,
+      catalog: { screen: 'auto', label: 'Automatic anime' },
+      rows: [],
+    }
+
+    expect(mergedCatalogOption(snapshot)).toEqual({ screen: 'merged', label: 'Merged' })
   })
 })

@@ -1,4 +1,6 @@
-import type { CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
+import type { CompanionCatalogOption, CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
+
+export const MERGED_CATALOG_SCREEN = 'merged'
 
 function mediaKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
@@ -32,6 +34,20 @@ export function homeHeroItems(snapshot: CompanionHomeSnapshot, limit = 5): Compa
     seen.add(key)
     return true
   }).slice(0, Math.max(1, limit))
+}
+
+/** Browse is a first-class view of the merged provider catalogue. Older linked clients may omit
+ * catalogue options, so keep the protocol's stable merged screen id as a safe fallback. */
+export function mergedCatalogOption(snapshot: CompanionHomeSnapshot): CompanionCatalogOption {
+  return snapshot.catalog.options?.find((option) => (
+    option.screen.trim().toLowerCase() === MERGED_CATALOG_SCREEN
+    || option.label.trim().toLowerCase() === MERGED_CATALOG_SCREEN
+  )) ?? { screen: MERGED_CATALOG_SCREEN, label: 'Merged' }
+}
+
+export function isMergedCatalog(snapshot: CompanionHomeSnapshot): boolean {
+  return snapshot.catalog.screen.trim().toLowerCase() === MERGED_CATALOG_SCREEN
+    || snapshot.catalog.label.trim().toLowerCase() === MERGED_CATALOG_SCREEN
 }
 
 export function wrappedHeroIndex(current: number, direction: -1 | 1, length: number): number {

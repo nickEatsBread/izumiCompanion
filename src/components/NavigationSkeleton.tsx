@@ -51,7 +51,7 @@ export function NavigationSkeleton({ screen, leaving }: { screen: ScreenName; le
     </section>
   )
 
-  if (screen === 'trending' || screen === 'movies' || screen === 'my-list') return (
+  if (screen === 'movies' || screen === 'my-list') return (
     <section class={shellClass} aria-label="Loading catalogue" aria-live="polite" aria-busy="true">
       <i class="skeleton-block skeleton-catalog-art" aria-hidden="true" />
       <div class="skeleton-catalog-copy" aria-hidden="true">
@@ -65,7 +65,7 @@ export function NavigationSkeleton({ screen, leaving }: { screen: ScreenName; le
   )
 
   return (
-    <section class={shellClass} aria-label="Loading home" aria-live="polite" aria-busy="true">
+    <section class={shellClass} aria-label={screen === 'trending' ? 'Loading Browse merged catalogue' : 'Loading home'} aria-live="polite" aria-busy="true">
       <i class="skeleton-block skeleton-home-art" aria-hidden="true" />
       <div class="skeleton-home-copy" aria-hidden="true">
         <i class="skeleton-block skeleton-logo" />
