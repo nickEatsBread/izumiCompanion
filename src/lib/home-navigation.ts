@@ -38,3 +38,15 @@ export function wrappedHeroIndex(current: number, direction: -1 | 1, length: num
   if (length <= 1) return 0
   return (Math.max(0, current) + direction + length) % length
 }
+
+/** Each rail owns its horizontal position. Entering an unseen rail starts at its first item
+ * instead of copying a potentially very large index from the rail above it. */
+export function rememberedHomeRowIndex(
+  row: CompanionHomeRow | undefined,
+  remembered: Record<string, number>,
+): number {
+  if (!row?.items.length) return 0
+  const index = remembered[row.id]
+  if (!Number.isFinite(index)) return 0
+  return Math.max(0, Math.min(row.items.length - 1, Math.floor(index)))
+}

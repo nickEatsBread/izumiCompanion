@@ -292,8 +292,37 @@ async function main() {
     await waitFor("!document.getElementById('startup-splash')")
     await capture('m56-home-hero.png')
 
+    const initialHeroSource = await evaluate("document.querySelector('.hero-backdrop').src")
+    await press('ArrowRight')
+    const heroMotion = await waitFor(`(() => {
+      var incoming = document.querySelector('.hero-backdrop.is-incoming');
+      if (!incoming) return null;
+      return {
+        source: incoming.src,
+        transition: getComputedStyle(incoming).transitionDuration,
+        copyAnimation: getComputedStyle(document.querySelector('.hero-copy')).animationDuration
+      };
+    })()`)
+    assert(heroMotion.source !== initialHeroSource, 'Hero navigation did not stage different artwork.')
+    assert(heroMotion.transition !== '0s', `Hero artwork transition is disabled: ${heroMotion.transition}.`)
+    assert(heroMotion.copyAnimation !== '0s', `Hero copy transition is disabled: ${heroMotion.copyAnimation}.`)
+    await wait(440)
+
     await press('ArrowDown')
     await waitFor("document.querySelector('.home-focus-card.is-focused')")
+    await wait(520)
+    const settledFirstRow = await evaluate(`(() => {
+      var row = document.querySelector('.media-row');
+      var rows = document.querySelector('.catalog-rows');
+      return {
+        top: Math.round(row.getBoundingClientRect().top),
+        rowTop: getComputedStyle(row).top,
+        rowTransform: getComputedStyle(row).transform,
+        rowsTop: Math.round(rows.getBoundingClientRect().top),
+        rowsTransform: getComputedStyle(rows).transform
+      };
+    })()`)
+    assert(settledFirstRow.top === 52, `First rail settled incorrectly: ${JSON.stringify(settledFirstRow)}.`)
     const rows = await evaluate(`(() => ({
       body: [document.body.scrollWidth, document.body.scrollHeight],
       tops: Array.from(document.querySelectorAll('.media-row')).map(function (row) { return row.getBoundingClientRect().top; }),
@@ -307,6 +336,8 @@ async function main() {
       })(),
       continueCopy: document.querySelector('.home-focus-context').textContent,
       continueProgress: document.querySelector('.home-focus-card .home-card-progress > span').style.width,
+      rowTransition: getComputedStyle(document.querySelector('.media-row')).transitionDuration,
+      focusAnimation: getComputedStyle(document.querySelector('.home-focus-frame')).animationDuration,
       trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform
     }))()`)
     assert(JSON.stringify(rows.body) === '[1920,1080]', `Home overflowed the TV viewport: ${rows.body}.`)
@@ -317,10 +348,22 @@ async function main() {
     assert(JSON.stringify(rows.focus) === '[132,96,700,510,692,389]', `Unexpected focus spotlight geometry ${rows.focus}.`)
     assert(rows.continueCopy.includes('S1 E12') && rows.continueCopy.includes('9m left'), `Continue Watching context is incomplete: ${rows.continueCopy}.`)
     assert(rows.continueProgress === '64%', `Continue Watching progress is ${rows.continueProgress}.`)
+    assert(rows.rowTransition !== '0s', `Vertical row transition is disabled: ${rows.rowTransition}.`)
+    assert(rows.focusAnimation !== '0s', `Focused tile transition is disabled: ${rows.focusAnimation}.`)
     assert(rows.trackTransform === 'none', 'Vertical navigation transformed the full Home page.')
     await capture('m56-continue-watching.png')
 
+    for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await press('ArrowDown')
+    await wait(360)
+    const verticalDestination = await evaluate(`(() => {
+      var focused = document.querySelector('.home-focus-card.is-focused');
+      return {
+        row: Number(focused.closest('.media-row').getAttribute('data-home-row')),
+        index: Number(focused.getAttribute('data-media-index'))
+      };
+    })()`)
+    assert(verticalDestination.row === 1 && verticalDestination.index === 0, `A new rail inherited the previous rail position: ${JSON.stringify(verticalDestination)}.`)
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art.is-ready')")
     await capture('m56-focused-rail.png')
@@ -337,7 +380,8 @@ async function main() {
         visualWidth: focused.getBoundingClientRect().width,
         posterWidths: Array.from(new Set(Array.from(strip.querySelectorAll('.home-poster-card')).map(function (card) { return card.offsetWidth; }))),
         focusLeft: focused.getBoundingClientRect().left,
-        transition: getComputedStyle(focused).transitionDuration,
+        focusAnimation: getComputedStyle(focused.querySelector('.home-focus-frame')).animationDuration,
+        artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
         stripTransform: getComputedStyle(strip).transform,
         broken: Array.from(document.images).filter(function (image) { return image.complete && !image.naturalWidth; }).length
       };
@@ -347,7 +391,8 @@ async function main() {
     assert(horizontal.width === 700 && horizontal.visualWidth === 700, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
     assert(JSON.stringify(horizontal.posterWidths) === '[228]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
     assert(horizontal.focusLeft === 184, `Previous-title peek did not offset the focus spotlight: ${horizontal.focusLeft}px.`)
-    assert(horizontal.transition === '0s', `M56 is animating the focus spotlight for ${horizontal.transition}.`)
+    assert(horizontal.focusAnimation !== '0s', `Focused tile animation is disabled: ${horizontal.focusAnimation}.`)
+    assert(horizontal.artworkTransition !== '0s', `Focused artwork transition is disabled: ${horizontal.artworkTransition}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
 

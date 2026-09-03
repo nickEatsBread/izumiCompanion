@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionMedia } from '../types'
-import { homeCardContext, homeRowTop, homeRowVisible, informativeHeroMeta } from './HomeScreen'
+import { homeCardContext, homeFocusMotion, homeRowTop, homeRowVisible, informativeHeroMeta } from './HomeScreen'
 
 const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
   ref: { provider: 'preview', type: 'series', id: 'test' },
@@ -53,5 +53,11 @@ describe('TV home presentation', () => {
       primary: '2024  ·  Fantasy  ·  TV-14',
       description: 'A deliberately concise synopsis.',
     })
+  })
+
+  it('describes horizontal and vertical spotlight movement for the TV transition', () => {
+    expect(homeFocusMotion({ zone: 'row', row: 0, index: 1 }, { zone: 'row', row: 0, index: 2 })).toBe('forward')
+    expect(homeFocusMotion({ zone: 'row', row: 0, index: 2 }, { zone: 'row', row: 0, index: 1 })).toBe('backward')
+    expect(homeFocusMotion({ zone: 'row', row: 0, index: 2 }, { zone: 'row', row: 1, index: 0 })).toBe('vertical')
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
-import { homeHeroItems, orderedHomeRows, wrappedHeroIndex } from './home-navigation'
+import { homeHeroItems, orderedHomeRows, rememberedHomeRowIndex, wrappedHeroIndex } from './home-navigation'
 
 const media = (id: string): CompanionMedia => ({
   ref: { provider: 'preview', type: 'series', id },
@@ -39,5 +39,14 @@ describe('TV home navigation model', () => {
     expect(wrappedHeroIndex(0, -1, 5)).toBe(4)
     expect(wrappedHeroIndex(4, 1, 5)).toBe(0)
     expect(wrappedHeroIndex(0, 1, 1)).toBe(0)
+  })
+
+  it('keeps an independent horizontal position for every home rail', () => {
+    const continueRow = row('continue', 'Continue Watching', 'continue', [media('one'), media('two')])
+    const popularRow = row('popular', 'Popular this season', 'catalog', [media('one'), media('two'), media('three')])
+
+    expect(rememberedHomeRowIndex(popularRow, { continue: 1 })).toBe(0)
+    expect(rememberedHomeRowIndex(popularRow, { continue: 1, popular: 2 })).toBe(2)
+    expect(rememberedHomeRowIndex(continueRow, { continue: 20 })).toBe(1)
   })
 })

@@ -3669,6 +3669,36 @@ body.avplay-visible #av-player {
   to { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes home-hero-copy-change {
+  from { opacity: .18; transform: translate3d(-22px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes home-poster-enter {
+  from { opacity: .42; transform: translate3d(18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes home-focus-enter-forward {
+  from { opacity: .28; transform: translate3d(38px, 0, 0) scale(.985); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes home-focus-enter-backward {
+  from { opacity: .28; transform: translate3d(-38px, 0, 0) scale(.985); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes home-focus-enter-vertical {
+  from { opacity: .2; transform: translate3d(0, 24px, 0) scale(.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes home-previous-peek-enter {
+  from { opacity: 0; transform: translate3d(-18px, 0, 0); }
+  to { opacity: .58; transform: translate3d(0, 0, 0); }
+}
+
 @keyframes pairing-drift-one {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-24vw, 0, 0); }
@@ -3843,6 +3873,18 @@ body,
   height: 760px;
   min-height: 760px;
   background: #050505;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  transition: opacity 260ms ease, transform 340ms cubic-bezier(.2, .78, .2, 1);
+  will-change: opacity, transform;
+}
+
+.hero.is-receding {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, -72px, 0);
+  -webkit-transform: translate3d(0, -72px, 0);
 }
 
 .hero-feature-card {
@@ -3873,6 +3915,21 @@ body,
   -webkit-transform: none;
 }
 
+.hero-backdrop.is-incoming {
+  z-index: 1;
+  opacity: 0;
+  transform: scale(1.025);
+  -webkit-transform: scale(1.025);
+  transition: opacity 360ms ease, transform 420ms cubic-bezier(.2, .78, .2, 1);
+  will-change: opacity, transform;
+}
+
+.hero-backdrop.is-incoming.is-ready {
+  opacity: 1;
+  transform: scale(1);
+  -webkit-transform: scale(1);
+}
+
 .hero-shade {
   background:
     linear-gradient(90deg, #101010 0%, rgba(16, 16, 16, .98) 25%, rgba(16, 16, 16, .72) 43%, rgba(16, 16, 16, .12) 68%, rgba(16, 16, 16, 0) 84%),
@@ -3886,6 +3943,7 @@ body,
 .hero-copy {
   width: 650px;
   padding: 142px 0 0 74px;
+  animation: home-hero-copy-change 300ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
 .hero-brand {
@@ -3985,6 +4043,15 @@ body,
 .hero-carousel-pips > span {
   width: 28px;
   height: 3px;
+  transform: scaleX(.72);
+  -webkit-transform: scaleX(.72);
+  transform-origin: center;
+  transition: background-color 220ms ease, transform 260ms cubic-bezier(.2, .78, .2, 1);
+}
+
+.hero-carousel-pips > span.is-current {
+  transform: scaleX(1);
+  -webkit-transform: scaleX(1);
 }
 
 .catalog-rows {
@@ -3997,11 +4064,17 @@ body,
   padding: 0;
   overflow: hidden;
   background: #050505;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  transition: transform 360ms cubic-bezier(.2, .78, .2, 1);
+  will-change: transform;
 }
 
 .catalog-rows.is-preview {
-  top: 760px;
+  top: 0;
   height: 320px;
+  transform: translate3d(0, 760px, 0);
+  -webkit-transform: translate3d(0, 760px, 0);
 }
 
 .catalog-rows.is-browsing {
@@ -4013,6 +4086,7 @@ body,
 .continue-row,
 .top-ten-row {
   position: absolute;
+  top: 0;
   left: 132px;
   width: 1788px;
   height: 560px;
@@ -4020,7 +4094,8 @@ body,
   overflow: visible;
   opacity: 1;
   filter: none;
-  transition: none;
+  transition: transform 320ms cubic-bezier(.2, .78, .2, 1);
+  will-change: transform;
 }
 
 .media-row h2 {
@@ -4235,6 +4310,7 @@ body,
 .home-row-stage.is-active .media-strip-viewport {
   left: 724px;
   width: 1064px;
+  transition: transform 230ms cubic-bezier(.2, .78, .2, 1);
 }
 
 .home-row-stage.is-active .media-strip::after {
@@ -4247,8 +4323,10 @@ body,
 }
 
 .home-focus-card.has-previous ~ .media-strip-viewport {
-  left: 776px;
-  width: 1012px;
+  left: 724px;
+  width: 1064px;
+  transform: translate3d(52px, 0, 0);
+  -webkit-transform: translate3d(52px, 0, 0);
 }
 
 .home-poster-card {
@@ -4265,8 +4343,9 @@ body,
   color: #fff;
   background: #202020;
   text-align: left;
-  transform: none;
-  transition: none;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  animation: home-poster-enter 190ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
 .home-poster-card.is-selected-source {
@@ -4298,11 +4377,15 @@ body,
 
 .home-focus-art {
   opacity: 0;
-  transition: none;
+  transform: scale(1.018);
+  -webkit-transform: scale(1.018);
+  transition: opacity 220ms ease, transform 260ms cubic-bezier(.2, .78, .2, 1);
 }
 
 .home-focus-art.is-ready {
   opacity: 1;
+  transform: scale(1);
+  -webkit-transform: scale(1);
 }
 
 .home-poster-rank {
@@ -4338,12 +4421,35 @@ body,
   color: #fff;
   background: #050505;
   text-align: left;
-  transform: none;
-  transition: none;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  transition: transform 230ms cubic-bezier(.2, .78, .2, 1);
+  will-change: transform;
 }
 
 .home-focus-card.has-previous {
-  left: 52px;
+  left: 0;
+  transform: translate3d(52px, 0, 0);
+  -webkit-transform: translate3d(52px, 0, 0);
+}
+
+.home-focus-card.motion-forward .home-focus-frame,
+.home-focus-card.motion-forward .home-focus-context {
+  animation: home-focus-enter-forward 240ms cubic-bezier(.2, .78, .2, 1) both;
+}
+
+.home-focus-card.motion-backward .home-focus-frame,
+.home-focus-card.motion-backward .home-focus-context {
+  animation: home-focus-enter-backward 240ms cubic-bezier(.2, .78, .2, 1) both;
+}
+
+.home-focus-card.motion-vertical .home-focus-frame,
+.home-focus-card.motion-vertical .home-focus-context {
+  animation: home-focus-enter-vertical 280ms cubic-bezier(.2, .78, .2, 1) both;
+}
+
+.home-focus-card .home-focus-context {
+  animation-delay: 34ms;
 }
 
 .home-focus-frame {
@@ -4457,6 +4563,7 @@ body,
   overflow: hidden;
   opacity: .58;
   pointer-events: none;
+  animation: home-previous-peek-enter 220ms ease both;
 }
 
 .home-previous-peek .home-poster-card {
@@ -4623,7 +4730,6 @@ body,
  * declaration. This block only removes expensive motion on Samsung's older browser; repeating
  * pixel caps here made the physical rail and typography smaller than the 10-foot layout. */
 @supports not (width: clamp(1px, 2px, 3px)) {
-  .media-row,
   .search-result-grid,
   .search-suggestions { animation: none; transition: none; }
   .skeleton-line::after,

@@ -2,6 +2,7 @@ import { History, Info, Play, TrendingUp } from 'lucide-preact'
 import { memo } from 'preact/compat'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
+import { tvMotionValue } from '../lib/tv-motion'
 import { linearWindow } from '../lib/windowing'
 import type { CompanionCatalogOption, CompanionHomeSnapshot, CompanionMedia, FocusLocation } from '../types'
 import { NavRail } from './NavRail'
@@ -96,6 +97,83 @@ function eventIndex(event: Event, attribute: string): number | undefined {
   return Number.isInteger(index) && index >= 0 ? index : undefined
 }
 
+export type HomeFocusMotion = 'forward' | 'backward' | 'vertical' | 'still'
+
+export function homeFocusMotion(previous: FocusLocation, current: FocusLocation): HomeFocusMotion {
+  if (previous.zone !== 'row' || current.zone !== 'row') return 'vertical'
+  if (previous.row !== current.row) return 'vertical'
+  if (previous.index < current.index) return 'forward'
+  if (previous.index > current.index) return 'backward'
+  return 'still'
+}
+
+const railScrollAnimations = new WeakMap<HTMLElement, number>()
+
+function animateRailScroll(element: HTMLElement, target: number, duration = 240): void {
+  const previousFrame = railScrollAnimations.get(element)
+  if (previousFrame !== undefined) window.cancelAnimationFrame(previousFrame)
+  const start = element.scrollLeft
+  const distance = target - start
+  if (Math.abs(distance) < 1 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    element.scrollLeft = target
+    railScrollAnimations.delete(element)
+    return
+  }
+  const startedAt = performance.now()
+  const step = (now: number) => {
+    const elapsed = Math.min(duration, Math.max(0, now - startedAt))
+    element.scrollLeft = tvMotionValue(start, target, elapsed, duration)
+    if (elapsed < duration) railScrollAnimations.set(element, window.requestAnimationFrame(step))
+    else railScrollAnimations.delete(element)
+  }
+  railScrollAnimations.set(element, window.requestAnimationFrame(step))
+}
+
+function HeroArtwork({ source }: { source?: string }) {
+  const [activeSource, setActiveSource] = useState(source ?? '')
+  const [incomingSource, setIncomingSource] = useState('')
+  const [incomingReady, setIncomingReady] = useState(false)
+  const transitionTimerRef = useRef<number>()
+
+  useEffect(() => {
+    if (transitionTimerRef.current) window.clearTimeout(transitionTimerRef.current)
+    setIncomingReady(false)
+    setIncomingSource(source && source !== activeSource ? source : '')
+    return () => {
+      if (transitionTimerRef.current) window.clearTimeout(transitionTimerRef.current)
+    }
+  }, [activeSource, source])
+
+  const revealIncoming = (nextSource: string) => {
+    if (nextSource !== incomingSource) return
+    setIncomingReady(true)
+    transitionTimerRef.current = window.setTimeout(() => {
+      setActiveSource(nextSource)
+      setIncomingSource('')
+      setIncomingReady(false)
+    }, 380)
+  }
+
+  return (
+    <div class="hero-art-stage" aria-hidden="true">
+      {activeSource && <img class="hero-backdrop" src={activeSource} alt="" width={1740} height={680} decoding="async" />}
+      {incomingSource && (
+        <img
+          class={`hero-backdrop is-incoming${incomingReady ? ' is-ready' : ''}`}
+          key={incomingSource}
+          src={incomingSource}
+          alt=""
+          width={1740}
+          height={680}
+          decoding="async"
+          onLoad={() => revealIncoming(incomingSource)}
+          onError={() => setIncomingSource('')}
+        />
+      )}
+    </div>
+  )
+}
+
 /** Poster slots keep one fixed stride. The focused title is drawn in a separate spotlight layer,
  * so moving through a rail does not resize or reflow its neighbours on the TV. */
 const HomePosterCard = memo(function HomePosterCard({
@@ -166,6 +244,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   index,
   episodeCard,
   topTenRow,
+  motion,
   onActivate,
 }: {
   item: CompanionMedia
@@ -173,6 +252,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   index: number
   episodeCard: boolean
   topTenRow: boolean
+  motion: HomeFocusMotion
   onActivate(): void
 }) {
   const cardProgress = episodeCard ? item.episodeProgress : item.progress
@@ -199,7 +279,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   return (
     <button
       type="button"
-      class={`home-focus-card is-focused${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${index > 0 ? ' has-previous' : ''}`}
+      class={`home-focus-card is-focused motion-${motion}${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${index > 0 ? ' has-previous' : ''}`}
       data-focus-id={`row-${rowIndex}-${index}`}
       data-media-index={index}
       tabIndex={0}
@@ -272,8 +352,14 @@ export function HomeScreen({
     : snapshot.catalog.label
   const heroImage = hero.episodeImage || hero.backdrop || hero.poster
   const homeTrackRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<FocusLocation>(focus)
   const activeRow = focus.zone === 'row' ? focus.row : 0
   const horizontalCenter = focus.zone === 'row' ? focus.index : 0
+  const focusMotion = homeFocusMotion(previousFocusRef.current, focus)
+
+  useEffect(() => {
+    previousFocusRef.current = focus
+  }, [focus])
 
   useEffect(() => {
     const track = homeTrackRef.current
@@ -288,7 +374,7 @@ export function HomeScreen({
       if (!strip || !viewport || (!nextCard && !selectedCard)) return
       const target = nextCard || selectedCard!
       const maximum = Math.max(0, strip.scrollWidth - viewport.clientWidth)
-      viewport.scrollLeft = Math.min(maximum, Math.max(0, target.offsetLeft + (nextCard ? 0 : 244)))
+      animateRailScroll(viewport, Math.min(maximum, Math.max(0, target.offsetLeft + (nextCard ? 0 : 244))))
     })
     return () => window.cancelAnimationFrame(frame)
   }, [focus, snapshot.rows])
@@ -338,14 +424,12 @@ export function HomeScreen({
       )}
 
       <div class="home-motion-track" ref={homeTrackRef}>
-      {focus.zone !== 'row' && <section class="hero" aria-label={`Featured: ${hero.title}`}>
+      <section class={`hero${focus.zone === 'row' ? ' is-receding' : ''}`} aria-label={`Featured: ${hero.title}`} aria-hidden={focus.zone === 'row'}>
         <article class="hero-feature-card">
         <img class="hero-brand" src={wordmark} alt="Izumi" />
-        <div class="hero-art-stage" aria-hidden="true">
-          {heroImage && <img class="hero-backdrop" src={heroImage} alt="" width={1740} height={680} decoding="async" />}
-        </div>
+        <HeroArtwork source={heroImage} />
         <div class="hero-shade" />
-        <div class="hero-copy">
+        <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
           <p class="hero-eyebrow"><ReasonIcon size={20} aria-hidden="true" /><span>{reason}</span></p>
           <h1>{hero.title}</h1>
           {isContinueHero && hero.episode && (
@@ -391,7 +475,7 @@ export function HomeScreen({
           </div>
         )}
         </article>
-      </section>}
+      </section>
 
       <div class={`catalog-rows${focus.zone === 'row' ? ' is-browsing' : ' is-preview'}`}>
         {snapshot.rows.map((row, rowIndex) => {
@@ -405,10 +489,11 @@ export function HomeScreen({
             4,
           )
           const focusedItem = rowActive ? row.items[focus.index] : undefined
+          const rowTransform = `translate3d(0, ${homeRowTop(rowIndex, activeRow, focus.zone === 'row')}px, 0)`
           return (
           <section
             class={`media-row${continueRow ? ' continue-row' : ''}${topTenRow ? ' top-ten-row' : ''}${rowActive ? ' is-active' : ''}${rowIndex > activeRow ? ' is-upcoming' : ''}`}
-            style={{ top: `${homeRowTop(rowIndex, activeRow, focus.zone === 'row')}px` }}
+            style={{ transform: rowTransform, WebkitTransform: rowTransform }}
             key={row.id}
             data-home-row={rowIndex}
             aria-labelledby={`row-title-${row.id}`}
@@ -437,6 +522,7 @@ export function HomeScreen({
                     index={focus.index}
                     episodeCard={continueRow}
                     topTenRow={topTenRow}
+                    motion={focusMotion}
                     onActivate={() => (continueRow ? onPlay : onOpenSeries)(focusedItem)}
                   />
                 )}

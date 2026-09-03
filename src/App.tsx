@@ -26,7 +26,7 @@ import { navItemCount } from './components/NavRail'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
 import { catalogCollections, episodeCountsFor } from './lib/catalog'
-import { homeHeroItems, orderedHomeRows, wrappedHeroIndex } from './lib/home-navigation'
+import { homeHeroItems, orderedHomeRows, rememberedHomeRowIndex, wrappedHeroIndex } from './lib/home-navigation'
 import { registerRemoteKeys, remoteAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
@@ -265,6 +265,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const searchTimerRef = useRef<number>()
   const searchResponseTimerRef = useRef<number>()
   const heroIndexRef = useRef(0)
+  const homeRowIndexesRef = useRef<Record<string, number>>({})
   const startupSettledRef = useRef(false)
   const startupSettleFrameRef = useRef<number>()
   const startupFallbackTimerRef = useRef<number>()
@@ -667,6 +668,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           showNotice(`${pendingCatalog.label} catalogue loaded`)
         }
         setSnapshot(next)
+        homeRowIndexesRef.current = {}
         heroIndexRef.current = 0
         setHeroIndex(0)
         setSelected(next.hero ?? next.rows[0]?.items[0] ?? fallbackMedia)
@@ -829,6 +831,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (document.activeElement !== element) {
       try { element.focus({ preventScroll: true }) }
       catch { element.focus() }
+    }
+    // Chromium 56 accepts the focus options object but ignores preventScroll. During the Home
+    // entrance animation it can otherwise scroll the hidden 1080p root to center the incoming
+    // rail, leaving every settled row above the physical TV viewport.
+    if (screen === 'home') {
+      const home = element.closest<HTMLElement>('.home-screen')
+      const track = element.closest<HTMLElement>('.home-motion-track')
+      if (home) {
+        home.scrollTop = 0
+        home.scrollLeft = 0
+      }
+      if (track) {
+        track.scrollTop = 0
+        track.scrollLeft = 0
+      }
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0)
     }
     markFocusApplied(focusId(focus))
     if (focus.zone === 'grid') {
@@ -1031,6 +1049,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const changeFocus = (next: FocusLocation) => {
     if (focusId(focusRef.current) === focusId(next)) return
+    if (next.zone === 'row') {
+      const row = homeRows[next.row]
+      if (row) homeRowIndexesRef.current[row.id] = Math.max(0, Math.min(row.items.length - 1, next.index))
+    }
     setFocusLocation(next)
   }
 
@@ -1060,6 +1082,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (showPreviewTools) {
       const next = previewSnapshotForCatalog(option.screen)
       setSnapshot(next)
+      homeRowIndexesRef.current = {}
       heroIndexRef.current = 0
       setHeroIndex(0)
       setSelected(next.hero ?? next.rows[0]?.items[0] ?? fallbackMedia)
@@ -1109,7 +1132,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         return
       }
       if (action === 'up') next = { zone: 'nav', index: activeNav }
-      else if (action === 'down' && homeRows[0]?.items.length) next = { zone: 'row', row: 0, index: 0 }
+      else if (action === 'down' && homeRows[0]?.items.length) {
+        next = { zone: 'row', row: 0, index: rememberedHomeRowIndex(homeRows[0], homeRowIndexesRef.current) }
+      }
     } else if (focus.zone === 'row') {
       const row = homeRows[focus.row]
       if (!row) return
@@ -1123,10 +1148,18 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           showHomeHero(heroIndexRef.current)
           return
         }
-        next = { zone: 'row', row: upperRow, index: Math.min(focus.index, homeRows[upperRow].items.length - 1) }
+        next = {
+          zone: 'row',
+          row: upperRow,
+          index: rememberedHomeRowIndex(homeRows[upperRow], homeRowIndexesRef.current),
+        }
       } else if (action === 'down' && focus.row < homeRows.length - 1) {
         const lowerRow = focus.row + 1
-        next = { zone: 'row', row: lowerRow, index: Math.min(focus.index, homeRows[lowerRow].items.length - 1) }
+        next = {
+          zone: 'row',
+          row: lowerRow,
+          index: rememberedHomeRowIndex(homeRows[lowerRow], homeRowIndexesRef.current),
+        }
       }
     }
     changeFocus(next)
