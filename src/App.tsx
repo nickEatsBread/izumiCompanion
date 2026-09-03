@@ -1083,7 +1083,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       if (showPreviewTools) apply(previewDetailsFor(media))
       else void receiverRef.current?.requestDetails(media).then(apply)
-    }, 320)
+    }, 120)
     return () => window.clearTimeout(timer)
   }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, homePreviewMedia?.trailer?.id, homePreviewMedia?.trailer?.site, showPreviewTools])
 

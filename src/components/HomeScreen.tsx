@@ -176,22 +176,44 @@ const railScrollAnimations = new WeakMap<HTMLElement, number>()
 const preloadedHomeArtwork: Record<string, boolean> = {}
 const preloadedTitleImages: Record<string, boolean> = {}
 const failedTitleImages: Record<string, boolean> = {}
+const titleImageLoads: Partial<Record<string, Promise<boolean>>> = {}
 const preloadedTitleImageOrder: string[] = []
+const failedTitleImageOrder: string[] = []
 const MAX_PRELOADED_TITLE_IMAGES = 24
+const TITLE_TEXT_FALLBACK_MS = 1_200
 
-function preloadTitleImage(source?: string): void {
-  if (!source || preloadedTitleImages[source]) return
-  const image = new Image()
-  image.onload = () => {
-    preloadedTitleImages[source] = true
-    preloadedTitleImageOrder.push(source)
-    while (preloadedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
-      const expired = preloadedTitleImageOrder.shift()
-      if (expired) delete preloadedTitleImages[expired]
+function preloadTitleImage(source?: string): Promise<boolean> {
+  if (!source || failedTitleImages[source]) return Promise.resolve(false)
+  if (preloadedTitleImages[source]) return Promise.resolve(true)
+  if (titleImageLoads[source]) return titleImageLoads[source]
+  const request = new Promise<boolean>((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      preloadedTitleImages[source] = true
+      preloadedTitleImageOrder.push(source)
+      while (preloadedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
+        const expired = preloadedTitleImageOrder.shift()
+        if (expired) {
+          delete preloadedTitleImages[expired]
+          delete titleImageLoads[expired]
+        }
+      }
+      resolve(true)
     }
-  }
-  image.onerror = () => { failedTitleImages[source] = true }
-  image.src = source
+    image.onerror = () => {
+      failedTitleImages[source] = true
+      failedTitleImageOrder.push(source)
+      while (failedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
+        const expired = failedTitleImageOrder.shift()
+        if (expired) delete failedTitleImages[expired]
+      }
+      delete titleImageLoads[source]
+      resolve(false)
+    }
+    image.src = source
+  })
+  titleImageLoads[source] = request
+  return request
 }
 
 function focusArtwork(media: CompanionMedia, episodeCard: boolean): string[] {
@@ -204,7 +226,7 @@ function focusArtwork(media: CompanionMedia, episodeCard: boolean): string[] {
 }
 
 function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void {
-  preloadTitleImage(media.logoImage)
+  void preloadTitleImage(media.logoImage)
   const source = focusArtwork(media, episodeCard)[0]
   if (!source || preloadedHomeArtwork[source]) return
   const image = new Image()
@@ -212,25 +234,58 @@ function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void 
   image.src = source
 }
 
-/** Choose text or a decoded logo once per title visit. Late metadata is cached for the next visit
- * instead of visibly replacing the title while somebody is reading it. */
-function useStableTitleImage(identity: string, source?: string): [string, () => void] {
-  const [selection, setSelection] = useState(() => ({
+interface StableTitleSelection {
+  identity: string
+  logo: string
+  showText: boolean
+}
+
+function initialTitleSelection(identity: string, source?: string, settled = false): StableTitleSelection {
+  return {
     identity,
-    source: source && !failedTitleImages[source] ? source : '',
-  }))
-  const visible = selection.identity === identity
-    ? selection.source
-    : source && !failedTitleImages[source] ? source : ''
+    logo: source && preloadedTitleImages[source] ? source : '',
+    showText: Boolean(source && failedTitleImages[source]) || (settled && !source),
+  }
+}
+
+/** Hold the title slot while late provider metadata and its clear-logo decode. If the logo wins the
+ * short grace period it is the only treatment shown; once readable text wins, that visit stays text
+ * and the decoded logo is cached for the next card visit. */
+function useStableTitleImage(identity: string, source?: string, settled = false): [string, boolean, () => void] {
+  const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source, settled))
+  const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source, settled)
   useEffect(() => {
-    setSelection({ identity, source: source && !failedTitleImages[source] ? source : '' })
+    setSelection(initialTitleSelection(identity, source, settled))
+    const timer = window.setTimeout(() => {
+      setSelection((current) => current.identity === identity && !current.logo
+        ? { ...current, showText: true }
+        : current)
+    }, TITLE_TEXT_FALLBACK_MS)
+    return () => window.clearTimeout(timer)
   }, [identity])
   useEffect(() => {
-    preloadTitleImage(source)
-  }, [source])
-  return [visible, () => {
-    if (visible) failedTitleImages[visible] = true
-    setSelection((current) => current.identity === identity ? { ...current, source: '' } : current)
+    if (!settled || source) return
+    setSelection((current) => current.identity === identity && !current.logo
+      ? { ...current, showText: true }
+      : current)
+  }, [identity, settled, source])
+  useEffect(() => {
+    if (!source) return
+    let active = true
+    void preloadTitleImage(source).then((loaded) => {
+      if (!active) return
+      setSelection((current) => {
+        if (current.identity !== identity || current.showText) return current
+        return loaded
+          ? { ...current, logo: source }
+          : { ...current, logo: '', showText: true }
+      })
+    })
+    return () => { active = false }
+  }, [identity, source])
+  return [visible.logo, visible.showText, () => {
+    if (visible.logo) failedTitleImages[visible.logo] = true
+    setSelection((current) => current.identity === identity ? { ...current, logo: '', showText: true } : current)
   }]
 }
 
@@ -451,7 +506,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
   const [trailerPlaying, setTrailerPlaying] = useState(false)
-  const [logoImage, onLogoError] = useStableTitleImage(mediaIdentity(item), item.logoImage)
+  const [logoImage, showTextTitle, onLogoError] = useStableTitleImage(mediaIdentity(item), item.logoImage, item.titleArtSettled)
   const image = artwork[artworkIndex]
   const context = homeCardContext(item, episodeCard)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
@@ -496,7 +551,9 @@ const HomeFocusCard = memo(function HomeFocusCard({
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
           ? <img class="home-focus-logo" src={logoImage} alt={item.title} decoding="async" onError={onLogoError} />
-          : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
+          : showTextTitle
+            ? <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>
+            : <span class="home-focus-title-pending" aria-hidden="true" />}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
           <span>{item.title}</span><i /><strong>{trailerFooterLabel(item)}</strong>
         </span>}
@@ -556,7 +613,7 @@ export function HomeScreen({
     : snapshot.catalog.label
   const heroImage = hero.episodeImage || hero.backdrop || hero.poster
   const heroTrailerSource = trailerPreview?.mediaKey === mediaIdentity(hero) ? trailerPreview.url : undefined
-  const [heroLogoImage, onHeroLogoError] = useStableTitleImage(mediaIdentity(hero), hero.logoImage)
+  const [heroLogoImage, showHeroTextTitle, onHeroLogoError] = useStableTitleImage(mediaIdentity(hero), hero.logoImage, hero.titleArtSettled)
   const homeTrackRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<FocusLocation>(focus)
   const focusMotionRef = useRef<HomeFocusMotion>('still')
@@ -579,8 +636,8 @@ export function HomeScreen({
   }
 
   useEffect(() => {
-    preloadTitleImage(snapshot.hero?.logoImage)
-    snapshot.rows.slice(0, 2).forEach((row) => row.items.slice(0, 8).forEach((item) => preloadTitleImage(item.logoImage)))
+    void preloadTitleImage(snapshot.hero?.logoImage)
+    snapshot.rows.slice(0, 2).forEach((row) => row.items.slice(0, 8).forEach((item) => { void preloadTitleImage(item.logoImage) }))
   }, [snapshot.hero?.logoImage, snapshot.rows])
 
   useEffect(() => {
@@ -692,7 +749,9 @@ export function HomeScreen({
         <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
           {heroLogoImage
             ? <img class="hero-title-logo" src={heroLogoImage} alt={hero.title} decoding="async" onError={onHeroLogoError} />
-            : <h1>{hero.title}</h1>}
+            : showHeroTextTitle
+              ? <h1>{hero.title}</h1>
+              : <span class="hero-title-pending" aria-hidden="true" />}
           {isContinueHero && hero.episode && (
             <div class="hero-resume">
               <p><strong>{episodeLabel(hero)}</strong>{hero.episodeTitle && <span>{hero.episodeTitle}</span>}</p>

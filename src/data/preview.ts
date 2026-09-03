@@ -20,7 +20,7 @@ const media = (
   }
 }
 
-const previewLogo = (label: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120"><text x="0" y="88" fill="white" font-family="Arial,sans-serif" font-size="72" font-weight="900">${label}</text></svg>`)}`
+const previewLogo = (label: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120"><text x="20" y="88" fill="white" font-family="Arial,sans-serif" font-size="72" font-weight="900" textLength="480" lengthAdjust="spacingAndGlyphs">${label}</text></svg>`)}`
 
 const frierenSeasonOneTitles = [
   "The Journey's End",
@@ -273,6 +273,7 @@ export const previewSnapshot: CompanionHomeSnapshot = {
 }
 
 export function previewDetailsFor(item: CompanionMedia): CompanionMedia {
+  const detailLogo = item.ref.id === '16498' ? previewLogo('ATTACK ON TITAN') : undefined
   const artwork = continueItems.flatMap((entry) => entry.episodeImage ? [entry.episodeImage] : [])
   const supplied = new Map((item.episodes ?? []).map((episode) => [`${episode.season}:${episode.episode}`, episode]))
   const counts = item.seasonEpisodeCounts ?? []
@@ -297,7 +298,7 @@ export function previewDetailsFor(item: CompanionMedia): CompanionMedia {
       }
     })
   })
-  return { ...item, episodes }
+  return { ...item, logoImage: item.logoImage || detailLogo, episodes }
 }
 
 export function previewSnapshotForCatalog(screen: string): CompanionHomeSnapshot {

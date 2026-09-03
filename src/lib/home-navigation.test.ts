@@ -84,6 +84,7 @@ describe('TV home navigation model', () => {
       placement: { label: 'Continue Watching', kind: 'continue' },
     })
     expect(merged.rows[0].items[0].logoImage).toBe('https://img.example/logo.png')
+    expect(merged.rows[0].items[0].titleArtSettled).toBe(true)
     expect(merged.rows[0].items[0].trailer?.id).toBe('Iwr1aLEDpe4')
     expect(merged.views?.search?.[0].genres).toEqual(['Drama'])
   })

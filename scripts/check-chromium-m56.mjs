@@ -389,7 +389,20 @@ async function main() {
     assert(rows.trackTransform === 'none', 'Vertical navigation transformed the full Home page.')
     await capture('m56-continue-watching.png')
 
-    for (let index = 0; index < 3; index += 1) await press('ArrowRight')
+    await press('ArrowRight')
+    await waitFor("document.querySelector('.home-focus-logo[alt=\"Attack on Titan\"]')")
+    const prefetchedTitleArt = await evaluate(`(() => {
+      var card = document.querySelector('.home-focus-card.is-focused');
+      var logo = card.querySelector('.home-focus-logo');
+      return {
+        logo: logo ? logo.getAttribute('alt') : '',
+        plainText: Boolean(card.querySelector('.home-focus-title')),
+        pending: Boolean(card.querySelector('.home-focus-title-pending'))
+      };
+    })()`)
+    assert(prefetchedTitleArt.logo === 'Attack on Titan' && !prefetchedTitleArt.plainText && !prefetchedTitleArt.pending,
+      `A prefetched provider logo swapped through text or disappeared: ${JSON.stringify(prefetchedTitleArt)}.`)
+    for (let index = 0; index < 2; index += 1) await press('ArrowRight')
     await press('ArrowDown')
     await wait(360)
     const verticalDestination = await evaluate(`(() => {
@@ -455,7 +468,11 @@ async function main() {
     assert(activeTrailerPresentation.achievements === '0' && activeTrailerPresentation.anilistLogo && !activeTrailerPresentation.sourceText.includes('AniList'), `Trailer/source achievement treatment is incorrect: ${JSON.stringify(activeTrailerPresentation)}.`)
     assert(activeTrailerPresentation.achievementWidths.every(function (width) { return width < 430; }), `Achievement badges retain an empty black tail: ${activeTrailerPresentation.achievementWidths}.`)
     await capture('m56-trailer-playing.png')
-    await evaluate("document.querySelector('.home-focus-card').classList.remove('is-trailer-playing')")
+    await evaluate(`(() => {
+      var trailer = document.querySelector('.home-focus-card .home-hover-trailer');
+      if (trailer) trailer.remove();
+      document.querySelector('.home-focus-card').classList.remove('is-trailer-playing');
+    })()`)
     await wait(260)
     const restoredTrailerPresentation = await evaluate(`(() => {
       var card = document.querySelector('.home-focus-card');
@@ -471,6 +488,7 @@ async function main() {
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art')")
     for (let index = 3; index < 8; index += 1) await press('ArrowRight')
+    await waitFor("document.querySelector('.home-focus-card.is-focused .home-focus-logo[alt=\"Attack on Titan\"]')")
     const horizontal = await evaluate(`(() => {
       var focused = document.querySelector('.home-focus-card.is-focused');
       var row = focused.closest('.media-row');
@@ -489,6 +507,8 @@ async function main() {
         mediaWillChange: getComputedStyle(focused.querySelector('.home-focus-media')).willChange,
         fallbackTitle: focused.querySelector('.home-focus-title') ? focused.querySelector('.home-focus-title').textContent.trim() : '',
         fallbackWeight: focused.querySelector('.home-focus-title') ? getComputedStyle(focused.querySelector('.home-focus-title')).fontWeight : '',
+        titleLogo: focused.querySelector('.home-focus-logo') ? focused.querySelector('.home-focus-logo').getAttribute('alt') : '',
+        titlePending: Boolean(focused.querySelector('.home-focus-title-pending')),
         artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
         artworkLayers: focused.querySelectorAll('.home-focus-media > img').length,
         cyclic: strip.getAttribute('data-cyclic'),
@@ -506,10 +526,12 @@ async function main() {
     assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
     assert(horizontal.mediaOpacity === '1', `Horizontal navigation dims the focused tile to ${horizontal.mediaOpacity}.`)
     assert(horizontal.mediaWillChange === 'transform', `Focused artwork allocates unnecessary compositor properties: ${horizontal.mediaWillChange}.`)
-    assert(horizontal.fallbackTitle && horizontal.fallbackWeight === '600', `Logo-free titles do not use the normal text fallback: ${JSON.stringify(horizontal)}.`)
+    assert(horizontal.titleLogo === 'Attack on Titan' && !horizontal.fallbackTitle && !horizontal.titlePending,
+      `Late provider title art disappeared or swapped through plain text: ${JSON.stringify(horizontal)}.`)
     assert(horizontal.artworkTransition === '0s' && horizontal.artworkLayers === 1, `Focused tile crossfades multiple photos: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
+    await capture('m56-late-title-logo.png')
 
     await press('ArrowRight')
     await press('ArrowRight')

@@ -32,6 +32,7 @@ function mergePresentationMedia(media: CompanionMedia, details: CompanionMedia):
     poster: details.poster || media.poster,
     backdrop: details.backdrop || media.backdrop,
     logoImage: details.logoImage || media.logoImage,
+    titleArtSettled: true,
     trailer: details.trailer ?? media.trailer,
     seasonEpisodeCounts: details.seasonEpisodeCounts?.length ? details.seasonEpisodeCounts : media.seasonEpisodeCounts,
     seasonLabels: details.seasonLabels?.length ? details.seasonLabels : media.seasonLabels,

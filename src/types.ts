@@ -49,6 +49,8 @@ export interface CompanionMedia {
   backdrop?: string
   /** Transparent provider title treatment/clear-logo preferred in cinematic hero layouts. */
   logoImage?: string
+  /** Receiver-only marker: provider detail lookup completed, including a confirmed no-logo result. */
+  titleArtSettled?: boolean
   trailer?: { id: string; site?: string }
   progress?: number
   episode?: number
