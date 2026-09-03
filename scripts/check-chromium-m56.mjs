@@ -436,11 +436,15 @@ async function main() {
       width: document.querySelector('.nav-rail').getBoundingClientRect().width,
       items: Array.from(document.querySelectorAll('.nav-item-label strong')).map(function (item) { return item.textContent; }),
       details: Array.from(document.querySelectorAll('.nav-item-label small')).map(function (item) { return item.textContent; }),
+      labelLefts: Array.from(document.querySelectorAll('.nav-item-label strong')).map(function (item) { return Math.round(item.getBoundingClientRect().left); }),
+      detailLefts: Array.from(document.querySelectorAll('.nav-item-label small')).map(function (item) { return Math.round(item.getBoundingClientRect().left); }),
       focused: document.querySelector('.nav-item.is-focused').textContent
     }))()`)
     assert(navigation.width >= 370 && navigation.width <= 430, `Navigation drawer width is ${navigation.width}px.`)
     assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","My List","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
     assert(navigation.details.every((detail) => detail.length > 0), 'Navigation destinations are missing descriptions.')
+    assert(Math.max(...navigation.labelLefts) - Math.min(...navigation.labelLefts) <= 1, `Navigation labels are not aligned: ${navigation.labelLefts}.`)
+    assert(Math.max(...navigation.detailLefts) - Math.min(...navigation.detailLefts) <= 1, `Navigation descriptions are not aligned: ${navigation.detailLefts}.`)
     await capture('m56-navigation.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=carousel` })

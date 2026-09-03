@@ -302,7 +302,11 @@ body.avplay-visible #av-player {
 .nav-item-label {
   position: absolute;
   left: clamp(66px, 5.35vw, 103px);
-  max-width: calc(100% - clamp(78px, 6.2vw, 119px));
+  right: 1.1vw;
+  width: auto;
+  max-width: none;
+  box-sizing: border-box;
+  text-align: left;
   white-space: nowrap;
   padding: 0;
   color: #dedede;
