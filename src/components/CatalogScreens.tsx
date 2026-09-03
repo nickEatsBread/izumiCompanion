@@ -28,7 +28,19 @@ import { NavRail } from './NavRail'
 export type TrailerControlAction = 'toggle' | 'play' | 'pause' | 'seek-back' | 'seek-forward'
 export const TRAILER_CONTROL_EVENT = 'izumi:trailer-control'
 
-type TrailerPlaybackState = 'buffering' | 'playing' | 'paused' | 'ended' | 'error'
+export type TrailerPlaybackState = 'buffering' | 'playing' | 'paused' | 'ended' | 'error'
+
+/** YouTube's iframe API only starts emitting state events after this exact widget handshake. */
+export const TRAILER_LISTENING_MESSAGE = { event: 'listening', id: 1, channel: 'widget' } as const
+
+export function trailerPlaybackState(value: unknown): TrailerPlaybackState | undefined {
+  const state = Number(value)
+  if (state === 1) return 'playing'
+  if (state === 2) return 'paused'
+  if (state === 0) return 'ended'
+  if (state === -1 || state === 3 || state === 5) return 'buffering'
+  return undefined
+}
 
 function trailerTime(value: number): string {
   const seconds = Math.max(0, Math.floor(value))
@@ -55,6 +67,7 @@ function TrailerPlayer({
   const positionRef = useRef(0)
   const durationRef = useRef(0)
   const playbackRef = useRef<TrailerPlaybackState>('buffering')
+  const readyRef = useRef(false)
   const [playback, setPlayback] = useState<TrailerPlaybackState>('buffering')
   const [position, setPosition] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -108,6 +121,7 @@ function TrailerPlayer({
   }
 
   useEffect(() => {
+    readyRef.current = false
     const onMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return
       if (bridgeOrigin && event.origin !== bridgeOrigin) return
@@ -116,27 +130,26 @@ function TrailerPlayer({
         if (!raw || raw.type !== 'izumi-youtube-event' || typeof raw.payload !== 'string') return
         raw = raw.payload
       }
-      let payload: { event?: string; info?: Record<string, unknown>; data?: unknown }
+      let payload: { event?: string; info?: unknown; data?: unknown }
       try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw }
       catch { return }
       if (!payload || typeof payload !== 'object') return
       if (payload.event === 'onReady') {
+        readyRef.current = true
         requestEnglishCaptions()
         send('playVideo')
       }
       if (payload.event === 'onStateChange') {
-        const state = Number(payload.info ?? payload.data)
-        if (state === 1) applyPlayback('playing')
-        else if (state === 2) applyPlayback('paused')
-        else if (state === 0) applyPlayback('ended')
-        else if (state === -1 || state === 3 || state === 5) applyPlayback('buffering')
+        const state = trailerPlaybackState(payload.info ?? payload.data)
+        if (state) applyPlayback(state)
       }
       if (payload.event === 'onError') applyPlayback('error')
       if (payload.event === 'onAutoplayBlocked') applyPlayback('paused')
-      if (payload.event === 'infoDelivery' && payload.info) {
-        const nextPosition = Number(payload.info.currentTime)
-        const nextDuration = Number(payload.info.duration)
-        const nextState = Number(payload.info.playerState)
+      if (payload.event === 'infoDelivery' && payload.info && typeof payload.info === 'object') {
+        const info = payload.info as Record<string, unknown>
+        const nextPosition = Number(info.currentTime)
+        const nextDuration = Number(info.duration)
+        const nextState = trailerPlaybackState(info.playerState)
         if (Number.isFinite(nextPosition)) {
           positionRef.current = nextPosition
           setPosition(nextPosition)
@@ -145,24 +158,25 @@ function TrailerPlayer({
           durationRef.current = nextDuration
           setDuration(nextDuration)
         }
-        if (nextState === 1) applyPlayback('playing')
-        else if (nextState === 2) applyPlayback('paused')
-        else if (nextState === 0) applyPlayback('ended')
-        else if (nextState === -1 || nextState === 3 || nextState === 5) applyPlayback('buffering')
+        if (nextState) applyPlayback(nextState)
       }
     }
     window.addEventListener('message', onMessage)
     const connect = window.setInterval(() => {
-      post({ event: 'listening', id: 'izumi-trailer' })
+      if (!readyRef.current) post(TRAILER_LISTENING_MESSAGE)
       send('getCurrentTime')
       send('getDuration')
       send('getPlayerState')
     }, 500)
     const captions = window.setTimeout(requestEnglishCaptions, 1200)
+    const watchdog = window.setTimeout(() => {
+      if (!readyRef.current) applyPlayback('error')
+    }, 12000)
     return () => {
       window.removeEventListener('message', onMessage)
       window.clearInterval(connect)
       window.clearTimeout(captions)
+      window.clearTimeout(watchdog)
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current)
     }
   }, [videoId, bridgeOrigin])
@@ -209,7 +223,7 @@ function TrailerPlayer({
         referrerPolicy="strict-origin-when-cross-origin"
         tabIndex={-1}
         onLoad={() => {
-          post({ event: 'listening', id: 'izumi-trailer' })
+          post(TRAILER_LISTENING_MESSAGE)
           window.setTimeout(() => {
             requestEnglishCaptions()
             send('playVideo')
@@ -227,7 +241,7 @@ function TrailerPlayer({
       <div class={`series-trailer-hud${controlsVisible ? ' is-visible' : ''}`}>
         <header>
           <span class="series-trailer-state">
-            {playback === 'playing' ? <Play size={20} fill="currentColor" /> : <Pause size={20} fill="currentColor" />}
+            {playback === 'playing' ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
           </span>
           <div><p>{status}</p><h2>{title}</h2></div>
         </header>
@@ -270,7 +284,11 @@ export const SEARCH_KEYS: SearchKeyDefinition[] = [
 export const SEARCH_KEY_LAST_ROW = Math.max(...SEARCH_KEYS.map((key) => key.row))
 export const SEARCH_VOICE_KEY_INDEX = SEARCH_KEYS.findIndex((key) => key.value === 'VOICE')
 
-export function adjacentSearchKey(index: number, direction: 'left' | 'right' | 'up' | 'down'): number | undefined {
+export function adjacentSearchKey(
+  index: number,
+  direction: 'left' | 'right' | 'up' | 'down',
+  preferredColumn?: number,
+): number | undefined {
   const current = SEARCH_KEYS[index]
   if (!current) return undefined
   if (direction === 'left' || direction === 'right') {
@@ -282,14 +300,21 @@ export function adjacentSearchKey(index: number, direction: 'left' | 'right' | '
     return sameRow[position + (direction === 'left' ? -1 : 1)]?.keyIndex
   }
   const targetRow = current.row + (direction === 'up' ? -1 : 1)
-  const center = current.column + current.span / 2
+  const column = preferredColumn ?? current.column
   return SEARCH_KEYS
     .map((key, keyIndex) => ({ key, keyIndex }))
     .filter(({ key }) => key.row === targetRow)
     .sort((left, right) => (
-      Math.abs(left.key.column + left.key.span / 2 - center)
-      - Math.abs(right.key.column + right.key.span / 2 - center)
+      searchColumnDistance(left.key, column)
+      - searchColumnDistance(right.key, column)
+      || left.key.column - right.key.column
     ))[0]?.keyIndex
+}
+
+function searchColumnDistance(key: SearchKeyDefinition, column: number): number {
+  if (column < key.column) return key.column - column
+  const rightColumn = key.column + key.span - 1
+  return column > rightColumn ? column - rightColumn : 0
 }
 
 export function nearestSearchKey(row: number, column: number): number {

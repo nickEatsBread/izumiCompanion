@@ -77,8 +77,12 @@ export function homeRowVisible(rowIndex: number, activeRow: number): boolean {
   return Math.abs(rowIndex - activeRow) <= 1
 }
 
+export const HOME_POSTER_WIDTH = 272
+export const HOME_POSTER_HEIGHT = 408
+export const HOME_POSTER_STRIDE = 288
+
 function rowSpacerDimensions(count: number): { width: string; minWidth: string } {
-  const width = Math.max(0, count * 244 - (count ? 16 : 0))
+  const width = Math.max(0, count * HOME_POSTER_STRIDE - (count ? 16 : 0))
   return { width: `${width}px`, minWidth: `${width}px` }
 }
 
@@ -223,8 +227,8 @@ const HomePosterCard = memo(function HomePosterCard({
               class="home-poster-art"
               src={image}
               alt=""
-              width={228}
-              height={342}
+              width={HOME_POSTER_WIDTH}
+              height={HOME_POSTER_HEIGHT}
               decoding="async"
               onError={() => setArtworkIndex((current) => current + 1)}
             />
@@ -377,7 +381,7 @@ export function HomeScreen({
       if (!strip || !viewport || (!nextCard && !selectedCard)) return
       const target = nextCard || selectedCard!
       const maximum = Math.max(0, strip.scrollWidth - viewport.clientWidth)
-      animateRailScroll(viewport, Math.min(maximum, Math.max(0, target.offsetLeft + (nextCard ? 0 : 244))))
+      animateRailScroll(viewport, Math.min(maximum, Math.max(0, target.offsetLeft + (nextCard ? 0 : HOME_POSTER_STRIDE))))
     })
     return () => window.cancelAnimationFrame(frame)
   }, [focus, snapshot.rows])

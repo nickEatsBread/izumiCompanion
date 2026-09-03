@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionMedia } from '../types'
-import { homeCardContext, homeFocusMotion, homeRowTop, homeRowVisible, informativeHeroMeta } from './HomeScreen'
+import {
+  HOME_POSTER_HEIGHT,
+  HOME_POSTER_STRIDE,
+  HOME_POSTER_WIDTH,
+  homeCardContext,
+  homeFocusMotion,
+  homeRowTop,
+  homeRowVisible,
+  informativeHeroMeta,
+} from './HomeScreen'
 
 const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
   ref: { provider: 'preview', type: 'series', id: 'test' },
@@ -11,6 +20,10 @@ const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
 })
 
 describe('TV home presentation', () => {
+  it('uses living-room scale cards with a fixed, non-reflowing stride', () => {
+    expect([HOME_POSTER_WIDTH, HOME_POSTER_HEIGHT, HOME_POSTER_STRIDE]).toEqual([272, 408, 288])
+  })
+
   it('renders the active row and its immediate neighbors without mounting distant artwork', () => {
     expect(homeRowVisible(0, 0)).toBe(true)
     expect(homeRowVisible(1, 0)).toBe(true)

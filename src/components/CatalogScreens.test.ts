@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { SEARCH_KEYS, adjacentSearchKey, nearestSearchKey, seriesOverviewActionsFor, youtubeTrailerId } from './CatalogScreens'
+import {
+  SEARCH_KEYS,
+  TRAILER_LISTENING_MESSAGE,
+  adjacentSearchKey,
+  nearestSearchKey,
+  seriesOverviewActionsFor,
+  trailerPlaybackState,
+  youtubeTrailerId,
+} from './CatalogScreens'
 
 describe('TV search keyboard geometry', () => {
   it('uses a six-column alphabetic grid with compact input actions', () => {
@@ -16,6 +24,28 @@ describe('TV search keyboard geometry', () => {
     expect(SEARCH_KEYS[adjacentSearchKey(0, 'right')!].value).toBe('b')
     expect(SEARCH_KEYS[adjacentSearchKey(0, 'up')!].value).toBe('SPACE')
     expect(SEARCH_KEYS[nearestSearchKey(6, 5.5)].value).toBe('0')
+  })
+
+  it('keeps the same column when moving through a double-width action key', () => {
+    const b = SEARCH_KEYS.findIndex((key) => key.value === 'b')
+    const space = adjacentSearchKey(b, 'up', 1)!
+    expect(SEARCH_KEYS[space].value).toBe('SPACE')
+    expect(SEARCH_KEYS[adjacentSearchKey(space, 'down', 1)!].value).toBe('b')
+
+    const e = SEARCH_KEYS.findIndex((key) => key.value === 'e')
+    const voice = adjacentSearchKey(e, 'up', 4)!
+    expect(SEARCH_KEYS[voice].value).toBe('VOICE')
+    expect(SEARCH_KEYS[adjacentSearchKey(voice, 'down', 4)!].value).toBe('e')
+  })
+})
+
+describe('TV trailer iframe control', () => {
+  it('uses the YouTube widget handshake and maps its playback states', () => {
+    expect(TRAILER_LISTENING_MESSAGE).toEqual({ event: 'listening', id: 1, channel: 'widget' })
+    expect(trailerPlaybackState(1)).toBe('playing')
+    expect(trailerPlaybackState(2)).toBe('paused')
+    expect(trailerPlaybackState(3)).toBe('buffering')
+    expect(trailerPlaybackState(0)).toBe('ended')
   })
 })
 

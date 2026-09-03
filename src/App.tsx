@@ -270,6 +270,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const startupSettleFrameRef = useRef<number>()
   const startupFallbackTimerRef = useRef<number>()
   const searchQueryRef = useRef(searchQuery)
+  const searchKeyboardColumnRef = useRef(0)
   const playerControlsTimerRef = useRef<number>()
   const catalogRequestRef = useRef<{ screen: string; label: string; timer: number; previousIndex: number }>()
   const externalSubtitlesRef = useRef(new ExternalSubtitleController())
@@ -1056,6 +1057,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setFocusLocation(next)
   }
 
+  const changeSearchKeyFocus = (index: number, preserveColumn = false) => {
+    const alreadyCurrent = focusRef.current.zone === 'keyboard' && focusRef.current.index === index
+    if (!preserveColumn && !alreadyCurrent) searchKeyboardColumnRef.current = SEARCH_KEYS[index]?.column ?? 0
+    changeFocus({ zone: 'keyboard', index })
+  }
+
   const openCatalogMenu = () => {
     const selectedIndex = Math.max(0, catalogOptions.findIndex((option) => option.screen === snapshot.catalog.screen))
     if (screen !== 'home') {
@@ -1314,7 +1321,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setSelected(snapshot.hero ?? snapshot.rows[0]?.items[0] ?? fallbackMedia)
       lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
       changeFocus({ zone: 'hero', index: 0 })
-    } else if (destination === 'search') changeFocus({ zone: 'keyboard', index: 0 })
+    } else if (destination === 'search') changeSearchKeyFocus(0)
     else if (destination === 'series') {
       const firstSeries = seriesItems[0] ?? fallbackMedia
       setSeriesSeason(0)
@@ -1645,32 +1652,32 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
       else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) })
-      else if (action === 'right') changeFocus({ zone: 'keyboard', index: 0 })
+      else if (action === 'right') changeSearchKeyFocus(0)
       return
     }
     if (focus.zone === 'keyboard') {
       const currentKey = SEARCH_KEYS[focus.index]
-      if (!currentKey) return changeFocus({ zone: 'keyboard', index: 0 })
+      if (!currentKey) return changeSearchKeyFocus(0)
       if (action === 'left') {
         const next = adjacentSearchKey(focus.index, 'left')
         return next === undefined
           ? changeFocus({ zone: 'nav', index: activeNav })
-          : changeFocus({ zone: 'keyboard', index: next })
+          : changeSearchKeyFocus(next)
       }
       if (action === 'right') {
         const next = adjacentSearchKey(focus.index, 'right')
-        if (next !== undefined) return changeFocus({ zone: 'keyboard', index: next })
+        if (next !== undefined) return changeSearchKeyFocus(next)
         if (searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
         return
       }
       if (action === 'up') {
-        const next = adjacentSearchKey(focus.index, 'up')
-        if (next !== undefined) changeFocus({ zone: 'keyboard', index: next })
+        const next = adjacentSearchKey(focus.index, 'up', searchKeyboardColumnRef.current)
+        if (next !== undefined) changeSearchKeyFocus(next, true)
         return
       }
       if (action === 'down') {
-        const next = adjacentSearchKey(focus.index, 'down')
-        if (next !== undefined) return changeFocus({ zone: 'keyboard', index: next })
+        const next = adjacentSearchKey(focus.index, 'down', searchKeyboardColumnRef.current)
+        if (next !== undefined) return changeSearchKeyFocus(next, true)
         if (searchSuggestions.length) return changeFocus({ zone: 'suggestion', index: 0 })
         if (searchResults.length) return changeFocus({ zone: 'grid', index: Math.min(searchResults.length - 1, Math.floor(currentKey.column / 2)) })
       }
@@ -1680,7 +1687,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (action === 'left') return changeFocus({ zone: 'nav', index: activeNav })
       if (action === 'right' && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
       if (action === 'up') {
-        if (focus.index === 0) return changeFocus({ zone: 'keyboard', index: nearestSearchKey(SEARCH_KEY_LAST_ROW, 2.5) })
+        if (focus.index === 0) return changeSearchKeyFocus(nearestSearchKey(SEARCH_KEY_LAST_ROW, 2.5))
         return changeFocus({ zone: 'suggestion', index: focus.index - 1 })
       }
       if (action === 'down') {
@@ -1691,17 +1698,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (focus.zone === 'search-input') {
       if (action === 'down' && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
-      if (action === 'left' || action === 'back') return changeFocus({ zone: 'keyboard', index: SEARCH_VOICE_KEY_INDEX })
+      if (action === 'left' || action === 'back') return changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)
       return
     }
     if (focus.zone === 'grid') {
       const columns = 4
       let index = focus.index
       if (action === 'left') {
-        if (index % columns === 0) return changeFocus({
-          zone: 'keyboard',
-          index: nearestSearchKey(Math.min(SEARCH_KEY_LAST_ROW, Math.floor(index / columns) + 1), 5.5),
-        })
+        if (index % columns === 0) return changeSearchKeyFocus(
+          nearestSearchKey(Math.min(SEARCH_KEY_LAST_ROW, Math.floor(index / columns) + 1), 5.5),
+        )
         index -= 1
       } else if (action === 'right') index = Math.min(searchResults.length - 1, index + 1)
       else if (action === 'up') {
@@ -2003,7 +2009,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (next === 'search') {
       setActiveNav(1)
-      changeFocus({ zone: 'keyboard', index: 0 })
+      changeSearchKeyFocus(0)
     }
     if (['trending', 'series', 'movies', 'my-list'].includes(next)) {
       const navIndex = next === 'my-list' ? 3 : 2
@@ -2083,7 +2089,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onNav={selectNav}
           onNavFocus={(index) => changeFocus({ zone: 'nav', index })}
           onKey={applySearchKey}
-          onKeyFocus={(index) => changeFocus({ zone: 'keyboard', index })}
+          onKeyFocus={changeSearchKeyFocus}
           onSuggestion={applySearchSuggestion}
           onSuggestionFocus={(index) => changeFocus({ zone: 'suggestion', index })}
           onResultFocus={(index) => {
@@ -2093,7 +2099,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onResultSelect={selectCatalogMedia}
           onQueryChange={setSearchQuery}
           onQueryFocus={() => changeFocus({ zone: 'search-input', index: 0 })}
-          onQueryDone={() => changeFocus({ zone: 'keyboard', index: SEARCH_VOICE_KEY_INDEX })}
+          onQueryDone={() => changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)}
         />
       )}
       {screen === 'series' && (

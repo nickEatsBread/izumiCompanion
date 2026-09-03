@@ -4196,7 +4196,7 @@ body,
   top: 0;
   left: 0;
   width: 1788px;
-  height: 350px;
+  height: 416px;
   padding: 4px 16px 4px 4px;
   box-sizing: border-box;
   overflow-x: hidden;
@@ -4205,7 +4205,7 @@ body,
 }
 
 .media-strip {
-  height: 342px;
+  height: 408px;
   gap: 16px;
   padding: 0;
   overflow: visible;
@@ -4219,7 +4219,7 @@ body,
 
 .media-strip.is-placeholder,
 .continue-row .media-strip.is-placeholder {
-  min-height: 342px;
+  min-height: 408px;
 }
 
 .media-card,
@@ -4411,10 +4411,10 @@ body,
 
 .home-poster-card {
   position: relative;
-  width: 228px;
-  min-width: 228px;
-  height: 342px;
-  min-height: 342px;
+  width: 272px;
+  min-width: 272px;
+  height: 408px;
+  min-height: 408px;
   padding: 0;
   flex: 0 0 auto;
   overflow: hidden;
@@ -4434,8 +4434,8 @@ body,
 
 .home-poster-frame {
   position: relative;
-  width: 228px;
-  height: 342px;
+  width: 272px;
+  height: 408px;
   display: block;
   overflow: hidden;
   background: #202020;
@@ -4663,9 +4663,9 @@ body,
   position: absolute;
   z-index: 1;
   top: 4px;
-  left: -188px;
-  width: 228px;
-  height: 342px;
+  left: -232px;
+  width: 272px;
+  height: 408px;
   overflow: hidden;
   opacity: .58;
   pointer-events: none;
@@ -4727,10 +4727,10 @@ body,
 
 .catalog-rows.is-preview .home-poster-card,
 .catalog-rows.is-preview .home-poster-frame {
-  width: 320px;
-  min-width: 320px;
-  height: 180px;
-  min-height: 180px;
+  width: 360px;
+  min-width: 360px;
+  height: 203px;
+  min-height: 203px;
 }
 
 .catalog-rows.is-preview .home-poster-art {
@@ -4934,7 +4934,7 @@ body,
 }
 
 /* Chromium 56 does not implement flex gap. Keep the fallback in lockstep with the
- * fixed 228px poster and 244px rail stride used by HomeScreen's windowing math. */
+ * fixed 272px poster and 288px rail stride used by HomeScreen's windowing math. */
 @supports not (gap: 1px) {
   .media-strip > * + * {
     margin-left: 16px;
