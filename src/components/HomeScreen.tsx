@@ -1,4 +1,4 @@
-import { History, Info, Play, TrendingUp } from 'lucide-preact'
+import { Award, Flame, History, Info, Play, Star, TrendingUp, Trophy, UsersRound } from 'lucide-preact'
 import { memo } from 'preact/compat'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
@@ -41,9 +41,36 @@ function minutesRemaining(media: CompanionMedia): number | undefined {
 }
 
 export interface HomeCardContext {
-  primary: string
+  facts: string[]
   secondary?: string
-  description?: string
+}
+
+function runtimeLabel(minutes: number): string {
+  const rounded = Math.max(1, Math.round(minutes))
+  const hours = Math.floor(rounded / 60)
+  const remainder = rounded % 60
+  return hours ? `${hours}h${remainder ? ` ${remainder}m` : ''}` : `${rounded}m`
+}
+
+export function mediaFactTokens(media: CompanionMedia): string[] {
+  const facts: string[] = [media.mediaKind === 'movie' || media.ref.type === 'movie' ? 'Movie' : 'Show']
+  if (media.genres?.[0]) facts.push(media.genres[0])
+  if (media.releaseYear) facts.push(String(media.releaseYear))
+  const seasons = media.seasonEpisodeCounts?.filter((count) => count > 0) ?? []
+  if (media.mediaKind === 'movie' || media.ref.type === 'movie') {
+    if (media.runtimeMinutes) facts.push(runtimeLabel(media.runtimeMinutes))
+  } else if (seasons.length > 1) facts.push(`${seasons.length} seasons`)
+  else if (seasons[0]) facts.push(`${seasons[0]} episode${seasons[0] === 1 ? '' : 's'}`)
+  else if (media.runtimeMinutes) facts.push(runtimeLabel(media.runtimeMinutes))
+
+  if (!media.genres?.length && !media.releaseYear && !seasons.length && !media.runtimeMinutes) {
+    const genericLabels = /^(tv|series|movie|film|anime|show)$/i
+    facts.push(...(media.subtitle?.split('·') ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value && !genericLabels.test(value)))
+  }
+  if (media.contentRating) facts.push(media.contentRating)
+  return [...new Set(facts)]
 }
 
 /** The focused tile owns the context in Netflix's current TV layout. Keeping this projection
@@ -54,26 +81,31 @@ export function homeCardContext(media: CompanionMedia, continueCard: boolean): H
     const title = media.episodeTitle?.trim()
     const remaining = minutesRemaining(media)
     return {
-      primary: [episode, title].filter(Boolean).join(' · ') || media.title,
+      facts: [episode, title].filter((value): value is string => Boolean(value)).length
+        ? [episode, title].filter((value): value is string => Boolean(value))
+        : [media.title],
       secondary: remaining ? `${remaining}m left` : undefined,
     }
   }
 
-  return {
-    primary: informativeHeroMeta(media) || media.placement?.label || media.title,
-    description: media.description?.trim(),
-  }
+  return { facts: mediaFactTokens(media) }
 }
 
 export function informativeHeroMeta(media: CompanionMedia): string {
-  const genericLabels = /^(tv|series|movie|film|anime)$/i
-  return [
-    ...(media.subtitle?.split('·') ?? []),
-    media.contentRating,
-  ]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value) && !genericLabels.test(value!))
-    .join('  ·  ')
+  return mediaFactTokens(media).join('  ·  ')
+}
+
+export function achievementIconName(kind: NonNullable<CompanionMedia['achievements']>[number]['kind']): string {
+  return ({ trending: 'flame', rating: 'trophy', popularity: 'users', award: 'award', score: 'star' })[kind]
+}
+
+function AchievementIcon({ kind }: { kind: NonNullable<CompanionMedia['achievements']>[number]['kind'] }) {
+  const Icon = kind === 'trending' ? Flame
+    : kind === 'rating' ? Trophy
+      : kind === 'popularity' ? UsersRound
+        : kind === 'award' ? Award
+          : Star
+  return <Icon size={21} strokeWidth={2.4} aria-hidden="true" />
 }
 
 export function homeRowVisible(rowIndex: number, activeRow: number): boolean {
@@ -347,13 +379,23 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const artwork = focusArtwork(item, episodeCard)
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
+  const [logoFailed, setLogoFailed] = useState(false)
   const image = artwork[artworkIndex]
   const context = homeCardContext(item, episodeCard)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
+  const achievements = item.achievements?.slice(0, 2) ?? (item.placement?.position ? [{
+    kind: 'popularity' as const,
+    label: `#${item.placement.position} ${item.placement.label}`,
+    source: item.ref.provider,
+  }] : [])
 
   useEffect(() => {
     setArtworkIndex(0)
   }, [artworkKey])
+
+  useEffect(() => {
+    setLogoFailed(false)
+  }, [item.logoImage])
 
   return (
     <button
@@ -384,17 +426,23 @@ const HomeFocusCard = memo(function HomeFocusCard({
           {trailerSource && <HeroTrailer source={trailerSource} title={item.title} />}
         </span>
         <span class="home-focus-shade" aria-hidden="true" />
-        <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>
-        {rank && <span class="home-focus-rank">#{rank} in {item.placement?.label || 'Top 10'}</span>}
+        {item.logoImage && !logoFailed
+          ? <img class="home-focus-logo" src={item.logoImage} alt={item.title} decoding="async" onError={() => setLogoFailed(true)} />
+          : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
+        {achievements.length > 0 && <span class="home-focus-achievements">
+          {achievements.map((achievement, achievementIndex) => <span class={`home-achievement is-${achievement.kind}`} key={`${achievement.kind}-${achievement.label}-${achievementIndex}`}>
+            <AchievementIcon kind={achievement.kind} />
+            <span><strong>{achievement.label}</strong>{achievement.source && <small>{achievement.source}</small>}</span>
+          </span>)}
+        </span>}
         {inProgress && (
           <span class="home-card-progress"><span style={{ width: `${Math.round(cardProgress * 100)}%` }} /></span>
         )}
         <span class="home-focus-outline" aria-hidden="true" />
       </span>
       <span class="home-focus-context" key={`context-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
-        <strong>{context.primary}</strong>
+        <strong class="home-focus-facts">{context.facts.map((fact, factIndex) => <span key={`${fact}-${factIndex}`}>{fact}</span>)}</strong>
         {context.secondary && <small>{context.secondary}</small>}
-        {!episodeCard && context.description && <small class="home-focus-description">{context.description}</small>}
       </span>
     </button>
   )

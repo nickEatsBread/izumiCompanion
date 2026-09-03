@@ -9,11 +9,13 @@ import {
   HOME_POSTER_STRIDE,
   HOME_POSTER_WIDTH,
   homeCardContext,
+  achievementIconName,
   homeCarouselRowTop,
   homeFocusMotion,
   homeRowTop,
   homeRowVisible,
   informativeHeroMeta,
+  mediaFactTokens,
 } from './HomeScreen'
 
 const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
@@ -49,8 +51,8 @@ describe('TV home presentation', () => {
   })
 
   it('removes generic media type labels from the hero metadata', () => {
-    expect(informativeHeroMeta(media('TV'))).toBe('')
-    expect(informativeHeroMeta(media('TV · 2024 · 12 Episodes', 'TV-14'))).toBe('2024  ·  12 Episodes  ·  TV-14')
+    expect(informativeHeroMeta(media('TV'))).toBe('Show')
+    expect(informativeHeroMeta(media('TV · 2024 · 12 Episodes', 'TV-14'))).toBe('Show  ·  2024  ·  12 Episodes  ·  TV-14')
   })
 
   it('puts episode and time-left copy beneath a focused Continue Watching tile', () => {
@@ -62,19 +64,31 @@ describe('TV home presentation', () => {
       episodeProgress: .5,
       episodeRuntimeMinutes: 40,
     }, true)).toEqual({
-      primary: 'S3 E4 · Old Friends',
+      facts: ['S3 E4', 'Old Friends'],
       secondary: '20m left',
     })
   })
 
-  it('uses title metadata and synopsis beneath other focused home tiles', () => {
+  it('uses source-neutral title facts instead of repeating the shelf name', () => {
     expect(homeCardContext({
-      ...media('2024 · Fantasy', 'TV-14'),
-      description: 'A deliberately concise synopsis.',
+      ...media(undefined, 'TV-14'),
+      mediaKind: 'show',
+      genres: ['Fantasy', 'Adventure'],
+      releaseYear: 2024,
+      seasonEpisodeCounts: [12],
+      placement: { label: 'Trending This Week', position: 4, kind: 'ranking' },
     }, false)).toEqual({
-      primary: '2024  ·  Fantasy  ·  TV-14',
-      description: 'A deliberately concise synopsis.',
+      facts: ['Show', 'Fantasy', '2024', '12 episodes', 'TV-14'],
     })
+    expect(mediaFactTokens({ ...media(), mediaKind: 'movie', runtimeMinutes: 95 })).toEqual(['Movie', '1h 35m'])
+  })
+
+  it('uses a distinct icon language for different achievement types', () => {
+    expect(achievementIconName('trending')).toBe('flame')
+    expect(achievementIconName('popularity')).toBe('users')
+    expect(achievementIconName('rating')).toBe('trophy')
+    const kinds = ['trending', 'popularity', 'rating'] as const
+    expect(new Set(kinds.map(achievementIconName)).size).toBe(3)
   })
 
   it('describes horizontal and vertical spotlight movement for the TV transition', () => {

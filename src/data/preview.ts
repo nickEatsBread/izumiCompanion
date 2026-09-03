@@ -5,12 +5,22 @@ const media = (
   title: string,
   poster: string,
   options: Partial<CompanionMedia> = {},
-): CompanionMedia => ({
-  ref: { provider: 'anilist', id: String(id), type: 'anime' },
-  title,
-  poster,
-  ...options,
-})
+): CompanionMedia => {
+  const details = options.subtitle?.split('·').map((value) => value.trim()) ?? []
+  const year = Number(details.find((value) => /^\d{4}$/.test(value)))
+  const genre = [...details].reverse().find((value) => !/^\d{4}$/.test(value) && !/episodes?/i.test(value))
+  return {
+    ref: { provider: 'anilist', id: String(id), type: 'anime' },
+    title,
+    poster,
+    mediaKind: 'show',
+    releaseYear: Number.isFinite(year) && year > 0 ? year : undefined,
+    genres: genre ? [genre] : undefined,
+    ...options,
+  }
+}
+
+const previewLogo = (label: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120"><text x="0" y="88" fill="white" font-family="Arial,sans-serif" font-size="72" font-weight="900">${label}</text></svg>`)}`
 
 const frierenSeasonOneTitles = [
   "The Journey's End",
@@ -148,8 +158,22 @@ const popular = [
   frieren,
   media(16498, 'Attack on Titan', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-buvcRTBx4NSm.jpg', { subtitle: '2013 · 25 Episodes · Action', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/16498-8jpFCOcDmneX.jpg', progress: 0.68, episode: 18, seasonEpisodeCounts: [25, 12, 22, 35], placement: { label: 'Continue Watching', kind: 'continue' } }),
   media(113415, 'Jujutsu Kaisen', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx113415-LHBAeoZDIsnF.jpg', { subtitle: '2020 · 24 Episodes · Supernatural', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/113415-jQBSkxWAAk83.jpg', seasonEpisodeCounts: [24, 23], placement: { label: 'Trending Now', position: 3, kind: 'ranking' } }),
-  media(127230, 'Chainsaw Man', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx127230-DdP4vAdssLoz.png', { subtitle: '2022 · 12 Episodes · Action', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/127230-o8IRwCGVr9KW.jpg', seasonEpisodeCounts: [12], placement: { label: 'Trending Now', position: 4, kind: 'ranking' } }),
-  media(151807, 'Solo Leveling', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151807-it355ZgzquUd.png', { subtitle: '2024 · 12 Episodes · Fantasy', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/151807-37yfQA3ym8PA.jpg', seasonEpisodeCounts: [12, 13], placement: { label: 'Popular This Week', position: 2, kind: 'ranking' } }),
+  media(127230, 'Chainsaw Man', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx127230-DdP4vAdssLoz.png', {
+    subtitle: '2022 · 12 Episodes · Action',
+    backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/127230-o8IRwCGVr9KW.jpg',
+    logoImage: previewLogo('CHAINSAW MAN'),
+    seasonEpisodeCounts: [12],
+    achievements: [{ kind: 'rating', label: '#31 highest rated 2022', source: 'AniList' }],
+    placement: { label: 'Trending Now', position: 4, kind: 'ranking' },
+  }),
+  media(151807, 'Solo Leveling', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151807-it355ZgzquUd.png', {
+    subtitle: '2024 · 12 Episodes · Fantasy',
+    backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/151807-37yfQA3ym8PA.jpg',
+    logoImage: previewLogo('SOLO LEVELING'),
+    seasonEpisodeCounts: [12, 13],
+    achievements: [{ kind: 'rating', label: '#5 highest rated all time', source: 'AniList' }],
+    placement: { label: 'Popular This Week', position: 2, kind: 'ranking' },
+  }),
   media(21, 'One Piece', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg', { subtitle: '1999 · Adventure', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/21-wf37VakJmZqs.jpg', seasonEpisodeCounts: [61, 16, 15, 38] }),
   media(269, 'Bleach', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx269-d2GmRkJbMopq.png', { subtitle: '2004 · Action', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/269-08ar2HJOUAuL.jpg', seasonEpisodeCounts: [20, 21, 22, 28] }),
   media(11061, 'Hunter × Hunter', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx11061-y5gsT1hoHuHw.png', { subtitle: '2011 · Adventure', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/11061-8WkkTZ6duKpq.jpg', seasonEpisodeCounts: [26, 27, 22, 17] }),
@@ -214,6 +238,11 @@ const placed = (items: CompanionMedia[], label: string, kind: 'continue' | 'rank
   items.map((item, index) => ({
     ...item,
     placement: { label, position: kind === 'continue' ? undefined : index + 1, kind },
+    achievements: kind === 'ranking' ? [{
+      kind: /trend/i.test(label) ? 'trending' as const : 'popularity' as const,
+      label: `#${index + 1} ${label}`,
+      source: 'AniList',
+    }, ...(item.achievements ?? [])].slice(0, 2) : item.achievements,
   }))
 
 export const previewSnapshot: CompanionHomeSnapshot = {

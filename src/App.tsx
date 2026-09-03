@@ -25,6 +25,7 @@ import { ErrorScreen, ExitConfirmation, LoadingScreen, PlayerScreen, PostPlayScr
 import { navItemCount } from './components/NavRail'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
+import { browseCategoryRows } from './lib/browse'
 import { catalogCollections, episodeCountsFor } from './lib/catalog'
 import {
   homeHeroItems,
@@ -1043,9 +1044,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const cinematicScreen = screen === 'home' || screen === 'trending'
   const collections = useMemo(() => catalogCollections(snapshot), [snapshot])
   const homeRows = useMemo(() => orderedHomeRows(snapshot.rows), [snapshot.rows])
+  const browseRows = useMemo(() => browseCategoryRows(snapshot), [snapshot])
+  const cinematicRows = screen === 'trending' ? browseRows : homeRows
   const homeHeroRail = useMemo(() => homeHeroItems(snapshot), [snapshot])
   const focusedHomeMedia = cinematicScreen && focus.zone === 'row'
-    ? homeRows[focus.row]?.items[focus.index]
+    ? cinematicRows[focus.row]?.items[focus.index]
     : undefined
   const focusedHomeMediaKey = focusedHomeMedia
     ? `${focusedHomeMedia.ref.provider}:${focusedHomeMedia.ref.type}:${focusedHomeMedia.ref.id}`
@@ -1090,6 +1093,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     return () => window.clearTimeout(timer)
   }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, screen, showPreviewTools])
   const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
+  const browseSnapshot = useMemo(() => ({ ...snapshot, rows: browseRows }), [snapshot, browseRows])
   const allMedia = collections.search
   const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
@@ -1149,7 +1153,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const changeFocus = (next: FocusLocation) => {
     if (focusId(focusRef.current) === focusId(next)) return
     if (next.zone === 'row') {
-      const row = homeRows[next.row]
+      const row = cinematicRows[next.row]
       if (row) {
         const index = Math.max(0, Math.min(row.items.length - 1, next.index))
         homeRowIndexesRef.current[row.id] = index
@@ -1260,11 +1264,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         return
       }
       if (action === 'up') next = { zone: 'nav', index: activeNav }
-      else if (action === 'down' && homeRows[0]?.items.length) {
-        next = { zone: 'row', row: 0, index: rememberedHomeRowIndex(homeRows[0], homeRowIndexesRef.current) }
+      else if (action === 'down' && cinematicRows[0]?.items.length) {
+        next = { zone: 'row', row: 0, index: rememberedHomeRowIndex(cinematicRows[0], homeRowIndexesRef.current) }
       }
     } else if (focus.zone === 'row') {
-      const row = homeRows[focus.row]
+      const row = cinematicRows[focus.row]
       if (!row) return
       if (action === 'left') next = focus.index > 0
         ? { ...focus, index: focus.index - 1 }
@@ -1279,14 +1283,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         next = {
           zone: 'row',
           row: upperRow,
-          index: rememberedHomeRowIndex(homeRows[upperRow], homeRowIndexesRef.current),
+          index: rememberedHomeRowIndex(cinematicRows[upperRow], homeRowIndexesRef.current),
         }
-      } else if (action === 'down' && focus.row < homeRows.length - 1) {
+      } else if (action === 'down' && focus.row < cinematicRows.length - 1) {
         const lowerRow = focus.row + 1
         next = {
           zone: 'row',
           row: lowerRow,
-          index: rememberedHomeRowIndex(homeRows[lowerRow], homeRowIndexesRef.current),
+          index: rememberedHomeRowIndex(cinematicRows[lowerRow], homeRowIndexesRef.current),
         }
       }
     }
@@ -1470,7 +1474,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (focus.zone === 'nav') selectNav(focus.index)
     else if (focus.zone === 'hero') playMedia(selected)
     else if (focus.zone === 'row') {
-      const row = homeRows[focus.row]
+      const row = cinematicRows[focus.row]
       const media = row?.items[focus.index]
       if (media) row.kind === 'continue' ? playMedia(media) : selectCatalogMedia(media)
     }
@@ -2260,7 +2264,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     <div class={`app-shell screen-${screen}${safeArea ? ' show-safe-area' : ''}`}>
       {(screen === 'home' || screen === 'trending') && (
         <HomeScreen
-          snapshot={homeSnapshot}
+          snapshot={screen === 'trending' ? browseSnapshot : homeSnapshot}
           hero={selected}
           heroIndex={heroIndex}
           heroCount={homeHeroRail.length}

@@ -30,6 +30,21 @@ export interface CompanionMedia {
   subtitle?: string
   description?: string
   contentRating?: string
+  mediaKind?: 'movie' | 'show'
+  genres?: string[]
+  releaseYear?: number
+  runtimeMinutes?: number
+  ratings?: Array<{
+    source: string
+    score: number
+    scale: 5 | 10 | 100
+    votes?: number
+  }>
+  achievements?: Array<{
+    kind: 'trending' | 'rating' | 'popularity' | 'award' | 'score'
+    label: string
+    source?: string
+  }>
   poster?: string
   backdrop?: string
   /** Transparent provider title treatment/clear-logo preferred in cinematic hero layouts. */

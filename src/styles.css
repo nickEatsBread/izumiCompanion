@@ -215,7 +215,7 @@ body.avplay-visible #av-player {
   padding: 0 1.1vw;
   color: #777;
   font-size: clamp(12px, .7vw, 14px);
-  font-weight: 850;
+  font-weight: 800;
   letter-spacing: .16em;
   text-transform: uppercase;
 }
@@ -4657,16 +4657,17 @@ body,
   right: 0;
   bottom: 0;
   left: 0;
-  height: 45%;
+  height: 58%;
   background: linear-gradient(0deg, rgba(0, 0, 0, .88), rgba(0, 0, 0, 0));
 }
 
 .home-focus-title {
   position: absolute;
   z-index: 2;
-  right: 24px;
+  right: auto;
   bottom: 25px;
-  left: 24px;
+  left: 28px;
+  width: 410px;
   display: block;
   overflow: hidden;
   color: #fff;
@@ -4677,6 +4678,85 @@ body,
   text-shadow: 0 2px 7px #000;
   white-space: nowrap;
   animation: home-focus-copy-change 180ms ease both;
+}
+
+.home-focus-logo {
+  position: absolute;
+  z-index: 2;
+  bottom: 25px;
+  left: 28px;
+  width: auto;
+  max-width: 410px;
+  height: auto;
+  max-height: 116px;
+  object-fit: contain;
+  object-position: left bottom;
+  filter: drop-shadow(0 3px 9px rgba(0, 0, 0, .9));
+  animation: home-focus-copy-change 180ms ease both;
+}
+
+.home-focus-achievements {
+  position: absolute;
+  z-index: 3;
+  right: 26px;
+  bottom: 24px;
+  width: 430px;
+  display: block;
+  animation: home-focus-copy-change 180ms ease both;
+}
+
+.home-achievement {
+  min-height: 43px;
+  margin-top: 8px;
+  padding: 7px 11px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  color: #fff;
+  background: rgba(8, 8, 8, .82);
+  border-left: 4px solid rgba(255, 255, 255, .72);
+}
+
+.home-achievement:first-child { margin-top: 0; }
+.home-achievement.is-trending { border-left-color: #ff6a3d; }
+.home-achievement.is-rating { border-left-color: #ffd45a; }
+.home-achievement.is-popularity { border-left-color: #a899ff; }
+.home-achievement.is-award { border-left-color: #f1c56d; }
+.home-achievement.is-score { border-left-color: #74d99f; }
+
+.home-achievement > svg {
+  width: 21px;
+  min-width: 21px;
+  height: 21px;
+  margin-right: 10px;
+}
+
+.home-achievement > span {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+}
+
+.home-achievement strong {
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-achievement small {
+  margin-left: 9px;
+  color: rgba(255, 255, 255, .58);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 18px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .home-focus-rank {
@@ -4716,7 +4796,7 @@ body,
 }
 
 .home-focus-context > strong {
-  color: #f6f6f6;
+  color: #aaa;
   font-size: 29px;
   font-weight: 800;
   line-height: 36px;
@@ -4725,12 +4805,27 @@ body,
 
 .home-focus-context > small {
   margin-top: 3px;
-  color: #b7b7b7;
+  color: #fff;
   font-size: 22px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   line-height: 29px;
   white-space: nowrap;
+}
+
+.home-focus-facts > span {
+  display: inline;
+  white-space: nowrap;
+}
+
+.home-focus-facts > span + span::before {
+  width: 6px;
+  height: 6px;
+  margin: 0 13px 4px;
+  display: inline-block;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .34);
+  content: '';
 }
 
 .home-focus-context > .home-focus-description {

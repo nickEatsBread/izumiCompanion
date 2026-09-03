@@ -379,19 +379,28 @@ async function main() {
     const verticalDestination = await evaluate(`(() => {
       var focused = document.querySelector('.home-focus-card.is-focused');
       var frame = focused.querySelector('.home-focus-frame').getBoundingClientRect();
-      var title = focused.querySelector('.home-focus-title').getBoundingClientRect();
+      var copy = focused.querySelector('.home-focus-logo, .home-focus-title');
+      var copyBounds = copy.getBoundingClientRect();
       return {
         row: Number(focused.closest('.media-row').getAttribute('data-home-row')),
         index: Number(focused.getAttribute('data-media-index')),
         frame: [frame.left, frame.top, frame.width, frame.height],
-        title: [title.top, title.bottom],
-        titleAnimation: getComputedStyle(focused.querySelector('.home-focus-title')).animationName
+        copy: [copyBounds.top, copyBounds.bottom],
+        logo: copy.classList.contains('home-focus-logo') ? copy.getAttribute('alt') : '',
+        plainTitle: Boolean(focused.querySelector('.home-focus-title')),
+        copyAnimation: getComputedStyle(copy).animationName,
+        achievements: Array.from(focused.querySelectorAll('.home-achievement')).map(function (item) { return item.textContent.trim(); }),
+        achievementIcons: focused.querySelectorAll('.home-achievement > svg').length,
+        facts: Array.from(focused.querySelectorAll('.home-focus-facts > span')).map(function (item) { return item.textContent.trim(); })
       };
     })()`)
     assert(verticalDestination.row === 1 && verticalDestination.index === 0, `A new rail inherited the previous rail position: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 110) <= 3 && verticalDestination.frame[2] === 952 && verticalDestination.frame[3] === 536, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
-    assert(verticalDestination.title[0] >= verticalDestination.frame[1] && verticalDestination.title[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title is clipped outside its frame: ${verticalDestination.title}.`)
-    assert(verticalDestination.titleAnimation === 'home-focus-copy-change', `Focused title uses a moving animation: ${verticalDestination.titleAnimation}.`)
+    assert(verticalDestination.copy[0] >= verticalDestination.frame[1] && verticalDestination.copy[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title treatment is clipped outside its frame: ${verticalDestination.copy}.`)
+    assert(verticalDestination.logo === 'Chainsaw Man' && !verticalDestination.plainTitle, `Focused card did not prefer its source logo: ${JSON.stringify(verticalDestination)}.`)
+    assert(verticalDestination.copyAnimation === 'home-focus-copy-change', `Focused title treatment uses the wrong animation: ${verticalDestination.copyAnimation}.`)
+    assert(verticalDestination.achievements.length === 2 && verticalDestination.achievementIcons === 2, `Focused achievements are incomplete: ${JSON.stringify(verticalDestination)}.`)
+    assert(JSON.stringify(verticalDestination.facts) === '["Show","Action","2022","12 episodes"]', `Focused facts repeat shelf copy or omit metadata: ${JSON.stringify(verticalDestination.facts)}.`)
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art')")
     await capture('m56-focused-rail.png')
@@ -521,6 +530,7 @@ async function main() {
     assert(mergedBrowse.catalogue === 'Merged' && mergedBrowse.activeNavigation === 'Browse', `Browse did not select Merged: ${JSON.stringify(mergedBrowse)}.`)
     assert(JSON.stringify(mergedBrowse.hero) === '[0,0,1920,640]' && mergedBrowse.pips >= 2, `Browse is missing the Home carousel: ${JSON.stringify(mergedBrowse)}.`)
     assert(mergedBrowse.rows.length >= 3 && !mergedBrowse.legacyGrid, `Browse still uses the legacy grid: ${JSON.stringify(mergedBrowse)}.`)
+    assert(mergedBrowse.rows.includes('Anime') && mergedBrowse.rows.includes('Fantasy') && mergedBrowse.rows.includes('Action & Adventure'), `Browse did not derive conservative merged categories: ${JSON.stringify(mergedBrowse.rows)}.`)
     await press('ArrowDown')
     await waitFor("document.querySelector('.page-browse .home-poster-card.is-focused')")
     const browseRail = await evaluate(`(() => {
