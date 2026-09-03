@@ -442,7 +442,8 @@ const HomeFocusCard = memo(function HomeFocusCard({
       </span>
       <span class="home-focus-context" key={`context-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
         <strong class="home-focus-facts">{context.facts.map((fact, factIndex) => <span key={`${fact}-${factIndex}`}>{fact}</span>)}</strong>
-        {context.secondary && <small>{context.secondary}</small>}
+        {context.secondary && <small class="home-focus-secondary">{context.secondary}</small>}
+        {item.description && <small class="home-focus-description">{item.description}</small>}
       </span>
     </button>
   )

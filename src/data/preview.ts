@@ -119,6 +119,7 @@ const frieren = media(
     subtitle: '2023 · 28 Episodes · Fantasy',
     description: 'Decades after the hero party defeated the Demon King, an elven mage begins a new journey to understand the people she once travelled beside.',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/154587-ivXNJ23SM1xB.jpg',
+    logoImage: previewLogo('FRIEREN'),
     trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
     contentRating: 'TV-14',
     placement: { label: 'Top Rated This Season', position: 1, kind: 'ranking' },
@@ -160,6 +161,7 @@ const popular = [
   media(113415, 'Jujutsu Kaisen', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx113415-LHBAeoZDIsnF.jpg', { subtitle: '2020 · 24 Episodes · Supernatural', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/113415-jQBSkxWAAk83.jpg', seasonEpisodeCounts: [24, 23], placement: { label: 'Trending Now', position: 3, kind: 'ranking' } }),
   media(127230, 'Chainsaw Man', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx127230-DdP4vAdssLoz.png', {
     subtitle: '2022 · 12 Episodes · Action',
+    description: 'A debt-ridden devil hunter is reborn with the power of his chainsaw-demon companion.',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/127230-o8IRwCGVr9KW.jpg',
     logoImage: previewLogo('CHAINSAW MAN'),
     seasonEpisodeCounts: [12],

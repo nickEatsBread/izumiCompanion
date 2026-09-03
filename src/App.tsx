@@ -30,6 +30,7 @@ import { catalogCollections, episodeCountsFor } from './lib/catalog'
 import {
   homeHeroItems,
   isMergedCatalog,
+  mergeHomeMediaDetails,
   mergedCatalogOption,
   orderedHomeRows,
   rememberedHomeRowIndex,
@@ -326,6 +327,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const trailerGenerationRef = useRef(0)
   const homeTrailerPreviewRef = useRef<{ mediaKey: string; requestId?: string; url: string }>()
   const homeTrailerGenerationRef = useRef(0)
+  const homeDetailRequestsRef = useRef(new Set<string>())
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
@@ -1053,6 +1055,32 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const focusedHomeMediaKey = focusedHomeMedia
     ? `${focusedHomeMedia.ref.provider}:${focusedHomeMedia.ref.type}:${focusedHomeMedia.ref.id}`
     : ''
+  const homePreviewMedia = focus.zone === 'hero' ? selected : focusedHomeMedia
+  const homePreviewMediaKey = homePreviewMedia
+    ? `${homePreviewMedia.ref.provider}:${homePreviewMedia.ref.type}:${homePreviewMedia.ref.id}`
+    : ''
+
+  useEffect(() => {
+    homeDetailRequestsRef.current.clear()
+  }, [snapshot.revision])
+
+  useEffect(() => {
+    if (!cinematicScreen || !homePreviewMedia || !homePreviewMediaKey) return
+    if (homePreviewMedia.logoImage && homePreviewMedia.description) return
+    if (homeDetailRequestsRef.current.has(homePreviewMediaKey)) return
+    const media = homePreviewMedia
+    const timer = window.setTimeout(() => {
+      homeDetailRequestsRef.current.add(homePreviewMediaKey)
+      const apply = (details: CompanionMedia | null) => {
+        if (!details) return
+        setSnapshot((current) => mergeHomeMediaDetails(current, details))
+        setSelected((current) => sameMedia(current, media) ? details : current)
+      }
+      if (showPreviewTools) apply(previewDetailsFor(media))
+      else void receiverRef.current?.requestDetails(media).then(apply)
+    }, 320)
+    return () => window.clearTimeout(timer)
+  }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, showPreviewTools])
 
   useEffect(() => {
     const generation = ++homeTrailerGenerationRef.current

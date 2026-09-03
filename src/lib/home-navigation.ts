@@ -6,6 +6,53 @@ function mediaKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
 }
 
+function mergePresentationMedia(media: CompanionMedia, details: CompanionMedia): CompanionMedia {
+  if (mediaKey(media) !== mediaKey(details)) return media
+  return {
+    ...media,
+    title: details.title || media.title,
+    subtitle: details.subtitle ?? media.subtitle,
+    description: details.description ?? media.description,
+    contentRating: details.contentRating ?? media.contentRating,
+    mediaKind: details.mediaKind ?? media.mediaKind,
+    genres: details.genres?.length ? details.genres : media.genres,
+    releaseYear: details.releaseYear ?? media.releaseYear,
+    runtimeMinutes: details.runtimeMinutes ?? media.runtimeMinutes,
+    ratings: details.ratings?.length ? details.ratings : media.ratings,
+    poster: details.poster || media.poster,
+    backdrop: details.backdrop || media.backdrop,
+    logoImage: details.logoImage || media.logoImage,
+    trailer: details.trailer ?? media.trailer,
+    seasonEpisodeCounts: details.seasonEpisodeCounts?.length ? details.seasonEpisodeCounts : media.seasonEpisodeCounts,
+    seasonLabels: details.seasonLabels?.length ? details.seasonLabels : media.seasonLabels,
+  }
+}
+
+/** Cache presentation metadata returned for one focused title into every Home projection that
+ * contains it. Progress and shelf placement remain owned by each projection. */
+export function mergeHomeMediaDetails(snapshot: CompanionHomeSnapshot, details: CompanionMedia): CompanionHomeSnapshot {
+  let changed = false
+  const merge = (media: CompanionMedia): CompanionMedia => {
+    const next = mergePresentationMedia(media, details)
+    if (next !== media) changed = true
+    return next
+  }
+  const views = snapshot.views ? {
+    search: snapshot.views.search?.map(merge),
+    trending: snapshot.views.trending?.map(merge),
+    series: snapshot.views.series?.map(merge),
+    movies: snapshot.views.movies?.map(merge),
+    myList: snapshot.views.myList?.map(merge),
+  } : undefined
+  const next = {
+    ...snapshot,
+    hero: snapshot.hero ? merge(snapshot.hero) : undefined,
+    rows: snapshot.rows.map((row) => ({ ...row, items: row.items.map(merge) })),
+    ...(views ? { views } : {}),
+  }
+  return changed ? next : snapshot
+}
+
 function rankedRow(row: CompanionHomeRow): boolean {
   return row.presentation === 'top-10' || /trending|popular|top\s*10|top rated/i.test(`${row.id} ${row.title}`)
 }

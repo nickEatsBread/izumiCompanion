@@ -4796,7 +4796,7 @@ body,
 }
 
 .home-focus-context > strong {
-  color: #aaa;
+  color: #fff;
   font-size: 29px;
   font-weight: 800;
   line-height: 36px;
@@ -4829,8 +4829,12 @@ body,
 }
 
 .home-focus-context > .home-focus-description {
+  margin-top: 7px;
   max-height: 58px;
   color: #b7b7b7;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;

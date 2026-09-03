@@ -3,6 +3,7 @@ import type { CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '..
 import {
   homeHeroItems,
   isMergedCatalog,
+  mergeHomeMediaDetails,
   mergedCatalogOption,
   orderedHomeRows,
   rememberedHomeRowIndex,
@@ -40,6 +41,40 @@ describe('TV home navigation model', () => {
       rows: [row('popular', 'Popular this week', 'catalog', [hero, media('two'), media('three'), media('four'), media('five'), media('six')])],
     }
     expect(homeHeroItems(snapshot).map(({ ref }) => ref.id)).toEqual(['hero', 'two', 'three', 'four', 'five'])
+  })
+
+  it('caches focused presentation details without replacing shelf progress or placement', () => {
+    const title = {
+      ...media('hero'),
+      progress: .4,
+      placement: { label: 'Continue Watching', kind: 'continue' as const },
+    }
+    const snapshot: CompanionHomeSnapshot = {
+      app: 'izumi',
+      kind: 'companion-home',
+      version: 1,
+      revision: 'details',
+      generatedAt: 1,
+      catalog: { screen: 'preview', label: 'Preview' },
+      hero: title,
+      rows: [row('continue', 'Continue Watching', 'continue', [title])],
+      views: { search: [title] },
+    }
+    const merged = mergeHomeMediaDetails(snapshot, {
+      ...media('hero'),
+      logoImage: 'https://img.example/logo.png',
+      description: 'A detailed provider synopsis.',
+      genres: ['Drama'],
+    })
+
+    expect(merged.hero).toMatchObject({
+      logoImage: 'https://img.example/logo.png',
+      description: 'A detailed provider synopsis.',
+      progress: .4,
+      placement: { label: 'Continue Watching', kind: 'continue' },
+    })
+    expect(merged.rows[0].items[0].logoImage).toBe('https://img.example/logo.png')
+    expect(merged.views?.search?.[0].genres).toEqual(['Drama'])
   })
 
   it('wraps featured navigation in both directions', () => {

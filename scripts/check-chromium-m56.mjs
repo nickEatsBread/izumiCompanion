@@ -281,6 +281,8 @@ async function main() {
           aspectRatio: CSS.supports('aspect-ratio', '16 / 9')
         },
         shadeBackground: getComputedStyle(document.querySelector('.hero-shade')).backgroundImage,
+        titleLogo: document.querySelector('.hero-title-logo') ? document.querySelector('.hero-title-logo').getAttribute('alt') : '',
+        plainTitle: Boolean(document.querySelector('.hero-copy > h1')),
         trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform,
         previewRhythm: (() => {
           var rows = document.querySelectorAll('.media-row');
@@ -294,6 +296,7 @@ async function main() {
     assert(JSON.stringify(hero.card) === '[0,0,1920,640]', `Unexpected hero geometry ${hero.card}.`)
     assert(Object.values(hero.supports).every((supported) => supported === false), 'The M56 feature baseline changed.')
     assert(hero.shadeBackground.includes('linear-gradient'), 'The M56 hero contrast gradient did not render.')
+    assert(hero.titleLogo === "Frieren: Beyond Journey's End" && !hero.plainTitle, `Continue Watching hero did not prefer its title logo: ${JSON.stringify(hero)}.`)
     assert(hero.trackTransform === 'none', 'Home uses a full-page compositor transform.')
     assert(hero.previewRhythm[1] >= hero.previewRhythm[0], `Preview row titles overlap the cards: ${hero.previewRhythm}.`)
     const collapsedNavigation = await evaluate(`(() => {
@@ -381,6 +384,10 @@ async function main() {
       var frame = focused.querySelector('.home-focus-frame').getBoundingClientRect();
       var copy = focused.querySelector('.home-focus-logo, .home-focus-title');
       var copyBounds = copy.getBoundingClientRect();
+      var facts = focused.querySelector('.home-focus-facts');
+      var description = focused.querySelector('.home-focus-description');
+      var cardBounds = focused.getBoundingClientRect();
+      var descriptionBounds = description.getBoundingClientRect();
       return {
         row: Number(focused.closest('.media-row').getAttribute('data-home-row')),
         index: Number(focused.getAttribute('data-media-index')),
@@ -391,7 +398,12 @@ async function main() {
         copyAnimation: getComputedStyle(copy).animationName,
         achievements: Array.from(focused.querySelectorAll('.home-achievement')).map(function (item) { return item.textContent.trim(); }),
         achievementIcons: focused.querySelectorAll('.home-achievement > svg').length,
-        facts: Array.from(focused.querySelectorAll('.home-focus-facts > span')).map(function (item) { return item.textContent.trim(); })
+        facts: Array.from(focused.querySelectorAll('.home-focus-facts > span')).map(function (item) { return item.textContent.trim(); }),
+        factsColor: getComputedStyle(facts).color,
+        description: description.textContent.trim(),
+        descriptionColor: getComputedStyle(description).color,
+        descriptionWeight: getComputedStyle(description).fontWeight,
+        descriptionBounds: [Math.round(descriptionBounds.top), Math.round(descriptionBounds.bottom), Math.round(cardBounds.bottom)]
       };
     })()`)
     assert(verticalDestination.row === 1 && verticalDestination.index === 0, `A new rail inherited the previous rail position: ${JSON.stringify(verticalDestination)}.`)
@@ -401,9 +413,12 @@ async function main() {
     assert(verticalDestination.copyAnimation === 'home-focus-copy-change', `Focused title treatment uses the wrong animation: ${verticalDestination.copyAnimation}.`)
     assert(verticalDestination.achievements.length === 2 && verticalDestination.achievementIcons === 2, `Focused achievements are incomplete: ${JSON.stringify(verticalDestination)}.`)
     assert(JSON.stringify(verticalDestination.facts) === '["Show","Action","2022","12 episodes"]', `Focused facts repeat shelf copy or omit metadata: ${JSON.stringify(verticalDestination.facts)}.`)
+    assert(verticalDestination.factsColor === 'rgb(255, 255, 255)', `Focused metadata is not white: ${verticalDestination.factsColor}.`)
+    assert(verticalDestination.description.includes('devil hunter') && verticalDestination.descriptionWeight === '500', `Focused synopsis is missing or over-emphasized: ${JSON.stringify(verticalDestination)}.`)
+    assert(verticalDestination.descriptionColor !== verticalDestination.factsColor && verticalDestination.descriptionBounds[1] <= verticalDestination.descriptionBounds[2], `Focused synopsis hierarchy or clipping is incorrect: ${JSON.stringify(verticalDestination)}.`)
+    await capture('m56-focused-rail.png')
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art')")
-    await capture('m56-focused-rail.png')
     for (let index = 3; index < 8; index += 1) await press('ArrowRight')
     const horizontal = await evaluate(`(() => {
       var focused = document.querySelector('.home-focus-card.is-focused');
@@ -482,13 +497,14 @@ async function main() {
       var rows = document.querySelector('.catalog-rows').getBoundingClientRect();
       var card = document.querySelector('.home-poster-card.is-focused').getBoundingClientRect();
       var viewport = document.querySelector('.media-row.is-active .media-strip-viewport').getBoundingClientRect();
+      var heroTitle = document.querySelector('.hero-title-logo, .hero h1');
       return {
         hero: [hero.left, hero.top, hero.width, hero.height],
         rows: [rows.top, rows.height],
         card: [card.width, card.height],
         expanded: Boolean(document.querySelector('.home-focus-card')),
         receding: document.querySelector('.hero').classList.contains('is-receding'),
-        heroTitle: document.querySelector('.hero h1').textContent,
+        heroTitle: heroTitle.getAttribute('alt') || heroTitle.textContent,
         cardTitle: document.querySelector('.home-poster-card.is-focused').getAttribute('aria-label'),
         rankContext: document.querySelector('.hero-rank-context').textContent,
         viewport: [viewport.left, viewport.width],
@@ -539,7 +555,8 @@ async function main() {
     await waitFor("document.querySelector('.page-browse .home-poster-card.is-focused')")
     const browseRail = await evaluate(`(() => {
       var card = document.querySelector('.page-browse .home-poster-card.is-focused');
-      return { title: card.getAttribute('aria-label'), hero: document.querySelector('.page-browse .hero h1').textContent };
+      var heroTitle = document.querySelector('.page-browse .hero-title-logo, .page-browse .hero h1');
+      return { title: card.getAttribute('aria-label'), hero: heroTitle.getAttribute('alt') || heroTitle.textContent };
     })()`)
     assert(browseRail.title.includes(browseRail.hero), `Browse rail focus did not update its hero: ${JSON.stringify(browseRail)}.`)
     await capture('m56-browse-merged.png')
