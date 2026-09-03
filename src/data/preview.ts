@@ -164,6 +164,7 @@ const popular = [
     description: 'A debt-ridden devil hunter is reborn with the power of his chainsaw-demon companion.',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/127230-o8IRwCGVr9KW.jpg',
     logoImage: previewLogo('CHAINSAW MAN'),
+    trailer: { id: 'dFlDRhvM4L0', site: 'youtube' },
     seasonEpisodeCounts: [12],
     achievements: [{ kind: 'rating', label: '#31 highest rated 2022', source: 'AniList' }],
     placement: { label: 'Trending Now', position: 4, kind: 'ranking' },

@@ -42,6 +42,7 @@ import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
 import { preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
+import { installVoiceSearch } from './lib/voice-search'
 import {
   activeSkipSegment,
   nextEpisodeFor,
@@ -1087,6 +1088,37 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, homePreviewMedia?.trailer?.id, homePreviewMedia?.trailer?.site, showPreviewTools])
 
   useEffect(() => {
+    if (!cinematicScreen || focus.zone !== 'row') return
+    const activeRow = cinematicRows[focus.row]
+    if (!activeRow?.items.length) return
+    const candidates: CompanionMedia[] = []
+    const remember = (media?: CompanionMedia) => {
+      if (!media) return
+      const key = `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
+      if (!candidates.some((candidate) => `${candidate.ref.provider}:${candidate.ref.type}:${candidate.ref.id}` === key)) candidates.push(media)
+    }
+    remember(activeRow.items[(focus.index + 1) % activeRow.items.length])
+    remember(activeRow.items[(focus.index - 1 + activeRow.items.length) % activeRow.items.length])
+    for (const rowIndex of [focus.row - 1, focus.row + 1]) {
+      const row = cinematicRows[rowIndex]
+      remember(row?.items[rememberedHomeRowIndex(row, homeRowIndexesRef.current)])
+    }
+    const timer = window.setTimeout(() => {
+      candidates.slice(0, 4).forEach((media) => {
+        const key = `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
+        if (homeDetailRequestsRef.current.has(key)) return
+        homeDetailRequestsRef.current.add(key)
+        const apply = (details: CompanionMedia | null) => {
+          if (details) setSnapshot((current) => mergeHomeMediaDetails(current, details))
+        }
+        if (showPreviewTools) apply(previewDetailsFor(media))
+        else void receiverRef.current?.requestDetails(media).then(apply)
+      })
+    }, 140)
+    return () => window.clearTimeout(timer)
+  }, [cinematicRows, cinematicScreen, focus, showPreviewTools])
+
+  useEffect(() => {
     const generation = ++homeTrailerGenerationRef.current
     const previous = homeTrailerPreviewRef.current
     if (previous?.requestId) receiverRef.current?.releaseTrailer(previous.requestId)
@@ -1509,6 +1541,29 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       changeFocus({ zone: 'grid', index: 0 })
     }
   }
+
+  const openVoiceSearch = (query?: string) => {
+    const nextQuery = query?.trim() ?? ''
+    closeTrailer()
+    setCatalogMenuOpen(false)
+    setSettingsConfirmation(null)
+    if (screenRef.current === 'player' || screenRef.current === 'loading') finishActivePlayback()
+    if (screenRef.current !== 'search') beginNavigationTransition()
+    setActiveNav(1)
+    setScreen('search')
+    if (nextQuery) {
+      searchQueryRef.current = nextQuery
+      setSearchQuery(nextQuery)
+      setRemoteSearchResults(undefined)
+    }
+    changeFocus({ zone: 'search-input', index: 0 })
+  }
+
+  useEffect(() => installVoiceSearch(allMedia, {
+    getScreen: () => screenRef.current,
+    onOpenSearch: () => openVoiceSearch(),
+    onSearch: openVoiceSearch,
+  }), [snapshot.revision])
 
   const activateCurrentFocus = () => {
     const focus = focusRef.current

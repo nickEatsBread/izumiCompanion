@@ -49,6 +49,25 @@ interface SamsungTvAudioControl {
   setMute(muted: boolean): void
 }
 
+interface SamsungVoiceControlCommand {
+  command: string
+  type?: 'FOREGROUND'
+}
+
+interface SamsungVoiceControlClient {
+  setCommandList(commands: SamsungVoiceControlCommand[], type?: 'FOREGROUND'): void
+  unsetCommandList(type?: 'FOREGROUND'): void
+  addResultListener(listener: (event: string, list: SamsungVoiceControlCommand[], result: string) => void): number
+  removeResultListener(id: number): void
+}
+
+interface SamsungVoiceInteraction {
+  setCallback(callback: Record<string, (...args: never[]) => unknown>): void
+  listen(): void
+  buildVoiceInteractionContentContextItem?(x: number, y: number, title: string, aliases: string[], focused: boolean): unknown
+  buildVoiceInteractionContentContextResponse?(items: unknown[]): string
+}
+
 interface SamsungSmartViewChannel {
   on(event: string, callback: (data: unknown, from?: unknown) => void): void
   publish(event: string, data: unknown, target?: string): void
@@ -68,11 +87,14 @@ interface Window {
   webapis?: {
     avplay?: SamsungAvPlay
     network?: { getIp(): string }
+    voiceinteraction?: SamsungVoiceInteraction
   }
   tizen?: {
+    VoiceControlCommand?: new (command: string, type?: 'FOREGROUND') => SamsungVoiceControlCommand
     tvinputdevice?: SamsungTvInputDevice
     tvaudiocontrol?: SamsungTvAudioControl
     application?: { getCurrentApplication(): { exit(): void } }
+    voicecontrol?: { getVoiceControlClient(): SamsungVoiceControlClient }
   }
   msf?: {
     local(callback: (error: unknown, service?: SamsungSmartViewService) => void): void

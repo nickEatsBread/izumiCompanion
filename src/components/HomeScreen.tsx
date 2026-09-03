@@ -2,6 +2,7 @@ import { Award, Flame, History, Info, Play, Star, TrendingUp, Trophy, UsersRound
 import { memo } from 'preact/compat'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
+import anilistLogo from '../assets/anilist-logo.svg'
 import { cyclicRailIndexes } from '../lib/home-navigation'
 import { tvMotionValue } from '../lib/tv-motion'
 import { linearWindow } from '../lib/windowing'
@@ -110,6 +111,18 @@ function AchievementIcon({ kind }: { kind: NonNullable<CompanionMedia['achieveme
   return <Icon size={21} strokeWidth={2.4} aria-hidden="true" />
 }
 
+function AchievementSource({ source }: { source: string }) {
+  return source.trim().toLowerCase() === 'anilist'
+    ? <img class="home-achievement-source-logo" src={anilistLogo} alt="AniList" width={22} height={22} />
+    : <small>{source}</small>
+}
+
+export function trailerFooterLabel(media: CompanionMedia): string {
+  if (media.mediaKind === 'movie' || media.ref.type === 'movie') return 'Complete movie'
+  if (media.episode) return 'Complete episode'
+  return 'Series preview'
+}
+
 export function homeRowVisible(rowIndex: number, activeRow: number): boolean {
   return Math.abs(rowIndex - activeRow) <= 1
 }
@@ -161,6 +174,25 @@ export function homeFocusMotion(previous: FocusLocation, current: FocusLocation,
 
 const railScrollAnimations = new WeakMap<HTMLElement, number>()
 const preloadedHomeArtwork: Record<string, boolean> = {}
+const preloadedTitleImages: Record<string, boolean> = {}
+const failedTitleImages: Record<string, boolean> = {}
+const preloadedTitleImageOrder: string[] = []
+const MAX_PRELOADED_TITLE_IMAGES = 24
+
+function preloadTitleImage(source?: string): void {
+  if (!source || preloadedTitleImages[source]) return
+  const image = new Image()
+  image.onload = () => {
+    preloadedTitleImages[source] = true
+    preloadedTitleImageOrder.push(source)
+    while (preloadedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
+      const expired = preloadedTitleImageOrder.shift()
+      if (expired) delete preloadedTitleImages[expired]
+    }
+  }
+  image.onerror = () => { failedTitleImages[source] = true }
+  image.src = source
+}
 
 function focusArtwork(media: CompanionMedia, episodeCard: boolean): string[] {
   return Array.from(new Set([
@@ -172,6 +204,7 @@ function focusArtwork(media: CompanionMedia, episodeCard: boolean): string[] {
 }
 
 function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void {
+  preloadTitleImage(media.logoImage)
   const source = focusArtwork(media, episodeCard)[0]
   if (!source || preloadedHomeArtwork[source]) return
   const image = new Image()
@@ -179,24 +212,26 @@ function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void 
   image.src = source
 }
 
-/** Keep the readable text fallback mounted until a clear-logo has actually decoded. */
-function useLoadedImage(source?: string): string {
-  const [loaded, setLoaded] = useState('')
+/** Choose text or a decoded logo once per title visit. Late metadata is cached for the next visit
+ * instead of visibly replacing the title while somebody is reading it. */
+function useStableTitleImage(identity: string, source?: string): [string, () => void] {
+  const [selection, setSelection] = useState(() => ({
+    identity,
+    source: source && !failedTitleImages[source] ? source : '',
+  }))
+  const visible = selection.identity === identity
+    ? selection.source
+    : source && !failedTitleImages[source] ? source : ''
   useEffect(() => {
-    let active = true
-    setLoaded('')
-    if (!source) return () => { active = false }
-    const image = new Image()
-    image.onload = () => { if (active) setLoaded(source) }
-    image.onerror = () => { if (active) setLoaded('') }
-    image.src = source
-    return () => {
-      active = false
-      image.onload = null
-      image.onerror = null
-    }
+    setSelection({ identity, source: source && !failedTitleImages[source] ? source : '' })
+  }, [identity])
+  useEffect(() => {
+    preloadTitleImage(source)
   }, [source])
-  return loaded === source ? loaded : ''
+  return [visible, () => {
+    if (visible) failedTitleImages[visible] = true
+    setSelection((current) => current.identity === identity ? { ...current, source: '' } : current)
+  }]
 }
 
 function animateRailScroll(element: HTMLElement, target: number, duration = 160): void {
@@ -239,6 +274,7 @@ function HeroArtwork({ source }: { source?: string }) {
 
 function HeroTrailer({ source, title, onPlayingChange }: { source: string; title: string; onPlayingChange?(playing: boolean): void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const hasPlayedRef = useRef(false)
   const [playing, setPlaying] = useState(false)
   const bridgeOrigin = (() => {
     try {
@@ -261,6 +297,7 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
   }
 
   useEffect(() => {
+    hasPlayedRef.current = false
     setPlaying(false)
     onPlayingChange?.(false)
     let attempts = 0
@@ -289,7 +326,8 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
       const info = payload?.info
       const state = typeof info === 'object' && info ? Number((info as Record<string, unknown>).playerState) : Number(info ?? payload?.data)
       if ((payload?.event === 'onStateChange' || payload?.event === 'initialDelivery' || payload?.event === 'infoDelivery') && Number.isFinite(state)) {
-        const next = state === 1
+        if (state === 1) hasPlayedRef.current = true
+        const next = state === 1 || (state === 3 && hasPlayedRef.current)
         setPlaying(next)
         onPlayingChange?.(next)
         if (next) {
@@ -413,7 +451,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
   const [trailerPlaying, setTrailerPlaying] = useState(false)
-  const logoImage = useLoadedImage(item.logoImage)
+  const [logoImage, onLogoError] = useStableTitleImage(mediaIdentity(item), item.logoImage)
   const image = artwork[artworkIndex]
   const context = homeCardContext(item, episodeCard)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
@@ -457,12 +495,15 @@ const HomeFocusCard = memo(function HomeFocusCard({
         </span>
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
-          ? <img class="home-focus-logo" src={logoImage} alt={item.title} decoding="async" />
+          ? <img class="home-focus-logo" src={logoImage} alt={item.title} decoding="async" onError={onLogoError} />
           : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
+        {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
+          <span>{item.title}</span><i /><strong>{trailerFooterLabel(item)}</strong>
+        </span>}
         {achievements.length > 0 && <span class="home-focus-achievements">
           {achievements.map((achievement, achievementIndex) => <span class={`home-achievement is-${achievement.kind}`} key={`${achievement.kind}-${achievement.label}-${achievementIndex}`}>
             <AchievementIcon kind={achievement.kind} />
-            <span><strong>{achievement.label}</strong>{achievement.source && <small>{achievement.source}</small>}</span>
+            <span><strong>{achievement.label}</strong>{achievement.source && <AchievementSource source={achievement.source} />}</span>
           </span>)}
         </span>}
         {inProgress && (
@@ -515,9 +556,10 @@ export function HomeScreen({
     : snapshot.catalog.label
   const heroImage = hero.episodeImage || hero.backdrop || hero.poster
   const heroTrailerSource = trailerPreview?.mediaKey === mediaIdentity(hero) ? trailerPreview.url : undefined
-  const heroLogoImage = useLoadedImage(hero.logoImage)
+  const [heroLogoImage, onHeroLogoError] = useStableTitleImage(mediaIdentity(hero), hero.logoImage)
   const homeTrackRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<FocusLocation>(focus)
+  const focusMotionRef = useRef<HomeFocusMotion>('still')
   const presentedFocus = focus.zone === 'row'
     ? focus
     : focus.zone === 'nav' && returnFocus.zone === 'row'
@@ -527,11 +569,19 @@ export function HomeScreen({
   const activeRow = presentedFocus?.row ?? 0
   const horizontalCenter = presentedFocus?.index ?? 0
   const focusedRowLength = presentedFocus ? snapshot.rows[presentedFocus.row]?.items.length ?? 0 : 0
-  const focusMotion = focus.zone === 'row'
-    ? previousFocusRef.current.zone === 'nav'
-      ? 'still'
-      : homeFocusMotion(previousFocusRef.current, focus, focusedRowLength)
-    : 'still'
+  let focusMotion: HomeFocusMotion = 'still'
+  if (focus.zone === 'row' && previousFocusRef.current.zone !== 'nav') {
+    const nextMotion = homeFocusMotion(previousFocusRef.current, focus, focusedRowLength)
+    if (nextMotion !== 'still') focusMotionRef.current = nextMotion
+    focusMotion = nextMotion === 'still' ? focusMotionRef.current : nextMotion
+  } else {
+    focusMotionRef.current = 'still'
+  }
+
+  useEffect(() => {
+    preloadTitleImage(snapshot.hero?.logoImage)
+    snapshot.rows.slice(0, 2).forEach((row) => row.items.slice(0, 8).forEach((item) => preloadTitleImage(item.logoImage)))
+  }, [snapshot.hero?.logoImage, snapshot.rows])
 
   useEffect(() => {
     previousFocusRef.current = focus
@@ -641,7 +691,7 @@ export function HomeScreen({
         <div class="hero-shade" />
         <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
           {heroLogoImage
-            ? <img class="hero-title-logo" src={heroLogoImage} alt={hero.title} decoding="async" />
+            ? <img class="hero-title-logo" src={heroLogoImage} alt={hero.title} decoding="async" onError={onHeroLogoError} />
             : <h1>{hero.title}</h1>}
           {isContinueHero && hero.episode && (
             <div class="hero-resume">

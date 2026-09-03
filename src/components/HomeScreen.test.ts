@@ -16,6 +16,7 @@ import {
   homeRowVisible,
   informativeHeroMeta,
   mediaFactTokens,
+  trailerFooterLabel,
 } from './HomeScreen'
 
 const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
@@ -89,6 +90,12 @@ describe('TV home presentation', () => {
     expect(achievementIconName('rating')).toBe('trophy')
     const kinds = ['trending', 'popularity', 'rating'] as const
     expect(new Set(kinds.map(achievementIconName)).size).toBe(3)
+  })
+
+  it('keeps a compact content label beside the dimmed trailer title', () => {
+    expect(trailerFooterLabel({ ...media(), mediaKind: 'movie' })).toBe('Complete movie')
+    expect(trailerFooterLabel({ ...media(), mediaKind: 'show' })).toBe('Series preview')
+    expect(trailerFooterLabel({ ...media(), mediaKind: 'show', episode: 4 })).toBe('Complete episode')
   })
 
   it('describes horizontal and vertical spotlight movement for the TV transition', () => {

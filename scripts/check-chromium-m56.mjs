@@ -429,12 +429,44 @@ async function main() {
     assert(verticalDestination.factsColor === 'rgb(255, 255, 255)', `Focused metadata is not white: ${verticalDestination.factsColor}.`)
     assert(verticalDestination.description.includes('devil hunter') && verticalDestination.descriptionWeight === '500', `Focused synopsis is missing or over-emphasized: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.descriptionColor !== verticalDestination.factsColor && verticalDestination.descriptionBounds[1] <= verticalDestination.descriptionBounds[2], `Focused synopsis hierarchy or clipping is incorrect: ${JSON.stringify(verticalDestination)}.`)
+    await waitFor("document.querySelector('.home-trailer-footer')")
     await evaluate("document.querySelector('.home-focus-card').classList.add('is-trailer-playing')")
-    await wait(200)
-    const hiddenFocusAchievements = await evaluate("getComputedStyle(document.querySelector('.home-focus-achievements')).opacity")
-    assert(hiddenFocusAchievements === '0', `Focused score badges remain over trailer playback: ${hiddenFocusAchievements}.`)
+    await wait(260)
+    const activeTrailerPresentation = await evaluate(`(() => {
+      var card = document.querySelector('.home-focus-card');
+      var title = card.querySelector('.home-focus-logo, .home-focus-title');
+      var footerTitle = card.querySelector('.home-trailer-footer > span');
+      return {
+        shade: getComputedStyle(card.querySelector('.home-focus-shade')).opacity,
+        title: getComputedStyle(title).opacity,
+        footer: getComputedStyle(card.querySelector('.home-trailer-footer')).opacity,
+        footerCopy: card.querySelector('.home-trailer-footer').textContent.trim(),
+        footerTitleOpacity: getComputedStyle(footerTitle).opacity,
+        footerOverflow: getComputedStyle(footerTitle).textOverflow,
+        achievements: getComputedStyle(card.querySelector('.home-focus-achievements')).opacity,
+        achievementWidths: Array.from(card.querySelectorAll('.home-achievement')).map(function (item) { return Math.round(item.getBoundingClientRect().width); }),
+        anilistLogo: Boolean(card.querySelector('.home-achievement-source-logo[alt="AniList"]')),
+        sourceText: Array.from(card.querySelectorAll('.home-achievement small')).map(function (item) { return item.textContent.trim(); })
+      };
+    })()`)
+    assert(activeTrailerPresentation.shade === '0' && activeTrailerPresentation.title === '0' && activeTrailerPresentation.footer === '1', `Trailer chrome does not clear the full video: ${JSON.stringify(activeTrailerPresentation)}.`)
+    assert(activeTrailerPresentation.footerCopy.includes('Chainsaw Man') && activeTrailerPresentation.footerCopy.includes('Series preview'), `Trailer footer context is incomplete: ${JSON.stringify(activeTrailerPresentation)}.`)
+    assert(Number(activeTrailerPresentation.footerTitleOpacity) < 1 && activeTrailerPresentation.footerOverflow === 'ellipsis', `Long trailer titles cannot yield space to their content label: ${JSON.stringify(activeTrailerPresentation)}.`)
+    assert(activeTrailerPresentation.achievements === '0' && activeTrailerPresentation.anilistLogo && !activeTrailerPresentation.sourceText.includes('AniList'), `Trailer/source achievement treatment is incorrect: ${JSON.stringify(activeTrailerPresentation)}.`)
+    assert(activeTrailerPresentation.achievementWidths.every(function (width) { return width < 430; }), `Achievement badges retain an empty black tail: ${activeTrailerPresentation.achievementWidths}.`)
+    await capture('m56-trailer-playing.png')
     await evaluate("document.querySelector('.home-focus-card').classList.remove('is-trailer-playing')")
-    await wait(200)
+    await wait(260)
+    const restoredTrailerPresentation = await evaluate(`(() => {
+      var card = document.querySelector('.home-focus-card');
+      return {
+        shade: getComputedStyle(card.querySelector('.home-focus-shade')).opacity,
+        title: getComputedStyle(card.querySelector('.home-focus-logo, .home-focus-title')).opacity,
+        footer: getComputedStyle(card.querySelector('.home-trailer-footer')).opacity,
+        achievements: getComputedStyle(card.querySelector('.home-focus-achievements')).opacity
+      };
+    })()`)
+    assert(JSON.stringify(restoredTrailerPresentation) === '{"shade":"1","title":"1","footer":"0","achievements":"1"}', `Trailer end-state did not restore the tile treatment: ${JSON.stringify(restoredTrailerPresentation)}.`)
     await capture('m56-focused-rail.png')
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art')")
@@ -545,6 +577,15 @@ async function main() {
     assert(seriesSelection.shell.includes('screen-series') && !seriesSelection.player, `A normal series tile started playback: ${JSON.stringify(seriesSelection)}.`)
     assert(seriesSelection.title && seriesTitle.includes(seriesSelection.title) && seriesSelection.actions > 0, `The selected series page did not open: ${JSON.stringify({ seriesTitle, seriesSelection })}.`)
     await capture('m56-series-selection.png')
+    await evaluate("window.dispatchEvent(new CustomEvent('izumi:voice-search', { detail: 'The Runner' }))")
+    await waitFor("document.querySelector('.app-shell.screen-search input') && document.querySelector('.app-shell.screen-search input').value === 'The Runner'")
+    const voiceSearch = await evaluate(`(() => ({
+      screen: document.querySelector('.app-shell').className,
+      query: document.querySelector('.search-query input').value,
+      activeNav: document.querySelector('.nav-item.is-active .nav-item-label strong').textContent.trim()
+    }))()`)
+    assert(voiceSearch.screen.includes('screen-search') && voiceSearch.query === 'The Runner' && voiceSearch.activeNav === 'Search', `Voice search did not route into the all-source search screen: ${JSON.stringify(voiceSearch)}.`)
+    await capture('m56-voice-search.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=carousel` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.home-screen.mode-carousel')")
@@ -787,7 +828,7 @@ async function main() {
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write('Chromium 56 check passed: Home geometry, retained mid-page sidebar position, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
+    process.stdout.write('Chromium 56 check passed: Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()
