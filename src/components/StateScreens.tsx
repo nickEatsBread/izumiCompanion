@@ -226,6 +226,9 @@ export function PlayerScreen({
   subtitlePreferences,
   previewBackdrop,
   controlsVisible,
+  bufferingProgress,
+  transportFocused,
+  timelineFocused,
   skipSegments,
   skipSegment,
   skipFocused,
@@ -237,6 +240,9 @@ export function PlayerScreen({
   stillWatching,
   stillWatchingFocus,
   onControlFocus,
+  onTransportFocus,
+  onTimelineFocus,
+  onToggle,
   onControl,
   onMenuFocus,
   onSource,
@@ -270,6 +276,9 @@ export function PlayerScreen({
   subtitlePreferences: SubtitlePreferences
   previewBackdrop?: string
   controlsVisible: boolean
+  bufferingProgress: number
+  transportFocused: boolean
+  timelineFocused: boolean
   skipSegments: CompanionSkipSegment[]
   skipSegment?: CompanionSkipSegment
   skipFocused: boolean
@@ -281,6 +290,9 @@ export function PlayerScreen({
   stillWatching: boolean
   stillWatchingFocus: number
   onControlFocus(index: number): void
+  onTransportFocus(): void
+  onTimelineFocus(): void
+  onToggle(): void
   onControl(index: number): void
   onMenuFocus(index: number): void
   onSource(source: PlaybackSourceChoice): void
@@ -294,6 +306,7 @@ export function PlayerScreen({
   onStillWatching(continueWatching: boolean): void
 }) {
   const progress = isLive ? 100 : duration ? Math.min(100, position / duration * 100) : 0
+  const showPause = state === 'playing' || state === 'buffering'
   const selectedAudio = audioTracks.find((track) => track.index === activeAudio)?.label ?? 'Default'
   const selectedSubtitle = subtitleChoices.find((track) => track.id === activeSubtitle)?.label ?? 'Off'
   const selectedSource = sourceChoices.find((source) => source.id === activeSourceId)?.label ?? 'Current source'
@@ -323,6 +336,15 @@ export function PlayerScreen({
     <main class="player-screen">
       {previewBackdrop && <img class="player-preview-backdrop" src={previewBackdrop} alt="" />}
       <div class={`player-vignette${controlsVisible ? ' is-visible' : ''}`} />
+      {state === 'buffering' && (
+        <div class="player-buffering-status" role="status" aria-live="polite">
+          <span class="player-buffering-spinner" aria-hidden="true" />
+          <span>
+            <strong>Buffering</strong>
+            <small>{bufferingProgress > 0 && bufferingProgress < 100 ? `${Math.round(bufferingProgress)}%` : 'Loading video'}</small>
+          </span>
+        </div>
+      )}
       {subtitleText && !menu && (
         <div class={`player-subtitle${controlsVisible ? ' is-controls-visible' : ''} subtitle-${subtitlePreferences.size} subtitle-bg-${subtitlePreferences.background}`} style={subtitleStyle}>
           {subtitleText}
@@ -346,25 +368,46 @@ export function PlayerScreen({
       )}
       <div class={`player-controls${controlsVisible ? ' is-visible' : ' is-hidden'}`}>
         <div class="player-heading">
-          <span class="player-state-icon">
-            {state === 'paused' ? <Pause size={25} fill="currentColor" /> : <Play size={25} fill="currentColor" />}
-          </span>
+          <button
+            type="button"
+            class={`player-state-icon${transportFocused && !menu ? ' is-focused' : ''}`}
+            aria-label={showPause ? 'Pause' : 'Play'}
+            onFocus={onTransportFocus}
+            onMouseEnter={onTransportFocus}
+            onClick={onToggle}
+          >
+            {showPause ? <Pause size={27} fill="currentColor" /> : <Play size={27} fill="currentColor" />}
+          </button>
           <div>
             <p>{state === 'paused' ? 'Paused' : state === 'buffering' ? 'Buffering' : 'Now Playing'}</p>
             <h1>{title}</h1>
           </div>
         </div>
-        <div class="player-timeline">
-          <span style={{ width: `${progress}%` }} />
-          {skipSegments.map((segment) => duration > 0 && (
-            <i
-              class={`player-segment-marker is-${segment.type}`}
-              style={{ left: `${Math.min(100, segment.startTime / duration * 100)}%`, width: `${Math.max(.25, (segment.endTime - segment.startTime) / duration * 100)}%` }}
-              key={`${segment.type}-${segment.startTime}`}
-            />
-          ))}
+        <div
+          class={`player-timeline-control${timelineFocused && !menu ? ' is-focused' : ''}`}
+          role="slider"
+          aria-label="Playback position"
+          aria-valuemin={0}
+          aria-valuemax={Math.max(0, Math.round(duration))}
+          aria-valuenow={Math.max(0, Math.round(position))}
+          aria-valuetext={isLive ? 'Live' : `${formatTime(position)} of ${formatTime(duration)}`}
+          tabIndex={0}
+          onFocus={onTimelineFocus}
+          onMouseEnter={onTimelineFocus}
+        >
+          <div class="player-timeline">
+            <span style={{ width: `${progress}%` }} />
+            <i class="player-scrubber-handle" style={{ left: `${progress}%` }} aria-hidden="true" />
+            {skipSegments.map((segment) => duration > 0 && (
+              <i
+                class={`player-segment-marker is-${segment.type}`}
+                style={{ left: `${Math.min(100, segment.startTime / duration * 100)}%`, width: `${Math.max(.25, (segment.endTime - segment.startTime) / duration * 100)}%` }}
+                key={`${segment.type}-${segment.startTime}`}
+              />
+            ))}
+          </div>
+          <div class="player-times"><span>{isLive ? 'LIVE' : formatTime(position)}</span><span>{isLive ? '' : formatTime(duration)}</span></div>
         </div>
-        <div class="player-times"><span>{isLive ? 'LIVE' : formatTime(position)}</span><span>{isLive ? '' : formatTime(duration)}</span></div>
         <div class="player-actions" aria-label="Playback options">
           {controls.map(({ label, detail, icon: Icon }, index) => (
             <button

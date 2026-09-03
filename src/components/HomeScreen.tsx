@@ -85,8 +85,8 @@ function rowSpacerDimensions(count: number): { width: string; minWidth: string }
 export function homeRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
   if (!browsing) return 24 + rowIndex * 360
   const distance = rowIndex - activeRow
-  if (distance <= 0) return 52 + distance * 440
-  return distance === 1 ? 638 : 1120 + (distance - 2) * 344
+  if (distance <= 0) return 52 + distance * 500
+  return distance === 1 ? 704 : 1220 + (distance - 2) * 360
 }
 
 function eventIndex(event: Event, attribute: string): number | undefined {
@@ -287,31 +287,34 @@ const HomeFocusCard = memo(function HomeFocusCard({
       onClick={onActivate}
     >
       <span class="home-focus-frame">
-        {baseImage && <img class="home-focus-base-art" src={baseImage} alt="" width={700} height={394} decoding="async" />}
-        {image
-          ? <img
-              class={`home-focus-art${loadedArtwork === image ? ' is-ready' : ''}`}
-              key={image}
-              src={image}
-              alt=""
-              width={700}
-              height={394}
-              decoding="async"
-              onLoad={() => setLoadedArtwork(image)}
-              onError={() => {
-                setLoadedArtwork('')
-                setArtworkIndex((current) => current + 1)
-              }}
-            />
-          : <span class="home-card-placeholder">{item.title}</span>}
+        <span class="home-focus-media" key={`${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
+          {baseImage && <img class="home-focus-base-art" src={baseImage} alt="" width={812} height={457} decoding="async" />}
+          {image
+            ? <img
+                class={`home-focus-art${loadedArtwork === image ? ' is-ready' : ''}`}
+                key={image}
+                src={image}
+                alt=""
+                width={812}
+                height={457}
+                decoding="async"
+                onLoad={() => setLoadedArtwork(image)}
+                onError={() => {
+                  setLoadedArtwork('')
+                  setArtworkIndex((current) => current + 1)
+                }}
+              />
+            : <span class="home-card-placeholder">{item.title}</span>}
+        </span>
         <span class="home-focus-shade" aria-hidden="true" />
-        <strong class="home-focus-title">{item.title}</strong>
+        <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>
         {rank && <span class="home-focus-rank">#{rank} in {item.placement?.label || 'Top 10'}</span>}
         {inProgress && (
           <span class="home-card-progress"><span style={{ width: `${Math.round(cardProgress * 100)}%` }} /></span>
         )}
+        <span class="home-focus-outline" aria-hidden="true" />
       </span>
-      <span class="home-focus-context">
+      <span class="home-focus-context" key={`context-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
         <strong>{context.primary}</strong>
         {context.secondary && <small>{context.secondary}</small>}
         {!episodeCard && context.description && <small class="home-focus-description">{context.description}</small>}
@@ -516,7 +519,6 @@ export function HomeScreen({
                 )}
                 {focusedItem && (
                   <HomeFocusCard
-                    key={`${focusedItem.ref.provider}-${focusedItem.ref.type}-${focusedItem.ref.id}`}
                     item={focusedItem}
                     rowIndex={rowIndex}
                     index={focus.index}

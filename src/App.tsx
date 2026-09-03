@@ -194,11 +194,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [paired, setPaired] = useState(Boolean(localStorage.getItem('izumi.companion.credential')))
   const [pairing, setPairing] = useState<PairingInfo>()
   const [qrCode, setQrCode] = useState<string>()
-  const [loadingProgress, setLoadingProgress] = useState(34)
+  const [loadingProgress, setLoadingProgress] = useState(previewParameters.get('scenario') === 'buffering' ? 46 : 34)
   const [errorMessage, setErrorMessage] = useState('The TV player could not open this source.')
   const [player, setPlayer] = useState<PlayerView>({
     title: previewSnapshot.hero?.title ?? 'Now Playing',
-    state: 'playing',
+    state: previewParameters.get('scenario') === 'buffering' ? 'buffering' : 'playing',
     position: previewParameters.get('scenario') === 'next' ? 1_225 : 523,
     duration: 1_422,
     isLive: false,
@@ -217,7 +217,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [nextEpisodeDismissed, setNextEpisodeDismissed] = useState(false)
   const [nextCountdown, setNextCountdown] = useState<number>()
   const [nextSourceReady, setNextSourceReady] = useState(false)
-  const [playerPromptFocus, setPlayerPromptFocus] = useState<'transport' | 'skip' | 'next'>('transport')
+  const [playerPromptFocus, setPlayerPromptFocus] = useState<'transport' | 'timeline' | 'skip' | 'next'>('transport')
   const [postPlayMedia, setPostPlayMedia] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
   const [postPlayFocus, setPostPlayFocus] = useState(0)
   const [stillWatching, setStillWatching] = useState(false)
@@ -322,7 +322,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const revealPlayerControls = (hold = false) => {
     setPlayerControlsVisible(true)
     if (playerControlsTimerRef.current) window.clearTimeout(playerControlsTimerRef.current)
-    if (!hold && playerRef.current.state === 'playing' && !playerToolsActive && !playerMenu) {
+    if (!hold && playerRef.current.state === 'playing' && !playerToolsActive && !playerMenu && playerPromptFocus !== 'timeline') {
       playerControlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), 3_600)
     }
   }
@@ -773,8 +773,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (playerControlsTimerRef.current) window.clearTimeout(playerControlsTimerRef.current)
       return
     }
-    revealPlayerControls(player.state !== 'playing' || playerToolsActive || Boolean(playerMenu))
-  }, [screen, player.state, playerToolsActive, playerMenu])
+    revealPlayerControls(player.state !== 'playing' || playerToolsActive || playerPromptFocus === 'timeline' || Boolean(playerMenu))
+  }, [screen, player.state, playerToolsActive, playerPromptFocus, playerMenu])
 
   useEffect(() => {
     searchQueryRef.current = searchQuery
@@ -1397,7 +1397,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const togglePlayback = () => {
-    if (playerRef.current.state === 'playing') {
+    if (playerRef.current.state === 'playing' || playerRef.current.state === 'buffering') {
       avplayRef.current.pause()
       updatePlayer({ state: 'paused' })
     } else {
@@ -1868,7 +1868,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (screen === 'player') {
-      revealPlayerControls(playerRef.current.state !== 'playing' || playerToolsActive || Boolean(playerMenu))
+      revealPlayerControls(playerRef.current.state !== 'playing' || playerToolsActive || playerPromptFocus === 'timeline' || Boolean(playerMenu))
       if (stillWatching) {
         if (action === 'left' || action === 'up') setStillWatchingFocus(0)
         else if (action === 'right' || action === 'down') setStillWatchingFocus(1)
@@ -1899,13 +1899,21 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         return
       }
       if (action === 'down') {
-        setPlayerToolsActive(true)
-        setPlayerPromptFocus('transport')
+        if (playerToolsActive) return
+        if (playerPromptFocus === 'transport') setPlayerPromptFocus('timeline')
+        else if (playerPromptFocus === 'timeline') setPlayerToolsActive(true)
+        else setPlayerPromptFocus('transport')
       }
       else if (action === 'up') {
-        setPlayerToolsActive(false)
-        if (nextEpisodeVisible) setPlayerPromptFocus('next')
-        else if (visibleSkipSegment) setPlayerPromptFocus('skip')
+        if (playerToolsActive) {
+          setPlayerToolsActive(false)
+          setPlayerPromptFocus('timeline')
+        } else if (playerPromptFocus === 'timeline') {
+          setPlayerPromptFocus('transport')
+        } else if (playerPromptFocus === 'transport') {
+          if (nextEpisodeVisible) setPlayerPromptFocus('next')
+          else if (visibleSkipSegment) setPlayerPromptFocus('skip')
+        }
       }
       else if (action === 'left') playerToolsActive
         ? setPlayerControlFocus((index) => Math.max(0, index - 1))
@@ -1919,7 +1927,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           : seekFromRemote(10)
       else if (action === 'rewind') seekFromRemote(-10)
       else if (action === 'fastForward') seekFromRemote(10)
-      else if (action === 'select') playerToolsActive ? activatePlayerControl(playerControlFocus) : togglePlayback()
+      else if (action === 'select') {
+        if (playerToolsActive) activatePlayerControl(playerControlFocus)
+        else if (playerPromptFocus === 'transport') togglePlayback()
+      }
       else if (action === 'pause' || action === 'playPause' && playerRef.current.state === 'playing') {
         avplayRef.current.pause()
         updatePlayer({ state: 'paused' })
@@ -2181,6 +2192,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           subtitlePreferences={subtitlePreferences}
           previewBackdrop={showPreviewTools ? selected.backdrop || selected.poster : undefined}
           controlsVisible={playerControlsVisible}
+          bufferingProgress={loadingProgress}
+          transportFocused={!playerToolsActive && playerPromptFocus === 'transport'}
+          timelineFocused={!playerToolsActive && playerPromptFocus === 'timeline'}
           skipSegments={skipSegments}
           skipSegment={visibleSkipSegment}
           skipFocused={playerPromptFocus === 'skip'}
@@ -2196,6 +2210,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
             setPlayerToolsActive(true)
             revealPlayerControls(true)
           }}
+          onTransportFocus={() => {
+            setPlayerToolsActive(false)
+            setPlayerPromptFocus('transport')
+            revealPlayerControls(true)
+          }}
+          onTimelineFocus={() => {
+            setPlayerToolsActive(false)
+            setPlayerPromptFocus('timeline')
+            revealPlayerControls(true)
+          }}
+          onToggle={togglePlayback}
           onControl={activatePlayerControl}
           onMenuFocus={setPlayerMenuFocus}
           onSource={selectPlaybackSource}

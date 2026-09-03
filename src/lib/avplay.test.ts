@@ -133,4 +133,68 @@ describe('AVPlay setup', () => {
       { type: 'AUDIO', index: 4, language: 'jpn', codec: 'AAC', label: 'JPN · 2ch' },
     ])
   })
+
+  it('uses useful, unique labels for Samsung subtitle tracks', () => {
+    const player = {
+      getTotalTrackInfo: vi.fn(() => [
+        { type: 'TEXT' as const, index: 7, extra_info: JSON.stringify({ LANGUAGE: 'eng', NAME: 'Subtitles' }) },
+        { type: 'TEXT' as const, index: 9, extra_info: JSON.stringify({ track_language: 'eng', track_title: 'Subtitles 2' }) },
+        { type: 'TEXT' as const, index: 11, extra_info: '{}' },
+      ]),
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player } } })
+
+    expect(new AvPlayController().tracks()).toEqual([
+      { type: 'TEXT', index: 7, language: 'eng', codec: '', label: 'English · Track 1' },
+      { type: 'TEXT', index: 9, language: 'eng', codec: '', label: 'English · Track 2' },
+      { type: 'TEXT', index: 11, language: '', codec: '', label: 'Subtitle 3' },
+    ])
+  })
+
+  it('returns from runtime buffering to the intended playback state', async () => {
+    let listener: {
+      onbufferingstart(): void
+      onbufferingprogress(percent: number): void
+      onbufferingcomplete(): void
+    } | undefined
+    let nativeState = 'READY'
+    const player = {
+      open: vi.fn(), close: vi.fn(), stop: vi.fn(), getState: vi.fn(() => nativeState),
+      setListener: vi.fn((value) => { listener = value }), setDisplayRect: vi.fn(), setDisplayMethod: vi.fn(),
+      setBufferingParam: vi.fn(), setStreamingProperty: vi.fn(), getStreamingProperty: vi.fn(() => 'false'),
+      prepareAsync: vi.fn((success: () => void) => success()),
+      play: vi.fn(() => { nativeState = 'PLAYING' }),
+      pause: vi.fn(() => { nativeState = 'PAUSED' }),
+      seekTo: vi.fn((_position: number, success: () => void) => success()),
+      getDuration: vi.fn(() => 60_000), getCurrentTime: vi.fn(() => 0), getTotalTrackInfo: vi.fn(() => []),
+      setSelectTrack: vi.fn(),
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player }, setTimeout, clearTimeout } })
+    const onState = vi.fn()
+    const onBuffering = vi.fn()
+    const controller = new AvPlayController()
+    await controller.load({
+      sessionId: 'buffering', url: 'https://example.test/video.mp4', title: 'Buffering',
+      positionSeconds: 0, subtitles: [], activeTrackIds: [],
+    }, {
+      onBuffering, onState, onTime: vi.fn(), onTracks: vi.fn(), onSubtitle: vi.fn(),
+      onComplete: vi.fn(), onError: vi.fn(),
+    })
+
+    listener?.onbufferingstart()
+    listener?.onbufferingprogress(43)
+    nativeState = 'IDLE'
+    await controller.seek(42)
+    expect(player.seekTo).not.toHaveBeenCalled()
+    nativeState = 'PLAYING'
+    listener?.onbufferingcomplete()
+    expect(onBuffering).toHaveBeenLastCalledWith(100)
+    expect(onState).toHaveBeenLastCalledWith('playing')
+    expect(player.seekTo).toHaveBeenCalledWith(42_000, undefined, expect.any(Function))
+
+    controller.pause()
+    listener?.onbufferingstart()
+    listener?.onbufferingcomplete()
+    expect(onState).toHaveBeenLastCalledWith('paused')
+  })
 })

@@ -18,6 +18,7 @@ describe('receiver track matching', () => {
 
   it('does not show a generic Subtitles placeholder as the track name', () => {
     expect(subtitleTrackLabel('Subtitles', 'eng', 0)).toBe('English')
+    expect(subtitleTrackLabel('Subtitles 2', 'und', 1)).toBe('Subtitle 2')
     expect(subtitleTrackLabel('Signs & Songs', 'eng', 1)).toBe('English · Signs & Songs')
     expect(subtitleTrackLabel('Full Subtitles', undefined, 2)).toBe('Subtitle 3')
   })

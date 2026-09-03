@@ -14,6 +14,7 @@ const languageAliases: Record<string, string> = {
 
 export function trackLanguageKey(value: string | undefined): string {
   const key = value?.trim().toLowerCase().replace('_', '-').split('-')[0] ?? ''
+  if (/^(?:und|undefined|unknown|none|mul|zxx)$/.test(key)) return ''
   return languageAliases[key] ?? key
 }
 
@@ -34,7 +35,7 @@ const subtitleLanguageNames: Record<string, string> = {
   hi: 'Hindi',
 }
 
-const genericSubtitleTitle = /^(?:full[\s_-]*subtitles?|subtitles?|subtitle[\s_-]*track|regular|default|track[\s_-]*\d+|subrip|srt|ass|ssa|und(?:efined)?)$/i
+const genericSubtitleTitle = /^(?:full[\s_-]*subtitles?|subtitles?(?:[\s_-]*\d+)?|subtitle[\s_-]*track(?:[\s_-]*\d+)?|regular|default|track[\s_-]*\d+|subrip|srt|ass|ssa|und(?:efined)?|unknown)$/i
 
 export function subtitleTrackLabel(
   title: string | undefined,

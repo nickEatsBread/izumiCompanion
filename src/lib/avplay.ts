@@ -1,4 +1,5 @@
 import type { CastLoadRequest, PlaybackState, PlaybackTrack } from '../types'
+import { subtitleTrackLabel } from './track-selection'
 
 export interface AvPlayEvents {
   onBuffering(percent?: number): void
@@ -44,6 +45,16 @@ function adaptiveValue(request: CastLoadRequest): string {
   return options.join('|')
 }
 
+function trackMetadata(details: Record<string, unknown>, keys: string[]): string {
+  const values: Record<string, unknown> = {}
+  Object.keys(details).forEach((key) => { values[key.toLowerCase()] = details[key] })
+  for (const key of keys) {
+    const value = values[key.toLowerCase()]
+    if (value != null && String(value).trim()) return String(value).trim()
+  }
+  return ''
+}
+
 export class AvPlayController {
   private active?: CastLoadRequest
   private events?: AvPlayEvents
@@ -55,6 +66,8 @@ export class AvPlayController {
   private resumeAfterRestore = false
   private lastTrackSignature = ''
   private trackRefreshTick = 0
+  private desiredState: 'playing' | 'paused' = 'playing'
+  private pendingSeek?: number
 
   get available(): boolean {
     return Boolean(window.webapis?.avplay)
@@ -72,6 +85,7 @@ export class AvPlayController {
     this.recovering = false
     this.lastTrackSignature = ''
     this.trackRefreshTick = 0
+    this.desiredState = 'playing'
     const generation = ++this.generation
     events.onState('buffering')
     try {
@@ -94,6 +108,7 @@ export class AvPlayController {
     const events = this.events
     if (!player || !request || !events) throw new Error('Samsung AVPlay is unavailable outside a Samsung TV runtime.')
 
+    let playbackStarted = false
     try {
       player.open(request.url)
       player.setListener({
@@ -108,7 +123,22 @@ export class AvPlayController {
           events.onBuffering(percent)
           this.armBufferingTimeout(generation)
         },
-        onbufferingcomplete: () => this.clearBufferingTimeout(),
+        onbufferingcomplete: () => {
+          if (generation !== this.generation) return
+          this.clearBufferingTimeout()
+          events.onBuffering(100)
+          const pendingSeek = this.pendingSeek
+          if (pendingSeek != null) {
+            this.pendingSeek = undefined
+            try {
+              player.seekTo(Math.round(pendingSeek * 1000), undefined, () => { this.pendingSeek = pendingSeek })
+            } catch { this.pendingSeek = pendingSeek }
+          }
+          if (playbackStarted && this.desiredState === 'paused') {
+            try { if (player.getState() === 'PLAYING') player.pause() } catch { /* State can change during the callback. */ }
+          }
+          if (playbackStarted) events.onState(this.desiredState)
+        },
         oncurrentplaytime: (milliseconds) => {
           if (generation !== this.generation) return
           events.onTime(milliseconds / 1000, Math.max(0, player.getDuration() / 1000))
@@ -154,6 +184,8 @@ export class AvPlayController {
       if (!live && positionSeconds > 0) await this.seek(positionSeconds)
       if (generation !== this.generation) return
       player.play()
+      playbackStarted = true
+      this.desiredState = 'playing'
       this.emitTracks(generation)
       this.recovering = false
       events.onState('playing')
@@ -221,11 +253,13 @@ export class AvPlayController {
 
   play(): void {
     const player = window.webapis?.avplay
+    this.desiredState = 'playing'
     if (player && ['READY', 'PAUSED'].includes(player.getState())) player.play()
   }
 
   pause(): void {
     const player = window.webapis?.avplay
+    this.desiredState = 'paused'
     if (player?.getState() === 'PLAYING') player.pause()
   }
 
@@ -256,9 +290,19 @@ export class AvPlayController {
   async seek(positionSeconds: number): Promise<void> {
     const player = window.webapis?.avplay
     if (!player) return
-    await new Promise<void>((resolve, reject) => {
-      player.seekTo(Math.max(0, Math.round(positionSeconds * 1000)), resolve, reject)
-    })
+    const target = Math.max(0, positionSeconds)
+    let state = ''
+    try { state = player.getState() } catch { /* Queue until AVPlay is ready again. */ }
+    if (!['READY', 'PLAYING', 'PAUSED'].includes(state)) {
+      this.pendingSeek = target
+      return
+    }
+    try {
+      await new Promise<void>((resolve, reject) => player.seekTo(Math.round(target * 1000), resolve, reject))
+      this.pendingSeek = undefined
+    } catch {
+      this.pendingSeek = target
+    }
   }
 
   currentTime(): number {
@@ -273,18 +317,38 @@ export class AvPlayController {
     const player = window.webapis?.avplay
     if (!player) return []
     try {
-      return player.getTotalTrackInfo().flatMap((track) => {
-        if (track.type !== 'AUDIO' && track.type !== 'TEXT') return []
+      let audioOrdinal = 0
+      let subtitleOrdinal = 0
+      const tracks: PlaybackTrack[] = []
+      player.getTotalTrackInfo().forEach((track) => {
+        if (track.type !== 'AUDIO' && track.type !== 'TEXT') return
         let details: Record<string, unknown> = {}
         try { details = JSON.parse(track.extra_info || '{}') as Record<string, unknown> } catch { /* malformed metadata */ }
-        const language = String(details.language || details.track_lang || '').trim()
-        const channels = Number(details.channels) || 0
-        const codec = String(details.fourCC || details.codec || details.codec_type || '').trim()
-        const fallback = track.type === 'AUDIO' ? 'Audio' : 'Subtitles'
-        const parts = [language ? language.toUpperCase() : fallback]
-        if (track.type === 'AUDIO' && channels) parts.push(`${channels}ch`)
+        const language = trackMetadata(details, ['language', 'track_lang', 'lang', 'track_language'])
+        const title = trackMetadata(details, ['title', 'track_title', 'track_name', 'name', 'label'])
+        const channels = Number(trackMetadata(details, ['channels', 'channel_count'])) || 0
+        const codec = trackMetadata(details, ['fourCC', 'codec', 'codec_type'])
+        if (track.type === 'TEXT') {
+          const label = subtitleTrackLabel(title, language, subtitleOrdinal)
+          subtitleOrdinal += 1
+          tracks.push({ type: track.type, index: track.index, language, codec, label })
+          return
+        }
+        const label = language ? language.toUpperCase() : title || `Audio ${audioOrdinal + 1}`
+        audioOrdinal += 1
+        const parts = [label]
+        if (channels) parts.push(`${channels}ch`)
         else if (codec) parts.push(codec)
-        return [{ type: track.type, index: track.index, language, codec, label: parts.join(' · ') }]
+        tracks.push({ type: track.type, index: track.index, language, codec, label: parts.join(' · ') })
+      })
+      const counts: Record<string, number> = {}
+      tracks.forEach((track) => { counts[`${track.type}:${track.label}`] = (counts[`${track.type}:${track.label}`] || 0) + 1 })
+      const seen: Record<string, number> = {}
+      return tracks.map((track) => {
+        const key = `${track.type}:${track.label}`
+        if (counts[key] < 2) return track
+        seen[key] = (seen[key] || 0) + 1
+        return { ...track, label: `${track.label} · Track ${seen[key]}` }
       })
     } catch {
       return []
@@ -327,5 +391,7 @@ export class AvPlayController {
     this.resumeAfterRestore = false
     this.lastTrackSignature = ''
     this.trackRefreshTick = 0
+    this.desiredState = 'playing'
+    this.pendingSeek = undefined
   }
 }

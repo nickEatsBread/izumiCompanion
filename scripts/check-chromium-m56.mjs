@@ -338,18 +338,20 @@ async function main() {
       continueProgress: document.querySelector('.home-focus-card .home-card-progress > span').style.width,
       rowTransition: getComputedStyle(document.querySelector('.media-row')).transitionDuration,
       focusAnimation: getComputedStyle(document.querySelector('.home-focus-frame')).animationDuration,
+      mediaAnimation: getComputedStyle(document.querySelector('.home-focus-media')).animationDuration,
       trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform
     }))()`)
     assert(JSON.stringify(rows.body) === '[1920,1080]', `Home overflowed the TV viewport: ${rows.body}.`)
-    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,638,1120]', `Unexpected row positions ${rows.tops}.`)
+    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,704,1220]', `Unexpected row positions ${rows.tops}.`)
     assert(rows.images.slice(0, 2).every((count) => count > 0) && rows.images[2] === 0, `Artwork windowing is incorrect: ${rows.images}.`)
     assert(JSON.stringify(rows.posterWidths) === '[228]', `Poster stride changed during focus: ${rows.posterWidths}.`)
     assert(rows.gap === '16px', `M56 rail fallback gap is ${rows.gap}, expected 16px.`)
-    assert(JSON.stringify(rows.focus) === '[132,96,700,510,692,389]', `Unexpected focus spotlight geometry ${rows.focus}.`)
+    assert(JSON.stringify(rows.focus) === '[132,96,820,590,812,457]', `Unexpected focus spotlight geometry ${rows.focus}.`)
     assert(rows.continueCopy.includes('S1 E12') && rows.continueCopy.includes('9m left'), `Continue Watching context is incomplete: ${rows.continueCopy}.`)
     assert(rows.continueProgress === '64%', `Continue Watching progress is ${rows.continueProgress}.`)
-    assert(rows.rowTransition !== '0s', `Vertical row transition is disabled: ${rows.rowTransition}.`)
-    assert(rows.focusAnimation !== '0s', `Focused tile transition is disabled: ${rows.focusAnimation}.`)
+    assert(rows.rowTransition === '0s', `The rail frame moves during vertical navigation: ${rows.rowTransition}.`)
+    assert(rows.focusAnimation === '0s', `The focus outline moves with its content: ${rows.focusAnimation}.`)
+    assert(rows.mediaAnimation !== '0s', `Focused artwork transition is disabled: ${rows.mediaAnimation}.`)
     assert(rows.trackTransform === 'none', 'Vertical navigation transformed the full Home page.')
     await capture('m56-continue-watching.png')
 
@@ -358,12 +360,20 @@ async function main() {
     await wait(360)
     const verticalDestination = await evaluate(`(() => {
       var focused = document.querySelector('.home-focus-card.is-focused');
+      var frame = focused.querySelector('.home-focus-frame').getBoundingClientRect();
+      var title = focused.querySelector('.home-focus-title').getBoundingClientRect();
       return {
         row: Number(focused.closest('.media-row').getAttribute('data-home-row')),
-        index: Number(focused.getAttribute('data-media-index'))
+        index: Number(focused.getAttribute('data-media-index')),
+        frame: [frame.left, frame.top, frame.width, frame.height],
+        title: [title.top, title.bottom],
+        titleAnimation: getComputedStyle(focused.querySelector('.home-focus-title')).animationName
       };
     })()`)
     assert(verticalDestination.row === 1 && verticalDestination.index === 0, `A new rail inherited the previous rail position: ${JSON.stringify(verticalDestination)}.`)
+    assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 100) <= 3 && verticalDestination.frame[2] === 812 && verticalDestination.frame[3] === 457, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
+    assert(verticalDestination.title[0] >= verticalDestination.frame[1] && verticalDestination.title[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title is clipped outside its frame: ${verticalDestination.title}.`)
+    assert(verticalDestination.titleAnimation === 'home-focus-copy-change', `Focused title uses a moving animation: ${verticalDestination.titleAnimation}.`)
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art.is-ready')")
     await capture('m56-focused-rail.png')
@@ -381,6 +391,7 @@ async function main() {
         posterWidths: Array.from(new Set(Array.from(strip.querySelectorAll('.home-poster-card')).map(function (card) { return card.offsetWidth; }))),
         focusLeft: focused.getBoundingClientRect().left,
         focusAnimation: getComputedStyle(focused.querySelector('.home-focus-frame')).animationDuration,
+        mediaAnimation: getComputedStyle(focused.querySelector('.home-focus-media')).animationDuration,
         artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
         stripTransform: getComputedStyle(strip).transform,
         broken: Array.from(document.images).filter(function (image) { return image.complete && !image.naturalWidth; }).length
@@ -388,10 +399,11 @@ async function main() {
     })()`)
     assert(horizontal.index === 8, `Expected rail index 8, received ${horizontal.index}.`)
     assert(horizontal.scrollLeft > 0, 'Horizontal navigation did not scroll its local viewport.')
-    assert(horizontal.width === 700 && horizontal.visualWidth === 700, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
+    assert(horizontal.width === 820 && horizontal.visualWidth === 820, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
     assert(JSON.stringify(horizontal.posterWidths) === '[228]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
-    assert(horizontal.focusLeft === 184, `Previous-title peek did not offset the focus spotlight: ${horizontal.focusLeft}px.`)
-    assert(horizontal.focusAnimation !== '0s', `Focused tile animation is disabled: ${horizontal.focusAnimation}.`)
+    assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
+    assert(horizontal.focusAnimation === '0s', `Focus outline animation is enabled: ${horizontal.focusAnimation}.`)
+    assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
     assert(horizontal.artworkTransition !== '0s', `Focused artwork transition is disabled: ${horizontal.artworkTransition}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
@@ -408,6 +420,27 @@ async function main() {
     assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","My List","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
     assert(navigation.details.every((detail) => detail.length > 0), 'Navigation destinations are missing descriptions.')
     await capture('m56-navigation.png')
+
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=buffering` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.player-buffering-status')")
+    await waitFor("document.querySelector('.player-state-icon.is-focused')")
+    await waitFor("!document.getElementById('startup-splash')")
+    const bufferingPlayer = await evaluate(`(() => ({
+      status: document.querySelector('.player-buffering-status').textContent,
+      transport: document.querySelector('.player-state-icon').getAttribute('aria-label'),
+      transportFocused: document.querySelector('.player-state-icon').classList.contains('is-focused'),
+      position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow'))
+    }))()`)
+    assert(bufferingPlayer.status.includes('Buffering') && bufferingPlayer.status.includes('46%'), `Buffering indicator is incomplete: ${bufferingPlayer.status}.`)
+    assert(bufferingPlayer.transport === 'Pause' && bufferingPlayer.transportFocused, `Playing transport is not a focused Pause action: ${JSON.stringify(bufferingPlayer)}.`)
+    await press('ArrowDown')
+    await waitFor("document.querySelector('.player-timeline-control.is-focused')")
+    await press('ArrowRight')
+    const scrubbedPosition = await evaluate("Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow'))")
+    assert(scrubbedPosition > bufferingPlayer.position, `Buffering timeline did not seek: ${bufferingPlayer.position} -> ${scrubbedPosition}.`)
+    await press('ArrowDown')
+    await waitFor("document.querySelector('.player-actions > button.is-focused')")
+    await capture('m56-player-buffering.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=next` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.next-episode-card')")

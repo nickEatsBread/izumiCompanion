@@ -21,8 +21,8 @@ describe('TV home presentation', () => {
 
   it('pins the focused row high and leaves the next rail visible at TV scale', () => {
     expect(homeRowTop(2, 2, true)).toBe(52)
-    expect(homeRowTop(3, 2, true)).toBe(638)
-    expect(homeRowTop(4, 2, true)).toBe(1120)
+    expect(homeRowTop(3, 2, true)).toBe(704)
+    expect(homeRowTop(4, 2, true)).toBe(1220)
     expect(homeRowTop(0, 0, false)).toBe(24)
   })
 
