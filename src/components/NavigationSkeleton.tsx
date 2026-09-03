@@ -31,7 +31,7 @@ export function NavigationSkeleton({ screen, leaving }: { screen: ScreenName; le
         <i class="skeleton-block skeleton-copy-line" />
       </div>
       <div class="skeleton-settings-list" aria-hidden="true">
-        <Blocks count={5} className="skeleton-setting-row" />
+        <Blocks count={8} className="skeleton-setting-row" />
         <i class="skeleton-block skeleton-device-row" />
       </div>
     </section>

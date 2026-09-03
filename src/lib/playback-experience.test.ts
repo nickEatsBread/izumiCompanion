@@ -89,8 +89,17 @@ describe('playback experience', () => {
     expect(readPlaybackExperienceSettings()).toEqual(settings)
   })
 
-  it('keeps the cinematic home layout opt-in for existing TVs', () => {
+  it('keeps the cinematic home layout opt-in and video previews enabled for existing TVs', () => {
     localStorage.setItem('izumi.companion.playback-experience', JSON.stringify({ autoplayNextEpisode: true }))
-    expect(readPlaybackExperienceSettings()).toMatchObject({ homeCarouselLayout: false, autoplayNextEpisode: true })
+    expect(readPlaybackExperienceSettings()).toMatchObject({
+      homeCarouselLayout: false,
+      videoPreviewsEnabled: true,
+      autoplayNextEpisode: true,
+    })
+  })
+
+  it('persists an explicit video-preview opt-out', () => {
+    localStorage.setItem('izumi.companion.playback-experience', JSON.stringify({ videoPreviewsEnabled: false }))
+    expect(readPlaybackExperienceSettings().videoPreviewsEnabled).toBe(false)
   })
 })

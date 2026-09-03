@@ -1146,6 +1146,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (previous?.requestId) receiverRef.current?.releaseTrailer(previous.requestId)
     homeTrailerPreviewRef.current = undefined
     setHomeTrailerPreview(undefined)
+    if (!playbackSettings.videoPreviewsEnabled) return
     const videoId = focusedHomeMedia ? youtubeTrailerId(focusedHomeMedia) : undefined
     if (!videoId || !focusedHomeMedia) return
 
@@ -1177,7 +1178,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }, 1_500)
 
     return () => window.clearTimeout(timer)
-  }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, screen, showPreviewTools])
+  }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, playbackSettings.videoPreviewsEnabled, screen, showPreviewTools])
   const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
   const browseSnapshot = useMemo(() => ({ ...snapshot, rows: browseRows }), [snapshot, browseRows])
   const allMedia = collections.search
@@ -2041,19 +2042,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const runSettingsAction = (index: number) => {
     if (!settingsConfirmation) {
-      if (index < 5) {
-        const key = (['homeCarouselLayout', 'autoplayNextEpisode', 'autoSkipSegments', 'stillWatchingEnabled', 'preferBingeSource'] as const)[index]
+      if (index < 6) {
+        const key = (['homeCarouselLayout', 'videoPreviewsEnabled', 'autoplayNextEpisode', 'autoSkipSegments', 'stillWatchingEnabled', 'preferBingeSource'] as const)[index]
         setPlaybackSettings((current) => ({ ...current, [key]: !current[key] }))
-        showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Autoplay' : index === 2 ? 'Automatic skipping' : index === 3 ? 'Still watching check' : 'Source continuity'} updated`)
+        showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Video previews' : index === 2 ? 'Autoplay' : index === 3 ? 'Automatic skipping' : index === 4 ? 'Still watching check' : 'Source continuity'} updated`)
         return
       }
-      setSettingsConfirmation(index === 5 ? 'unpair' : 'reset')
+      setSettingsConfirmation(index === 6 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
       return
     }
     if (index === 0) {
       setSettingsConfirmation(null)
-      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 5 : 6 })
+      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 6 : 7 })
       return
     }
     if (settingsConfirmation === 'unpair') receiverRef.current?.unpair()
@@ -2086,7 +2087,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     } else if (focus.zone === 'setting') {
       if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
       else if (action === 'up') changeFocus({ zone: 'setting', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(6, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(7, focus.index + 1) })
     }
   }
 

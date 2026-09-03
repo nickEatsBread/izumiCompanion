@@ -310,6 +310,8 @@ async function main() {
         shadeBackground: getComputedStyle(document.querySelector('.hero-shade')).backgroundImage,
         titleLogo: document.querySelector('.hero-title-logo') ? document.querySelector('.hero-title-logo').getAttribute('alt') : '',
         plainTitle: Boolean(document.querySelector('.hero-copy > h1')),
+        ratings: Array.from(document.querySelectorAll('.hero-rating')).map(function (rating) { return rating.getAttribute('aria-label'); }),
+        imdbBadge: document.querySelector('.hero-rating-source.is-imdb') ? document.querySelector('.hero-rating-source.is-imdb').textContent.trim() : '',
         trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform,
         previewRhythm: (() => {
           var rows = document.querySelectorAll('.media-row');
@@ -324,6 +326,7 @@ async function main() {
     assert(Object.values(hero.supports).every((supported) => supported === false), 'The M56 feature baseline changed.')
     assert(hero.shadeBackground.includes('linear-gradient'), 'The M56 hero contrast gradient did not render.')
     assert(hero.titleLogo === "Frieren: Beyond Journey's End" && !hero.plainTitle, `Continue Watching hero did not prefer its title logo: ${JSON.stringify(hero)}.`)
+    assert(hero.ratings.includes('IMDb 8.9') && hero.ratings.includes('Rotten Tomatoes 97%') && hero.imdbBadge === 'IMDb', `Supplied hero ratings or IMDb branding are missing: ${JSON.stringify(hero)}.`)
     assert(hero.trackTransform === 'none', 'Home uses a full-page compositor transform.')
     assert(hero.previewRhythm[1] >= hero.previewRhythm[0], `Preview row titles overlap the cards: ${hero.previewRhythm}.`)
     const collapsedNavigation = await evaluate(`(() => {
@@ -444,6 +447,11 @@ async function main() {
         plainTitle: Boolean(focused.querySelector('.home-focus-title')),
         copyAnimation: getComputedStyle(copy).animationName,
         achievements: Array.from(focused.querySelectorAll('.home-achievement')).map(function (item) { return item.textContent.trim(); }),
+        achievementParts: Array.from(focused.querySelectorAll('.home-achievement')).map(function (item) {
+          var lead = item.querySelector('.home-achievement-lead');
+          var context = item.querySelector('.home-achievement-context');
+          return { lead: lead ? lead.textContent.trim() : '', context: context ? context.textContent.trim() : '', contextColor: context ? getComputedStyle(context).color : '' };
+        }),
         achievementIcons: focused.querySelectorAll('.home-achievement > svg').length,
         facts: Array.from(focused.querySelectorAll('.home-focus-facts > span')).map(function (item) { return item.textContent.trim(); }),
         factsColor: getComputedStyle(facts).color,
@@ -460,6 +468,7 @@ async function main() {
     assert(JSON.stringify(verticalDestination.copySize) === '[410,116]', `Focused title logo has no stable M56 paint box: ${verticalDestination.copySize}.`)
     assert(verticalDestination.copyAnimation === 'home-focus-copy-change', `Focused title treatment uses the wrong animation: ${verticalDestination.copyAnimation}.`)
     assert(verticalDestination.achievements.length === 2 && verticalDestination.achievementIcons === 2, `Focused achievements are incomplete: ${JSON.stringify(verticalDestination)}.`)
+    assert(verticalDestination.achievementParts[1].lead === '#31' && verticalDestination.achievementParts[1].context === 'Highest rated 2022' && verticalDestination.achievementParts[1].contextColor.includes('0.72'), `Achievement hierarchy is not split or capitalized: ${JSON.stringify(verticalDestination.achievementParts)}.`)
     assert(JSON.stringify(verticalDestination.facts) === '["Show","Action","2022","12 episodes"]', `Focused facts repeat shelf copy or omit metadata: ${JSON.stringify(verticalDestination.facts)}.`)
     assert(verticalDestination.factsColor === 'rgb(255, 255, 255)', `Focused metadata is not white: ${verticalDestination.factsColor}.`)
     assert(verticalDestination.description.includes('devil hunter') && verticalDestination.descriptionWeight === '500', `Focused synopsis is missing or over-emphasized: ${JSON.stringify(verticalDestination)}.`)
@@ -931,18 +940,26 @@ async function main() {
     await capture('m56-post-play.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=settings` })
-    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 7")
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 8")
     await waitFor("!document.getElementById('startup-splash')")
     const settings = await evaluate(`(() => ({
       options: document.querySelectorAll('.settings-options > button').length,
       toggles: document.querySelectorAll('.settings-toggle').length,
+      videoPreviewLabel: document.querySelectorAll('.settings-options > button')[1].querySelector('strong').textContent.trim(),
+      videoPreviewsEnabled: document.querySelectorAll('.settings-options > button')[1].getAttribute('aria-pressed'),
       panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(settings.options === 7 && settings.toggles === 5, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.options === 8 && settings.toggles === 6, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.videoPreviewLabel === 'Video previews' && settings.videoPreviewsEnabled === 'true', `Video-preview preference is missing or defaults incorrectly: ${JSON.stringify(settings)}.`)
     assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
     assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
     await capture('m56-playback-settings.png')
+
+    await evaluate("document.querySelectorAll('.settings-options > button')[1].click()")
+    await waitFor("document.querySelectorAll('.settings-options > button')[1].getAttribute('aria-pressed') === 'false'")
+    const previewsDisabled = await evaluate("JSON.parse(localStorage.getItem('izumi.companion.playback-experience')).videoPreviewsEnabled === false")
+    assert(previewsDisabled, 'The video-preview opt-out was not persisted.')
 
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
