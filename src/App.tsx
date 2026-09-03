@@ -10,6 +10,7 @@ import {
   SeriesScreen,
   SettingsScreen,
   adjacentSearchKey,
+  detailActionsFor,
   nearestSearchKey,
   seriesOverviewActionsFor,
   youtubeTrailerId,
@@ -82,6 +83,7 @@ interface PlayerView {
   state: PlaybackState
   position: number
   duration: number
+  bufferedPosition: number
   isLive: boolean
 }
 
@@ -187,7 +189,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -203,7 +205,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [snapshot, setSnapshot] = useState<CompanionHomeSnapshot>(initialPreviewSnapshot)
   const [selected, setSelected] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
   const [heroIndex, setHeroIndex] = useState(0)
-  const [focus, setFocus] = useState<FocusLocation>({ zone: 'hero', index: 0 })
+  const [focus, setFocus] = useState<FocusLocation>(initialDestination === 'details'
+    ? { zone: 'detail', index: 0 }
+    : initialDestination === 'series'
+      ? { zone: 'series-action', index: 0 }
+      : { zone: 'hero', index: 0 })
   const [activeNav, setActiveNav] = useState(
     initialDestination === 'search' ? 1
       : initialDestination === 'trending' || initialDestination === 'series' || initialDestination === 'movies' ? 2
@@ -223,6 +229,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     state: previewParameters.get('scenario') === 'buffering' ? 'buffering' : 'playing',
     position: previewParameters.get('scenario') === 'next' ? 1_225 : 523,
     duration: 1_422,
+    bufferedPosition: previewParameters.get('scenario') === 'next' ? 1_255 : 611,
     isLive: false,
   })
   const [playerControlFocus, setPlayerControlFocus] = useState(0)
@@ -486,6 +493,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     avplayRef.current.setSubtitleDelay(next.delayMs)
   }
 
+  const hidePlayerControls = () => {
+    if (playerControlsTimerRef.current) window.clearTimeout(playerControlsTimerRef.current)
+    playerControlsTimerRef.current = undefined
+    setPlayerControlsVisible(false)
+  }
+
   const restoreHomeNavigation = () => {
     const previous = lastHomeContentFocusRef.current
     const next = previous.zone === 'row'
@@ -574,14 +587,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setStillWatching(false)
     setPlayerPromptFocus('transport')
     setLoadingProgress(12)
-    updatePlayer({ title: request.title, state: 'buffering', position: request.positionSeconds, duration: 0, isLive: false })
+    updatePlayer({ title: request.title, state: 'buffering', position: request.positionSeconds, duration: 0, bufferedPosition: request.positionSeconds, isLive: false })
     setScreen('loading')
     publishStatus(true)
     try {
       await avplayRef.current.load(request, {
         onBuffering: (percent) => {
           setLoadingProgress(Math.max(12, Number(percent) || 12))
-          updatePlayer({ state: 'buffering' })
+          const current = playerRef.current
+          const amount = Math.max(0, Math.min(100, Number(percent) || 0)) / 100
+          const bufferedPosition = current.position + amount * (current.position > 0 ? 3 : 5)
+          updatePlayer({ state: 'buffering', bufferedPosition: Math.min(current.duration || bufferedPosition, bufferedPosition) })
           publishStatus()
         },
         onState: (state) => {
@@ -590,7 +606,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           publishStatus(true)
         },
         onTime: (position, duration) => {
-          updatePlayer({ position, duration })
+          // AVPlay exposes progress toward its configured buffer target, but not an absolute
+          // buffered range. Keep the rail aligned with the conservative five-second play buffer.
+          updatePlayer({ position, duration, bufferedPosition: Math.min(duration, Math.max(playerRef.current.bufferedPosition, position + 5)) })
           playbackTimeRef.current?.(position, duration)
           if (activeSubtitleRef.current.startsWith('external-')) {
             setSubtitleText(externalSubtitlesRef.current.textAt(position, subtitlePreferencesRef.current.delayMs))
@@ -986,11 +1004,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const openDetails = (media: CompanionMedia) => {
+    closeTrailer()
     detailReturnScreenRef.current = screen
     detailReturnFocusRef.current = focusRef.current
     setSelected(media)
     setFocusLocation({ zone: 'detail', index: 0 })
     setScreen('details')
+    requestMediaDetails(media)
   }
 
   const closeTrailer = () => {
@@ -1015,7 +1035,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (showPreviewTools) {
       const params = new URLSearchParams({
         autoplay: '1', controls: '0', disablekb: '1', enablejsapi: '1', playsinline: '1', rel: '0',
-        cc_load_policy: '1', cc_lang_pref: 'en', hl: 'en', iv_load_policy: '3',
+        hl: 'en', iv_load_policy: '3',
       })
       if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
       const source = { url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
@@ -1448,7 +1468,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     else setScreen('ready')
   }
 
-  const requestSeriesDetails = (media: CompanionMedia) => {
+  const requestMediaDetails = (media: CompanionMedia) => {
     if (showPreviewTools) {
       setSelected((current) => sameMedia(current, media) ? previewDetailsFor(media) : current)
       return
@@ -1471,7 +1491,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setCatalogMenuOpen(false)
     setScreen('series')
     changeFocus(initialSeriesFocus())
-    requestSeriesDetails(media)
+    requestMediaDetails(media)
   }
 
   const initialSeriesFocus = (): FocusLocation => ({ zone: 'series-action', index: 0 })
@@ -1534,7 +1554,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setSeriesSeason(0)
       setSelected(firstSeries)
       changeFocus(initialSeriesFocus())
-      requestSeriesDetails(firstSeries)
+      requestMediaDetails(firstSeries)
     }
     else if (destination === 'settings') changeFocus({ zone: 'setting', index: 0 })
     else {
@@ -2167,14 +2187,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (screen === 'details') {
-      if (action === 'left') changeFocus({ zone: 'detail', index: 0 })
-      else if (action === 'right') changeFocus({ zone: 'detail', index: 1 })
-      else if (action === 'select' && focus.zone === 'detail') focus.index === 0 ? playMedia(selected) : closeDetails()
+      const actions = detailActionsFor(selected)
+      if (action === 'left') changeFocus({ zone: 'detail', index: Math.max(0, focus.index - 1) })
+      else if (action === 'right') changeFocus({ zone: 'detail', index: Math.min(actions.length - 1, focus.index + 1) })
+      else if (action === 'select' && focus.zone === 'detail') {
+        const selectedAction = actions[focus.index] ?? 'play'
+        if (selectedAction === 'play') playMedia(selected)
+        else if (selectedAction === 'trailer') openTrailer(selected)
+        else closeDetails()
+      }
       else if (action === 'back') closeDetails()
       return
     }
     if (screen === 'player') {
-      revealPlayerControls(playerRef.current.state !== 'playing' || playerToolsActive || playerPromptFocus === 'timeline' || Boolean(playerMenu))
       if (stillWatching) {
         if (action === 'left' || action === 'up') setStillWatchingFocus(0)
         else if (action === 'right' || action === 'down') setStillWatchingFocus(1)
@@ -2183,12 +2208,18 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         return
       }
       if (playerMenu) {
+        revealPlayerControls(true)
         if (action === 'up') setPlayerMenuFocus((index) => Math.max(0, index - 1))
         else if (action === 'down') setPlayerMenuFocus((index) => Math.min(Math.max(0, playerMenuLength - 1), index + 1))
         else if (action === 'select') activatePlayerMenuItem()
         else if (action === 'left' || action === 'back') setPlayerMenu(null)
         return
       }
+      if (action === 'back' && playerControlsVisible) {
+        hidePlayerControls()
+        return
+      }
+      revealPlayerControls(playerRef.current.state !== 'playing' || playerToolsActive || playerPromptFocus === 'timeline')
       if (action === 'select' && playerPromptFocus === 'skip' && visibleSkipSegment) {
         skipCurrentSegment()
         return
@@ -2349,7 +2380,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setPlayerMenu(null)
       setPlayerControlsVisible(true)
       if (activeSubtitleRef.current !== 'off') setSubtitleText('Even the smallest journey can change the world.')
-      updatePlayer({ title: selected.title, state: 'playing', duration: player.duration || 1_422 })
+      updatePlayer({
+        title: selected.title,
+        state: 'playing',
+        duration: player.duration || 1_422,
+        bufferedPosition: Math.max(player.bufferedPosition, player.position + 30),
+      })
     }
     if (next === 'postplay') {
       setPostPlayMedia(selected)
@@ -2394,7 +2430,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           focus={focus}
           onFocus={(index) => changeFocus({ zone: 'detail', index })}
           onPlay={playMedia}
+          onTrailer={openTrailer}
           onClose={closeDetails}
+          trailerOpen={trailerOpen}
+          trailerSource={trailerSource?.url}
+          trailerError={trailerError}
+          onTrailerClose={closeTrailer}
         />
       )}
       {screen === 'search' && (

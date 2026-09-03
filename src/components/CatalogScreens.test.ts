@@ -3,6 +3,7 @@ import {
   SEARCH_KEYS,
   TRAILER_LISTENING_MESSAGE,
   adjacentSearchKey,
+  detailActionsFor,
   nearestSearchKey,
   seriesOverviewActionsFor,
   trailerPlaybackState,
@@ -66,7 +67,7 @@ describe('series overview actions', () => {
   }
 
   it('keeps play as the primary action and exposes only supported destinations', () => {
-    expect(seriesOverviewActionsFor(media)).toEqual(['play'])
+    expect(seriesOverviewActionsFor(media)).toEqual(['play', 'trailer'])
     expect(seriesOverviewActionsFor({
       ...media,
       seasonEpisodeCounts: [12, 10],
@@ -76,7 +77,8 @@ describe('series overview actions', () => {
   })
 
   it('does not expose unsupported trailer providers', () => {
-    expect(seriesOverviewActionsFor({ ...media, trailer: { id: '12345', site: 'vimeo' } })).toEqual(['play'])
+    expect(seriesOverviewActionsFor({ ...media, trailer: { id: '12345', site: 'vimeo' } })).toEqual(['play', 'trailer'])
+    expect(detailActionsFor(media)).toEqual(['play', 'trailer', 'close'])
   })
 
   it('accepts only canonical YouTube IDs or URLs', () => {

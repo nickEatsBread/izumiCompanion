@@ -103,11 +103,6 @@ function TrailerPlayer({
     if (!keepVisible) hideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 3000)
   }
 
-  const requestEnglishCaptions = () => {
-    send('setOption', ['captions', 'track', { languageCode: 'en' }])
-    send('setOption', ['captions', 'reload', true])
-  }
-
   const toggle = () => {
     if (playbackRef.current === 'playing') {
       send('pauseVideo')
@@ -140,7 +135,6 @@ function TrailerPlayer({
       const firstReadyEvent = payload.event === 'onReady' || payload.event === 'initialDelivery' || payload.event === 'infoDelivery'
       if (firstReadyEvent && !readyRef.current) {
         readyRef.current = true
-        requestEnglishCaptions()
         send('playVideo')
       }
       if (payload.event === 'onStateChange') {
@@ -177,7 +171,6 @@ function TrailerPlayer({
       send('getDuration')
       send('getPlayerState')
     }, 500)
-    const captions = window.setTimeout(requestEnglishCaptions, 1200)
     const watchdog = window.setTimeout(() => {
       if (!readyRef.current) applyPlayback('error')
     }, 12000)
@@ -185,7 +178,6 @@ function TrailerPlayer({
       window.removeEventListener('message', onMessage)
       window.clearInterval(connect)
       window.clearInterval(poll)
-      window.clearTimeout(captions)
       window.clearTimeout(watchdog)
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current)
     }
@@ -235,10 +227,7 @@ function TrailerPlayer({
         tabIndex={-1}
         onLoad={() => {
           post(TRAILER_LISTENING_MESSAGE)
-          window.setTimeout(() => {
-            requestEnglishCaptions()
-            send('playVideo')
-          }, 350)
+          window.setTimeout(() => send('playVideo'), 350)
         }}
       />
       <button ref={hitAreaRef} class="series-trailer-hit-area" type="button" tabIndex={-1} aria-label={playback === 'playing' ? 'Pause trailer' : 'Play trailer'} onClick={toggle} />
@@ -256,7 +245,6 @@ function TrailerPlayer({
           </span>
           <div><p>{status}</p><h2>{title}</h2></div>
         </header>
-        <div class="series-trailer-caption"><Captions size={21} /><span><strong>English subtitles</strong><small>On</small></span></div>
         <div class="series-trailer-progress"><i style={{ width: `${progress}%` }} /></div>
         <div class="series-trailer-times"><span>{trailerTime(position)}</span><span>{duration ? trailerTime(duration) : '--:--'}</span></div>
       </div>
@@ -514,9 +502,15 @@ export function youtubeTrailerId(media: CompanionMedia): string | undefined {
 export function seriesOverviewActionsFor(media: CompanionMedia): SeriesOverviewAction[] {
   const actions: SeriesOverviewAction[] = ['play']
   if (episodeCountsFor(media).length) actions.push('episodes')
-  if (youtubeTrailerId(media)) actions.push('trailer')
+  actions.push('trailer')
   if (media.relations?.length) actions.push('relations')
   return actions
+}
+
+export type DetailAction = 'play' | 'trailer' | 'close'
+
+export function detailActionsFor(_media: CompanionMedia): DetailAction[] {
+  return ['play', 'trailer', 'close']
 }
 
 export function SeriesScreen({
@@ -912,18 +906,30 @@ export function DetailScreen({
   focus,
   onFocus,
   onPlay,
+  onTrailer,
   onClose,
+  trailerOpen,
+  trailerSource,
+  trailerError,
+  onTrailerClose,
 }: {
   media: CompanionMedia
   focus: FocusLocation
   onFocus(index: number): void
   onPlay(media: CompanionMedia): void
+  onTrailer(media: CompanionMedia): void
   onClose(): void
+  trailerOpen: boolean
+  trailerSource?: string
+  trailerError?: string
+  onTrailerClose(): void
 }) {
   const reason = media.placement
     ? `${media.placement.position ? `#${media.placement.position} in ` : ''}${media.placement.label}`
     : 'Selected for you'
   const ReasonIcon = media.placement?.kind === 'continue' ? History : TrendingUp
+  const trailerId = youtubeTrailerId(media)
+  const actions = detailActionsFor(media)
   return (
     <main class="detail-screen">
       <div class="detail-art" key={`${media.ref.provider}-${media.ref.id}`}>
@@ -936,31 +942,38 @@ export function DetailScreen({
         <p class="detail-meta">{[media.subtitle, media.contentRating].filter(Boolean).join(' · ')}</p>
         <p class="detail-description">{media.description || 'Open this title to continue watching or start from the beginning.'}</p>
         <div class="detail-actions">
-          <button
-            type="button"
-            class={focus.zone === 'detail' && focus.index === 0 ? 'is-focused' : ''}
-            data-focus-id="detail-0"
-            tabIndex={focus.zone === 'detail' && focus.index === 0 ? 0 : -1}
-            onFocus={() => onFocus(0)}
-            onMouseEnter={() => onFocus(0)}
-            onClick={() => onPlay(media)}
-          >
-            <Play size={25} fill="currentColor" /> {media.progress ? 'Resume' : 'Play'}
-          </button>
-          <button
-            type="button"
-            class={focus.zone === 'detail' && focus.index === 1 ? 'is-focused' : ''}
-            data-focus-id="detail-1"
-            tabIndex={focus.zone === 'detail' && focus.index === 1 ? 0 : -1}
-            onFocus={() => onFocus(1)}
-            onMouseEnter={() => onFocus(1)}
-            onClick={onClose}
-          >
-            <X size={25} /> Back to browse
-          </button>
+          {actions.map((action, index) => (
+            <button
+              type="button"
+              class={focus.zone === 'detail' && focus.index === index ? 'is-focused' : ''}
+              data-focus-id={`detail-${index}`}
+              tabIndex={focus.zone === 'detail' && focus.index === index ? 0 : -1}
+              onFocus={() => onFocus(index)}
+              onMouseEnter={() => onFocus(index)}
+              onClick={() => action === 'play' ? onPlay(media) : action === 'trailer' ? onTrailer(media) : onClose()}
+              key={action}
+            >
+              {action === 'play'
+                ? <><Play size={25} fill="currentColor" /> {media.progress ? 'Resume' : 'Play'}</>
+                : action === 'trailer'
+                  ? <><Film size={25} /> Play Trailer</>
+                  : <><X size={25} /> Back to browse</>}
+            </button>
+          ))}
         </div>
       </section>
       {media.poster && <img class="detail-poster" src={media.poster} alt="" />}
+      {trailerOpen && trailerId && (
+        trailerSource
+          ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={media.title} backdrop={media.backdrop || media.poster} onClose={onTrailerClose} />
+          : <section class="series-trailer-overlay" role="dialog" aria-modal="true" aria-label={`${media.title} trailer`}>
+              <div class="series-trailer-native-cover is-visible" style={(media.backdrop || media.poster) ? { backgroundImage: `url("${(media.backdrop || media.poster)!.replace(/"/g, '%22')}")` } : undefined}>
+                <span>{trailerError ? <X size={32} /> : <Film size={32} />}</span>
+              </div>
+              <div class="series-trailer-hud is-visible"><header><div><p>{trailerError ? 'Trailer unavailable' : 'Preparing trailer'}</p><h2>{trailerError || media.title}</h2></div></header></div>
+              <button class="series-trailer-close" type="button" onClick={onTrailerClose} aria-label="Back to title"><X size={22} /> Back to title</button>
+            </section>
+      )}
     </main>
   )
 }

@@ -1383,14 +1383,14 @@ body.avplay-visible #av-player {
 }
 
 .detail-description {
-  max-width: 39vw;
+  max-width: 42vw;
   margin: 1.5vh 0 0;
   color: #d5d5d5;
-  font-size: 1.13vw;
+  font-size: 1.5vw;
   font-weight: 600;
   line-height: 1.5;
   display: -webkit-box;
-  max-height: 6.78vw;
+  max-height: 9vw;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
@@ -1697,18 +1697,18 @@ body.avplay-visible #av-player {
   z-index: 4;
   top: 19.2vh;
   left: 7.3vw;
-  width: 34vw;
+  width: 39vw;
   animation: hero-copy-enter 300ms cubic-bezier(.2, .75, .2, 1) both;
 }
 
 .series-summary {
-  width: 32.5vw;
+  width: 38vw;
   margin: 0;
   display: -webkit-box;
-  max-height: 14vh;
+  max-height: 17vh;
   overflow: hidden;
   color: #c5c5c5;
-  font-size: 1.5vw;
+  font-size: 1.72vw;
   font-weight: 400;
   line-height: 1.35;
   -webkit-box-orient: vertical;
@@ -2034,33 +2034,6 @@ body.avplay-visible #av-player {
   border-radius: 50%;
   color: #0a0a0a;
   background: rgba(255, 255, 255, .92);
-}
-
-.series-trailer-caption {
-  position: absolute;
-  right: 5vw;
-  bottom: 10.6vh;
-  display: flex;
-  align-items: center;
-  gap: .65vw;
-  color: #f5f5f5;
-}
-
-.series-trailer-caption > span {
-  display: flex;
-  flex-direction: column;
-  gap: .15vh;
-}
-
-.series-trailer-caption strong {
-  font-size: .82vw;
-  font-weight: 800;
-}
-
-.series-trailer-caption small {
-  color: rgba(255, 255, 255, .66);
-  font-size: .67vw;
-  font-weight: 700;
 }
 
 .series-trailer-progress {
@@ -3284,12 +3257,25 @@ body.avplay-visible #av-player {
   background: rgba(255, 255, 255, .3);
 }
 
-.player-timeline span {
-  position: relative;
-  z-index: 2;
+.player-timeline-buffered,
+.player-timeline-played {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
   display: block;
   height: 100%;
+}
+
+.player-timeline-buffered {
+  background: rgba(255, 255, 255, .58);
+  transition: width 220ms linear;
+}
+
+.player-timeline-played {
+  z-index: 2;
   background: #ededed;
+  transition: width 120ms linear;
 }
 
 .player-scrubber-handle {
@@ -5146,10 +5132,8 @@ body,
 .detail-actions > * + *,
 .series-trailer-hud header > * + * { margin-left: .8vw; }
 .detail-actions button > * + *,
-.series-trailer-action > * + *,
-.series-trailer-caption > * + * { margin-left: .65vw; }
+.series-trailer-action > * + * { margin-left: .65vw; }
 .series-current > * + *,
-.series-trailer-caption > span > * + *,
 .loading-rating-copy > * + * { margin-top: .25vh; }
 .season-options > * + * { margin-left: .35vw; }
 .series-episode-list > * + * { margin-top: 2.35vh; }
@@ -5248,9 +5232,7 @@ body,
   .series-trailer-hud header > * + *,
   .detail-actions button > * + *,
   .series-trailer-action > * + *,
-  .series-trailer-caption > * + *,
   .series-current > * + *,
-  .series-trailer-caption > span > * + *,
   .loading-rating-copy > * + *,
   .season-options > * + *,
   .series-episode-list > * + *,

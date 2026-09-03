@@ -11,6 +11,7 @@ const screens: { id: ScreenName; label: string }[] = [
   { id: 'movies', label: 'Movies' },
   { id: 'my-list', label: 'My List' },
   { id: 'settings', label: 'Settings' },
+  { id: 'details', label: 'Details' },
   { id: 'ready', label: 'Ready' },
   { id: 'loading', label: 'Loading' },
   { id: 'player', label: 'Player' },

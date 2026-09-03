@@ -211,6 +211,7 @@ export function PlayerScreen({
   state,
   position,
   duration,
+  bufferedPosition,
   isLive,
   controlFocus,
   controlsFocused,
@@ -262,6 +263,7 @@ export function PlayerScreen({
   state: PlaybackState
   position: number
   duration: number
+  bufferedPosition: number
   isLive: boolean
   controlFocus: number
   controlsFocused: boolean
@@ -310,6 +312,7 @@ export function PlayerScreen({
   onStillWatching(continueWatching: boolean): void
 }) {
   const progress = isLive ? 100 : duration ? Math.min(100, position / duration * 100) : 0
+  const bufferedProgress = isLive ? 100 : duration ? Math.min(100, Math.max(position, bufferedPosition) / duration * 100) : 0
   const showPause = state === 'playing' || state === 'buffering'
   const selectedAudio = audioTracks.find((track) => track.index === activeAudio)?.label ?? 'Default'
   const selectedSubtitle = subtitleChoices.find((track) => track.id === activeSubtitle)?.label ?? 'Off'
@@ -405,13 +408,14 @@ export function PlayerScreen({
           aria-valuemin={0}
           aria-valuemax={Math.max(0, Math.round(duration))}
           aria-valuenow={Math.max(0, Math.round(position))}
-          aria-valuetext={isLive ? 'Live' : `${formatTime(position)} of ${formatTime(duration)}`}
+          aria-valuetext={isLive ? 'Live' : `${formatTime(position)} of ${formatTime(duration)}, buffered to ${formatTime(bufferedPosition)}`}
           tabIndex={0}
           onFocus={onTimelineFocus}
           onMouseEnter={onTimelineFocus}
         >
           <div class="player-timeline">
-            <span style={{ width: `${progress}%` }} />
+            <span class="player-timeline-buffered" style={{ width: `${bufferedProgress}%` }} />
+            <span class="player-timeline-played" style={{ width: `${progress}%` }} />
             <i class="player-scrubber-handle" style={{ left: `${progress}%` }} aria-hidden="true" />
             {skipSegments.map((segment) => duration > 0 && (
               <i

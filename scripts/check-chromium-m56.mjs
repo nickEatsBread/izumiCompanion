@@ -246,7 +246,7 @@ async function main() {
         await writeFile(output, source)
       }
     }
-    const codes = { Enter: 13, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, MediaFastForward: 417, MediaRewind: 412 }
+    const codes = { Enter: 13, Backspace: 8, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, MediaFastForward: 417, MediaRewind: 412 }
     const press = async (key) => {
       const code = codes[key]
       await cdp.call('Input.dispatchKeyEvent', {
@@ -611,6 +611,27 @@ async function main() {
     assert(seriesSelection.shell.includes('screen-series') && !seriesSelection.player, `A normal series tile started playback: ${JSON.stringify(seriesSelection)}.`)
     assert(seriesSelection.title && seriesTitle.includes(seriesSelection.title) && seriesSelection.actions > 0, `The selected series page did not open: ${JSON.stringify({ seriesTitle, seriesSelection })}.`)
     await capture('m56-series-selection.png')
+
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=details` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.detail-actions [data-focus-id=\"detail-0\"]')")
+    await waitFor("!document.getElementById('startup-splash')")
+    const detailPage = await evaluate(`(() => ({
+      descriptionSize: parseFloat(getComputedStyle(document.querySelector('.detail-description')).fontSize),
+      actions: Array.from(document.querySelectorAll('.detail-actions button')).map(function (button) { return button.textContent.trim(); })
+    }))()`)
+    assert(detailPage.descriptionSize >= 28 && detailPage.actions.some(function (label) { return label.includes('Play Trailer'); }), `Film detail presentation is incomplete: ${JSON.stringify(detailPage)}.`)
+    await evaluate("Array.from(document.querySelectorAll('.detail-actions button')).find(function (button) { return button.textContent.includes('Play Trailer'); }).click()")
+    await waitFor("document.querySelector('.series-trailer-overlay iframe')")
+    const trailerWithoutCaptions = await evaluate(`(() => ({
+      source: document.querySelector('.series-trailer-overlay iframe').src,
+      captionHud: Boolean(document.querySelector('.series-trailer-caption'))
+    }))()`)
+    assert(!trailerWithoutCaptions.source.includes('cc_load_policy=1') && !trailerWithoutCaptions.source.includes('cc_lang_pref') && !trailerWithoutCaptions.captionHud,
+      `Trailer captions are still forced on: ${JSON.stringify(trailerWithoutCaptions)}.`)
+    await press('Backspace')
+    await waitFor("!document.querySelector('.series-trailer-overlay')")
+    await capture('m56-detail-trailer.png')
+
     await evaluate("window.dispatchEvent(new CustomEvent('izumi:voice-search', { detail: 'The Runner' }))")
     await waitFor("document.querySelector('.app-shell.screen-search input') && document.querySelector('.app-shell.screen-search input').value === 'The Runner'")
     const voiceSearch = await evaluate(`(() => ({
@@ -786,10 +807,14 @@ async function main() {
       status: document.querySelector('.player-buffering-status').textContent,
       transport: document.querySelector('.player-state-icon').getAttribute('aria-label'),
       transportFocused: document.querySelector('.player-state-icon').classList.contains('is-focused'),
-      position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow'))
+      position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow')),
+      playedWidth: document.querySelector('.player-timeline-played').getBoundingClientRect().width,
+      bufferedWidth: document.querySelector('.player-timeline-buffered').getBoundingClientRect().width,
+      valueText: document.querySelector('.player-timeline-control').getAttribute('aria-valuetext')
     }))()`)
     assert(bufferingPlayer.status.includes('Buffering') && bufferingPlayer.status.includes('46%'), `Buffering indicator is incomplete: ${bufferingPlayer.status}.`)
     assert(bufferingPlayer.transport === 'Pause' && bufferingPlayer.transportFocused, `Playing transport is not a focused Pause action: ${JSON.stringify(bufferingPlayer)}.`)
+    assert(bufferingPlayer.bufferedWidth > bufferingPlayer.playedWidth && bufferingPlayer.valueText.includes('buffered to'), `Buffered extent is missing from the player rail: ${JSON.stringify(bufferingPlayer)}.`)
     await press('ArrowDown')
     await waitFor("document.querySelector('.player-timeline-control.is-focused')")
     await press('ArrowRight')
@@ -812,6 +837,10 @@ async function main() {
     await press('ArrowDown')
     await waitFor("document.querySelector('.player-actions > button.is-focused')")
     await capture('m56-player-buffering.png')
+    await press('Backspace')
+    await waitFor("document.querySelector('.app-shell.screen-player .player-controls.is-hidden')")
+    const hiddenControls = await evaluate("Boolean(document.querySelector('.app-shell.screen-player .player-controls.is-hidden'))")
+    assert(hiddenControls, 'Back exited playback instead of hiding visible controls.')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=next` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.next-episode-card')")
