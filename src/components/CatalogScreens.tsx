@@ -781,6 +781,8 @@ export function SearchScreen({
                 class={`${focus.zone === 'keyboard' && focus.index === index ? 'is-focused' : ''}${key.span > 1 || key.value.length > 1 ? ' is-wide is-action' : ''}${key.span > 1 ? ` is-span-${key.span}` : ''}`}
                 data-focus-id={`keyboard-${index}`}
                 data-search-key={key.value.toLowerCase()}
+                data-search-row={key.row}
+                data-search-column={key.column}
                 tabIndex={focus.zone === 'keyboard' && focus.index === index ? 0 : -1}
                 aria-label={key.value === 'DELETE' ? 'Delete character' : key.value === 'SPACE' ? 'Space' : key.value === 'VOICE' ? 'Open keyboard and voice input' : key.value}
                 onFocus={() => onKeyFocus(index)}

@@ -574,7 +574,7 @@ export class CompanionReceiver {
     })
   }
 
-  requestTrailer(videoId: string, title: string): Promise<CompanionTrailerSource> {
+  requestTrailer(videoId: string, title: string, muted = false): Promise<CompanionTrailerSource> {
     if (!this.credential || !this.connected) return Promise.reject(new Error('Open izumi on the paired device to play this trailer.'))
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return Promise.reject(new Error('This trailer has an invalid YouTube ID.'))
     const requestId = randomHex(12)
@@ -592,6 +592,7 @@ export class CompanionReceiver {
         requestId,
         videoId,
         title: title.slice(0, 160),
+        muted,
       }, 'broadcast')
     })
   }

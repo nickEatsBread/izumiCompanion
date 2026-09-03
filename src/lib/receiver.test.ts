@@ -243,13 +243,14 @@ describe('companion play routing', () => {
     const receiver = new CompanionReceiver(events())
     await receiver.connect()
 
-    const pending = receiver.requestTrailer('M7lc1UVf-VE', 'Frieren trailer')
+    const pending = receiver.requestTrailer('M7lc1UVf-VE', 'Frieren trailer', true)
     const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.trailer')?.[1] as {
       requestId: string
       pairingId: string
       videoId: string
+      muted: boolean
     }
-    expect(sent).toMatchObject({ pairingId: credential.slice(0, 16), videoId: 'M7lc1UVf-VE' })
+    expect(sent).toMatchObject({ pairingId: credential.slice(0, 16), videoId: 'M7lc1UVf-VE', muted: true })
 
     channel.emit('izumi.companion.trailer-result', {
       credential,

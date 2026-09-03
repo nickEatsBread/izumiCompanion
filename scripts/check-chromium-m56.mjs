@@ -312,16 +312,17 @@ async function main() {
     const initialHeroSource = await evaluate("document.querySelector('.hero-backdrop').src")
     await press('ArrowRight')
     const heroMotion = await waitFor(`(() => {
-      var incoming = document.querySelector('.hero-backdrop.is-incoming');
-      if (!incoming) return null;
+      var artwork = document.querySelector('.hero-backdrop');
+      if (!artwork || artwork.src === ${JSON.stringify(initialHeroSource)}) return null;
       return {
-        source: incoming.src,
-        transition: getComputedStyle(incoming).transitionDuration,
+        source: artwork.src,
+        transition: getComputedStyle(artwork).transitionDuration,
+        incomingLayers: document.querySelectorAll('.hero-backdrop.is-incoming').length,
         copyAnimation: getComputedStyle(document.querySelector('.hero-copy')).animationDuration
       };
     })()`)
-    assert(heroMotion.source !== initialHeroSource, 'Hero navigation did not stage different artwork.')
-    assert(heroMotion.transition !== '0s', `Hero artwork transition is disabled: ${heroMotion.transition}.`)
+    assert(heroMotion.source !== initialHeroSource, 'Hero navigation did not replace its artwork.')
+    assert(heroMotion.transition === '0s' && heroMotion.incomingLayers === 0, `Hero artwork still fades between images: ${JSON.stringify(heroMotion)}.`)
     assert(heroMotion.copyAnimation !== '0s', `Hero copy transition is disabled: ${heroMotion.copyAnimation}.`)
     await wait(440)
 
@@ -359,11 +360,11 @@ async function main() {
       trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform
     }))()`)
     assert(JSON.stringify(rows.body) === '[1920,1080]', `Home overflowed the TV viewport: ${rows.body}.`)
-    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,704,1220]', `Unexpected row positions ${rows.tops}.`)
+    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,824,1340]', `Unexpected row positions ${rows.tops}.`)
     assert(rows.images.slice(0, 2).every((count) => count > 0) && rows.images[2] === 0, `Artwork windowing is incorrect: ${rows.images}.`)
-    assert(JSON.stringify(rows.posterWidths) === '[272]', `Poster stride changed during focus: ${rows.posterWidths}.`)
-    assert(rows.gap === '16px', `M56 rail fallback gap is ${rows.gap}, expected 16px.`)
-    assert(JSON.stringify(rows.focus) === '[132,96,820,590,812,457]', `Unexpected focus spotlight geometry ${rows.focus}.`)
+    assert(JSON.stringify(rows.posterWidths) === '[320]', `Poster stride changed during focus: ${rows.posterWidths}.`)
+    assert(rows.gap === '20px', `M56 rail fallback gap is ${rows.gap}, expected 20px.`)
+    assert(JSON.stringify(rows.focus) === '[132,106,960,700,952,536]', `Unexpected focus spotlight geometry ${rows.focus}.`)
     assert(rows.continueCopy.includes('S1 E12') && rows.continueCopy.includes('9m left'), `Continue Watching context is incomplete: ${rows.continueCopy}.`)
     assert(rows.continueProgress === '64%', `Continue Watching progress is ${rows.continueProgress}.`)
     assert(rows.rowTransition === '0s', `The rail frame moves during vertical navigation: ${rows.rowTransition}.`)
@@ -388,7 +389,7 @@ async function main() {
       };
     })()`)
     assert(verticalDestination.row === 1 && verticalDestination.index === 0, `A new rail inherited the previous rail position: ${JSON.stringify(verticalDestination)}.`)
-    assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 100) <= 3 && verticalDestination.frame[2] === 812 && verticalDestination.frame[3] === 457, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
+    assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 110) <= 3 && verticalDestination.frame[2] === 952 && verticalDestination.frame[3] === 536, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
     assert(verticalDestination.title[0] >= verticalDestination.frame[1] && verticalDestination.title[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title is clipped outside its frame: ${verticalDestination.title}.`)
     assert(verticalDestination.titleAnimation === 'home-focus-copy-change', `Focused title uses a moving animation: ${verticalDestination.titleAnimation}.`)
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
@@ -416,8 +417,8 @@ async function main() {
     })()`)
     assert(horizontal.index === 8, `Expected rail index 8, received ${horizontal.index}.`)
     assert(horizontal.scrollLeft > 0, 'Horizontal navigation did not scroll its local viewport.')
-    assert(horizontal.width === 820 && horizontal.visualWidth === 820, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
-    assert(JSON.stringify(horizontal.posterWidths) === '[272]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
+    assert(horizontal.width === 960 && horizontal.visualWidth === 960, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
+    assert(JSON.stringify(horizontal.posterWidths) === '[320]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
     assert(horizontal.focusAnimation === '0s', `Focus outline animation is enabled: ${horizontal.focusAnimation}.`)
     assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
@@ -425,7 +426,11 @@ async function main() {
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
 
-    for (let index = 0; index < 9; index += 1) await press('ArrowLeft')
+    await press('ArrowRight')
+    await press('ArrowRight')
+    const wrappedRailIndex = await evaluate("Number(document.querySelector('.home-focus-card.is-focused').getAttribute('data-media-index'))")
+    assert(wrappedRailIndex === 0, `Right navigation did not loop to the start of the rail: ${wrappedRailIndex}.`)
+    await press('ArrowLeft')
     await waitFor("document.querySelector('.nav-rail.is-open .nav-item.is-focused')")
     const navigation = await evaluate(`(() => ({
       width: document.querySelector('.nav-rail').getBoundingClientRect().width,
@@ -441,6 +446,15 @@ async function main() {
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=carousel` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.home-screen.mode-carousel')")
     await waitFor("!document.getElementById('startup-splash')")
+    const carouselIndicators = await evaluate(`(() => ({
+      text: document.querySelector('.hero-carousel-status').textContent.trim(),
+      sizes: Array.from(document.querySelectorAll('.hero-carousel-pips > i')).map(function (pip) {
+        var bounds = pip.getBoundingClientRect();
+        return [bounds.width, bounds.height];
+      })
+    }))()`)
+    assert(carouselIndicators.text === '', `Carousel still exposes numeric slide counters: ${carouselIndicators.text}.`)
+    assert(carouselIndicators.sizes.some(function (size) { return size[0] === 96 && size[1] === 8; }), `Active carousel indicator is not large enough: ${JSON.stringify(carouselIndicators.sizes)}.`)
     await press('ArrowDown')
     await waitFor("document.querySelector('.home-poster-card.is-focused')")
     await waitFor("Array.from(document.querySelectorAll('.home-poster-card img')).every(function (image) { return image.complete && image.naturalWidth > 0 })")
@@ -458,6 +472,7 @@ async function main() {
         receding: document.querySelector('.hero').classList.contains('is-receding'),
         heroTitle: document.querySelector('.hero h1').textContent,
         cardTitle: document.querySelector('.home-poster-card.is-focused').getAttribute('aria-label'),
+        rankContext: document.querySelector('.hero-rank-context').textContent,
         viewport: [viewport.left, viewport.width],
         cards: Array.from(document.querySelectorAll('.media-row.is-active .home-poster-card')).map(function (item) {
           var bounds = item.getBoundingClientRect();
@@ -471,6 +486,14 @@ async function main() {
     assert(carouselHome.cards.length >= 5 && carouselHome.cards.every(function (card) { return card[2]; }), `Cinematic rail did not render its artwork: ${JSON.stringify(carouselHome)}.`)
     assert(!carouselHome.expanded && !carouselHome.receding, 'Cinematic mode expanded a card or hid its hero.')
     assert(carouselHome.cardTitle.includes(carouselHome.heroTitle), 'Focused carousel artwork did not update the hero.')
+    assert(/Continue Watching|Trending|Popular/i.test(carouselHome.rankContext), `Hero ranking context is missing: ${carouselHome.rankContext}.`)
+    await waitFor("document.querySelector('.home-hover-trailer')")
+    const hoverTrailer = await evaluate(`(() => {
+      var trailer = document.querySelector('.home-hover-trailer');
+      return { source: trailer.src, title: trailer.title };
+    })()`)
+    assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=1'), `Focused-card trailer is not muted autoplay: ${hoverTrailer.source}.`)
+    assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
     await capture('m56-home-carousel.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=search` })
@@ -483,6 +506,19 @@ async function main() {
     await press('ArrowDown')
     const keyboardFocus = await evaluate("document.querySelector('.search-keyboard > .is-focused').getAttribute('data-search-key')")
     assert(keyboardFocus === 'b', `Vertical keyboard navigation drifted diagonally to ${keyboardFocus}.`)
+    for (let column = 0; column < 6; column += 1) {
+      await evaluate(`document.querySelector('[data-search-row="1"][data-search-column="${column}"]').focus()`)
+      await waitFor(`document.querySelector('.search-keyboard > .is-focused').getAttribute('data-search-column') === '${column}'`)
+      const laneLeft = await evaluate("document.querySelector('.search-keyboard > .is-focused').offsetLeft")
+      for (let row = 2; row <= 6; row += 1) {
+        await press('ArrowDown')
+        const verticalKey = await evaluate(`(() => {
+          var key = document.querySelector('.search-keyboard > .is-focused');
+          return [Number(key.getAttribute('data-search-row')), Number(key.getAttribute('data-search-column')), key.offsetLeft];
+        })()`)
+        assert(verticalKey[0] === row && verticalKey[1] === column && Math.abs(verticalKey[2] - laneLeft) <= 1, `Keyboard moved diagonally in column ${column}: expected x ${laneLeft}, received ${verticalKey}.`)
+      }
+    }
     await capture('m56-search-keyboard.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=buffering` })
@@ -551,8 +587,9 @@ async function main() {
     await capture('m56-playback-settings.png')
 
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
-    assert(exceptions.length === 0, `Chromium 56 reported ${exceptions.length} uncaught exception(s).`)
-    process.stdout.write('Chromium 56 check passed: Home geometry, redesigned navigation, skip and next-episode prompts, post-play recommendations, no runtime errors.\n')
+    const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
+    assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
+    process.stdout.write('Chromium 56 check passed: Home geometry, looping rails, straight keyboard navigation, trailer fallback, player prompts, and no application runtime errors.\n')
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()

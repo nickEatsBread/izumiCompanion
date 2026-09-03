@@ -37,6 +37,16 @@ describe('TV search keyboard geometry', () => {
     expect(SEARCH_KEYS[voice].value).toBe('VOICE')
     expect(SEARCH_KEYS[adjacentSearchKey(voice, 'down', 4)!].value).toBe('e')
   })
+
+  it('moves straight down in every complete alphanumeric column', () => {
+    for (let row = 1; row < 6; row += 1) {
+      for (let column = 0; column < 6; column += 1) {
+        const current = SEARCH_KEYS.findIndex((key) => key.row === row && key.column === column)
+        const next = adjacentSearchKey(current, 'down', column)
+        expect(SEARCH_KEYS[next!]).toMatchObject({ row: row + 1, column })
+      }
+    }
+  })
 })
 
 describe('TV trailer iframe control', () => {

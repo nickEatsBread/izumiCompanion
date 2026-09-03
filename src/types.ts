@@ -32,6 +32,8 @@ export interface CompanionMedia {
   contentRating?: string
   poster?: string
   backdrop?: string
+  /** Transparent provider title treatment/clear-logo preferred in cinematic hero layouts. */
+  logoImage?: string
   trailer?: { id: string; site?: string }
   progress?: number
   episode?: number

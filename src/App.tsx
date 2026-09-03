@@ -254,6 +254,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [trailerOpen, setTrailerOpen] = useState(false)
   const [trailerSource, setTrailerSource] = useState<{ requestId?: string; url: string }>()
   const [trailerError, setTrailerError] = useState('')
+  const [homeTrailerPreview, setHomeTrailerPreview] = useState<{ mediaKey: string; requestId?: string; url: string }>()
   const [exitConfirmation, setExitConfirmation] = useState(false)
   const [exitFocus, setExitFocus] = useState(0)
   const [focusRestoreEpoch, setFocusRestoreEpoch] = useState(0)
@@ -290,6 +291,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const subtitlePreferencesRef = useRef(subtitlePreferences)
   const trailerSourceRef = useRef<{ requestId?: string; url: string }>()
   const trailerGenerationRef = useRef(0)
+  const homeTrailerPreviewRef = useRef<{ mediaKey: string; requestId?: string; url: string }>()
+  const homeTrailerGenerationRef = useRef(0)
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
@@ -997,6 +1000,50 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const collections = useMemo(() => catalogCollections(snapshot), [snapshot])
   const homeRows = useMemo(() => orderedHomeRows(snapshot.rows), [snapshot.rows])
   const homeHeroRail = useMemo(() => homeHeroItems(snapshot), [snapshot])
+  const focusedHomeMedia = screen === 'home' && focus.zone === 'row'
+    ? homeRows[focus.row]?.items[focus.index]
+    : undefined
+  const focusedHomeMediaKey = focusedHomeMedia
+    ? `${focusedHomeMedia.ref.provider}:${focusedHomeMedia.ref.type}:${focusedHomeMedia.ref.id}`
+    : ''
+
+  useEffect(() => {
+    const generation = ++homeTrailerGenerationRef.current
+    const previous = homeTrailerPreviewRef.current
+    if (previous?.requestId) receiverRef.current?.releaseTrailer(previous.requestId)
+    homeTrailerPreviewRef.current = undefined
+    setHomeTrailerPreview(undefined)
+    const videoId = focusedHomeMedia ? youtubeTrailerId(focusedHomeMedia) : undefined
+    if (!videoId || !focusedHomeMedia) return
+
+    const timer = window.setTimeout(() => {
+      if (showPreviewTools) {
+        const params = new URLSearchParams({
+          autoplay: '1', controls: '0', enablejsapi: '1', playsinline: '1', rel: '0', mute: '1', modestbranding: '1',
+        })
+        if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
+        const source = { mediaKey: focusedHomeMediaKey, url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
+        homeTrailerPreviewRef.current = source
+        setHomeTrailerPreview(source)
+        return
+      }
+      const receiver = receiverRef.current
+      if (!receiver) return
+      void receiver.requestTrailer(videoId, `${focusedHomeMedia.title} home preview`, true).then((result) => {
+        if (generation !== homeTrailerGenerationRef.current) {
+          receiver.releaseTrailer(result.requestId)
+          return
+        }
+        const source = { mediaKey: focusedHomeMediaKey, ...result }
+        homeTrailerPreviewRef.current = source
+        setHomeTrailerPreview(source)
+      }).catch(() => {
+        // Artwork remains visible when a provider or paired device cannot prepare the trailer.
+      })
+    }, 900)
+
+    return () => window.clearTimeout(timer)
+  }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, screen, showPreviewTools])
   const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
   const allMedia = collections.search
   const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
@@ -1158,7 +1205,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (action === 'left') next = focus.index > 0
         ? { ...focus, index: focus.index - 1 }
         : { zone: 'nav', index: activeNav }
-      else if (action === 'right') next = { ...focus, index: Math.min(row.items.length - 1, focus.index + 1) }
+      else if (action === 'right') next = { ...focus, index: wrappedHeroIndex(focus.index, 1, row.items.length) }
       else if (action === 'up') {
         const upperRow = focus.row - 1
         if (upperRow < 0) {
@@ -1999,10 +2046,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       const action = remoteAction(event)
       if (!action) return
       event.preventDefault()
+      event.stopPropagation()
       remoteHandlerRef.current?.(action)
     }
-    window.addEventListener('keydown', onKeyDown, false)
-    return () => window.removeEventListener('keydown', onKeyDown, false)
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [])
 
   const previewScreen = (next: ScreenName) => {
@@ -2066,6 +2114,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           catalogOpen={catalogMenuOpen}
           catalogFocus={catalogMenuFocus}
           notice={notice}
+          trailerPreview={homeTrailerPreview}
           onFocus={changeFocus}
           onNav={selectNav}
           onPlay={playMedia}

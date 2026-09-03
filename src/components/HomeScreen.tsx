@@ -18,6 +18,7 @@ interface HomeScreenProps {
   catalogOpen: boolean
   catalogFocus: number
   notice?: string
+  trailerPreview?: { mediaKey: string; url: string }
   onFocus(focus: FocusLocation): void
   onNav(index: number): void
   onPlay(media: CompanionMedia): void
@@ -78,23 +79,25 @@ export function homeRowVisible(rowIndex: number, activeRow: number): boolean {
   return Math.abs(rowIndex - activeRow) <= 1
 }
 
-export const HOME_POSTER_WIDTH = 272
-export const HOME_POSTER_HEIGHT = 408
-export const HOME_POSTER_STRIDE = 288
+export const HOME_POSTER_WIDTH = 320
+export const HOME_POSTER_HEIGHT = 480
+export const HOME_POSTER_STRIDE = 340
 export const HOME_CAROUSEL_POSTER_WIDTH = 238
 export const HOME_CAROUSEL_POSTER_HEIGHT = 340
 export const HOME_CAROUSEL_POSTER_STRIDE = 254
+export const HOME_FOCUS_WIDTH = HOME_POSTER_WIDTH * 3
 
 function rowSpacerDimensions(count: number, stride = HOME_POSTER_STRIDE): { width: string; minWidth: string } {
-  const width = Math.max(0, count * stride - (count ? 16 : 0))
+  const gap = stride === HOME_CAROUSEL_POSTER_STRIDE ? 16 : 20
+  const width = Math.max(0, count * stride - (count ? gap : 0))
   return { width: `${width}px`, minWidth: `${width}px` }
 }
 
 export function homeRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
   if (!browsing) return 24 + rowIndex * 420
   const distance = rowIndex - activeRow
-  if (distance <= 0) return 52 + distance * 500
-  return distance === 1 ? 704 : 1220 + (distance - 2) * 360
+  if (distance <= 0) return 52 + distance * 580
+  return distance === 1 ? 824 : 1340 + (distance - 2) * 420
 }
 
 export function homeCarouselRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
@@ -144,47 +147,91 @@ function animateRailScroll(element: HTMLElement, target: number, duration = 240)
 
 function HeroArtwork({ source }: { source?: string }) {
   const [activeSource, setActiveSource] = useState(source ?? '')
-  const [incomingSource, setIncomingSource] = useState('')
-  const [incomingReady, setIncomingReady] = useState(false)
-  const transitionTimerRef = useRef<number>()
 
   useEffect(() => {
-    if (transitionTimerRef.current) window.clearTimeout(transitionTimerRef.current)
-    setIncomingReady(false)
-    setIncomingSource(source && source !== activeSource ? source : '')
-    return () => {
-      if (transitionTimerRef.current) window.clearTimeout(transitionTimerRef.current)
-    }
+    if (!source || source === activeSource) return
+    const image = new Image()
+    image.onload = () => setActiveSource(source)
+    image.src = source
+    return () => { image.onload = null }
   }, [activeSource, source])
-
-  const revealIncoming = (nextSource: string) => {
-    if (nextSource !== incomingSource) return
-    setIncomingReady(true)
-    transitionTimerRef.current = window.setTimeout(() => {
-      setActiveSource(nextSource)
-      setIncomingSource('')
-      setIncomingReady(false)
-    }, 380)
-  }
 
   return (
     <div class="hero-art-stage" aria-hidden="true">
       {activeSource && <img class="hero-backdrop" src={activeSource} alt="" width={1740} height={680} decoding="async" />}
-      {incomingSource && (
-        <img
-          class={`hero-backdrop is-incoming${incomingReady ? ' is-ready' : ''}`}
-          key={incomingSource}
-          src={incomingSource}
-          alt=""
-          width={1740}
-          height={680}
-          decoding="async"
-          onLoad={() => revealIncoming(incomingSource)}
-          onError={() => setIncomingSource('')}
-        />
-      )}
     </div>
   )
+}
+
+function HeroTrailer({ source, title }: { source: string; title: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const bridgeOrigin = (() => {
+    try {
+      const url = new URL(source)
+      return url.hostname === 'www.youtube.com' || url.hostname === 'www.youtube-nocookie.com' ? '' : url.origin
+    } catch { return '' }
+  })()
+  const post = (payload: Record<string, unknown>) => {
+    const target = iframeRef.current?.contentWindow
+    if (!target) return
+    const serialized = JSON.stringify(payload)
+    if (bridgeOrigin) target.postMessage({ type: 'izumi-youtube-command', payload: serialized }, bridgeOrigin)
+    else target.postMessage(serialized, 'https://www.youtube-nocookie.com')
+  }
+  const start = () => {
+    post({ event: 'listening', id: 1, channel: 'widget' })
+    post({ event: 'command', func: 'mute', args: [] })
+    post({ event: 'command', func: 'playVideo', args: [] })
+  }
+
+  useEffect(() => {
+    setPlaying(false)
+    let attempts = 0
+    const timer = window.setInterval(() => {
+      attempts += 1
+      start()
+      if (attempts >= 8) window.clearInterval(timer)
+    }, 450)
+    return () => window.clearInterval(timer)
+  }, [source])
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return
+      if (bridgeOrigin && event.origin !== bridgeOrigin) return
+      let raw = event.data
+      if (bridgeOrigin) {
+        if (!raw || raw.type !== 'izumi-youtube-event' || typeof raw.payload !== 'string') return
+        raw = raw.payload
+      }
+      let payload: { event?: string; info?: unknown; data?: unknown }
+      try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw }
+      catch { return }
+      const info = payload?.info
+      const state = typeof info === 'object' && info ? Number((info as Record<string, unknown>).playerState) : Number(info ?? payload?.data)
+      if ((payload?.event === 'onStateChange' || payload?.event === 'infoDelivery') && state === 1) setPlaying(true)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [bridgeOrigin, source])
+
+  return (
+    <iframe
+      ref={iframeRef}
+      class={`home-hover-trailer${playing ? ' is-playing' : ''}`}
+      src={source}
+      title={`${title} trailer preview`}
+      allow="autoplay; encrypted-media"
+      referrerPolicy="strict-origin-when-cross-origin"
+      tabIndex={-1}
+      onLoad={start}
+    />
+  )
+}
+
+function mediaIdentity(media: CompanionMedia): string {
+  return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
 }
 
 /** Poster slots keep one fixed stride. The focused title is drawn in a separate spotlight layer,
@@ -261,6 +308,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   episodeCard,
   topTenRow,
   motion,
+  trailerSource,
   onActivate,
 }: {
   item: CompanionMedia
@@ -269,6 +317,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   episodeCard: boolean
   topTenRow: boolean
   motion: HomeFocusMotion
+  trailerSource?: string
   onActivate(): void
 }) {
   const cardProgress = episodeCard ? item.episodeProgress : item.progress
@@ -321,6 +370,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
                 }}
               />
             : <span class="home-card-placeholder">{item.title}</span>}
+          {trailerSource && <HeroTrailer source={trailerSource} title={item.title} />}
         </span>
         <span class="home-focus-shade" aria-hidden="true" />
         <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>
@@ -350,6 +400,7 @@ export function HomeScreen({
   catalogOpen,
   catalogFocus,
   notice,
+  trailerPreview,
   onFocus,
   onNav,
   onPlay,
@@ -371,6 +422,7 @@ export function HomeScreen({
     ? `${hero.placement.position ? `#${hero.placement.position} in ` : ''}${hero.placement.label}`
     : snapshot.catalog.label
   const heroImage = hero.episodeImage || hero.backdrop || hero.poster
+  const heroTrailerSource = trailerPreview?.mediaKey === mediaIdentity(hero) ? trailerPreview.url : undefined
   const homeTrackRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<FocusLocation>(focus)
   const activeRow = focus.zone === 'row' ? focus.row : 0
@@ -460,10 +512,12 @@ export function HomeScreen({
         <article class="hero-feature-card">
         <img class="hero-brand" src={wordmark} alt="Izumi" />
         <HeroArtwork source={heroImage} />
+        {carouselLayout && heroTrailerSource && <HeroTrailer source={heroTrailerSource} title={hero.title} />}
         <div class="hero-shade" />
         <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
-          <p class="hero-eyebrow"><ReasonIcon size={20} aria-hidden="true" /><span>{reason}</span></p>
-          <h1>{hero.title}</h1>
+          {hero.logoImage
+            ? <img class="hero-title-logo" src={hero.logoImage} alt={hero.title} decoding="async" />
+            : <h1>{hero.title}</h1>}
           {isContinueHero && hero.episode && (
             <div class="hero-resume">
               <p><strong>{episodeLabel(hero)}</strong>{hero.episodeTitle && <span>{hero.episodeTitle}</span>}</p>
@@ -499,15 +553,14 @@ export function HomeScreen({
             </button>
           </div>}
         </div>
+        <p class="hero-rank-context"><ReasonIcon size={24} aria-hidden="true" /><span>{reason}</span></p>
         {heroCount > 1 && focus.zone === 'hero' && (
           <div class="hero-carousel-status" aria-hidden="true">
-            <span>{String(heroIndex + 1).padStart(2, '0')}</span>
             <div class="hero-carousel-pips">
               {Array.from({ length: heroCount }, (_, index) => (
                 <i class={index === heroIndex ? 'is-current' : ''} key={index} />
               ))}
             </div>
-            <span>{String(heroCount).padStart(2, '0')}</span>
           </div>
         )}
         </article>
@@ -562,6 +615,7 @@ export function HomeScreen({
                     episodeCard={continueRow}
                     topTenRow={topTenRow}
                     motion={focusMotion}
+                    trailerSource={trailerPreview?.mediaKey === mediaIdentity(focusedItem) ? trailerPreview.url : undefined}
                     onActivate={() => (continueRow ? onPlay : onOpenSeries)(focusedItem)}
                   />
                 )}
