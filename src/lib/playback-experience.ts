@@ -18,6 +18,22 @@ export interface NextEpisode {
   media: CompanionMedia
 }
 
+export const PLAYER_SEEK_STEP_SECONDS = 10
+
+export function seekHoldMultiplier(elapsedMs: number): 2 | 3 {
+  return elapsedMs >= 1_400 ? 3 : 2
+}
+
+export function playerSeekTarget(
+  positionSeconds: number,
+  durationSeconds: number,
+  direction: -1 | 1,
+  multiplier = 1,
+): number {
+  const maximum = durationSeconds > 0 ? durationSeconds : Number.MAX_SAFE_INTEGER
+  return Math.max(0, Math.min(maximum, positionSeconds + direction * PLAYER_SEEK_STEP_SECONDS * multiplier))
+}
+
 const STORAGE_KEY = 'izumi.companion.playback-experience'
 
 export const defaultPlaybackExperienceSettings: PlaybackExperienceSettings = {

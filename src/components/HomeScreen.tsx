@@ -124,6 +124,24 @@ export function homeFocusMotion(previous: FocusLocation, current: FocusLocation)
 }
 
 const railScrollAnimations = new WeakMap<HTMLElement, number>()
+const preloadedHomeArtwork: Record<string, boolean> = {}
+
+function focusArtwork(media: CompanionMedia, episodeCard: boolean): string[] {
+  return Array.from(new Set([
+    episodeCard ? media.episodeImage : media.backdrop,
+    media.backdrop,
+    media.episodeImage,
+    media.poster,
+  ].filter((value): value is string => Boolean(value))))
+}
+
+function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void {
+  const source = focusArtwork(media, episodeCard)[0]
+  if (!source || preloadedHomeArtwork[source]) return
+  const image = new Image()
+  image.onload = () => { preloadedHomeArtwork[source] = true }
+  image.src = source
+}
 
 function animateRailScroll(element: HTMLElement, target: number, duration = 240): void {
   const previousFrame = railScrollAnimations.get(element)
@@ -188,11 +206,12 @@ function HeroTrailer({ source, title }: { source: string; title: string }) {
   useEffect(() => {
     setPlaying(false)
     let attempts = 0
+    start()
     const timer = window.setInterval(() => {
       attempts += 1
       start()
-      if (attempts >= 8) window.clearInterval(timer)
-    }, 450)
+      if (attempts >= 40) window.clearInterval(timer)
+    }, 150)
     return () => window.clearInterval(timer)
   }, [source])
 
@@ -200,6 +219,7 @@ function HeroTrailer({ source, title }: { source: string; title: string }) {
     const onMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return
       if (bridgeOrigin && event.origin !== bridgeOrigin) return
+      if (!bridgeOrigin && event.origin !== 'https://www.youtube-nocookie.com' && event.origin !== 'https://www.youtube.com') return
       let raw = event.data
       if (bridgeOrigin) {
         if (!raw || raw.type !== 'izumi-youtube-event' || typeof raw.payload !== 'string') return
@@ -210,7 +230,7 @@ function HeroTrailer({ source, title }: { source: string; title: string }) {
       catch { return }
       const info = payload?.info
       const state = typeof info === 'object' && info ? Number((info as Record<string, unknown>).playerState) : Number(info ?? payload?.data)
-      if ((payload?.event === 'onStateChange' || payload?.event === 'infoDelivery') && state === 1) setPlaying(true)
+      if ((payload?.event === 'onStateChange' || payload?.event === 'initialDelivery' || payload?.event === 'infoDelivery') && state === 1) setPlaying(true)
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -222,7 +242,8 @@ function HeroTrailer({ source, title }: { source: string; title: string }) {
       class={`home-hover-trailer${playing ? ' is-playing' : ''}`}
       src={source}
       title={`${title} trailer preview`}
-      allow="autoplay; encrypted-media"
+      allow="autoplay; encrypted-media; fullscreen"
+      allowFullScreen
       referrerPolicy="strict-origin-when-cross-origin"
       tabIndex={-1}
       onLoad={start}
@@ -322,23 +343,15 @@ const HomeFocusCard = memo(function HomeFocusCard({
 }) {
   const cardProgress = episodeCard ? item.episodeProgress : item.progress
   const inProgress = typeof cardProgress === 'number' && cardProgress > 0 && cardProgress < 1
-  const artwork = Array.from(new Set([
-    episodeCard ? item.episodeImage : item.backdrop,
-    item.backdrop,
-    item.episodeImage,
-    item.poster,
-  ].filter((value): value is string => Boolean(value))))
+  const artwork = focusArtwork(item, episodeCard)
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
   const image = artwork[artworkIndex]
-  const baseImage = item.poster || image
-  const [loadedArtwork, setLoadedArtwork] = useState('')
   const context = homeCardContext(item, episodeCard)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
 
   useEffect(() => {
     setArtworkIndex(0)
-    setLoadedArtwork('')
   }, [artworkKey])
 
   return (
@@ -353,19 +366,16 @@ const HomeFocusCard = memo(function HomeFocusCard({
     >
       <span class="home-focus-frame">
         <span class="home-focus-media" key={`${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
-          {baseImage && <img class="home-focus-base-art" src={baseImage} alt="" width={812} height={457} decoding="async" />}
           {image
             ? <img
-                class={`home-focus-art${loadedArtwork === image ? ' is-ready' : ''}`}
+                class="home-focus-art"
                 key={image}
                 src={image}
                 alt=""
                 width={812}
                 height={457}
                 decoding="async"
-                onLoad={() => setLoadedArtwork(image)}
                 onError={() => {
-                  setLoadedArtwork('')
                   setArtworkIndex((current) => current + 1)
                 }}
               />
@@ -459,6 +469,16 @@ export function HomeScreen({
     return () => window.cancelAnimationFrame(frame)
   }, [carouselLayout, focus, snapshot.rows])
 
+  useEffect(() => {
+    if (focus.zone !== 'row') return
+    const row = snapshot.rows[focus.row]
+    if (!row) return
+    const episodeCard = row.kind === 'continue'
+    for (let index = Math.max(0, focus.index - 1); index <= Math.min(row.items.length - 1, focus.index + 2); index += 1) {
+      preloadFocusArtwork(row.items[index], episodeCard)
+    }
+  }, [focus, snapshot.rows])
+
   return (
     <main class={`home-screen mode-${carouselLayout ? 'carousel' : 'spotlight'}${focus.zone === 'row' ? ' is-browsing' : ''}`}>
       <NavRail
@@ -510,7 +530,7 @@ export function HomeScreen({
         aria-hidden={focus.zone === 'row' && !carouselLayout}
       >
         <article class="hero-feature-card">
-        <img class="hero-brand" src={wordmark} alt="Izumi" />
+        <img class="hero-brand" src={wordmark} alt="izumi" />
         <HeroArtwork source={heroImage} />
         {carouselLayout && heroTrailerSource && <HeroTrailer source={heroTrailerSource} title={hero.title} />}
         <div class="hero-shade" />

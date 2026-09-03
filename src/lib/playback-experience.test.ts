@@ -4,10 +4,12 @@ import {
   activeSkipSegment,
   defaultPlaybackExperienceSettings,
   nextEpisodeFor,
+  playerSeekTarget,
   postPlayRecommendations,
   readPlaybackExperienceSettings,
   shouldOfferNextEpisode,
   skipSegmentLabel,
+  seekHoldMultiplier,
   writePlaybackExperienceSettings,
 } from './playback-experience'
 
@@ -55,6 +57,16 @@ describe('playback experience', () => {
     expect(shouldOfferNextEpisode(1_200, 1_400, segments)).toBe(true)
     expect(shouldOfferNextEpisode(979, 1_000, [])).toBe(false)
     expect(shouldOfferNextEpisode(980, 1_000, [])).toBe(true)
+  })
+
+  it('accelerates held seeking without leaving the playable timeline', () => {
+    expect(seekHoldMultiplier(400)).toBe(2)
+    expect(seekHoldMultiplier(1_399)).toBe(2)
+    expect(seekHoldMultiplier(1_400)).toBe(3)
+    expect(playerSeekTarget(100, 1_000, 1, 2)).toBe(120)
+    expect(playerSeekTarget(100, 1_000, -1, 3)).toBe(70)
+    expect(playerSeekTarget(995, 1_000, 1, 3)).toBe(1_000)
+    expect(playerSeekTarget(5, 1_000, -1, 2)).toBe(0)
   })
 
   it('offers each active skip segment once and labels it clearly', () => {

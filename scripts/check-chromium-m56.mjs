@@ -245,7 +245,7 @@ async function main() {
         await writeFile(output, source)
       }
     }
-    const codes = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 }
+    const codes = { Enter: 13, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, MediaFastForward: 417, MediaRewind: 412 }
     const press = async (key) => {
       const code = codes[key]
       await cdp.call('Input.dispatchKeyEvent', {
@@ -393,7 +393,7 @@ async function main() {
     assert(verticalDestination.title[0] >= verticalDestination.frame[1] && verticalDestination.title[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title is clipped outside its frame: ${verticalDestination.title}.`)
     assert(verticalDestination.titleAnimation === 'home-focus-copy-change', `Focused title uses a moving animation: ${verticalDestination.titleAnimation}.`)
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
-    await waitFor("document.querySelector('.home-focus-art.is-ready')")
+    await waitFor("document.querySelector('.home-focus-art')")
     await capture('m56-focused-rail.png')
     for (let index = 3; index < 8; index += 1) await press('ArrowRight')
     const horizontal = await evaluate(`(() => {
@@ -411,6 +411,7 @@ async function main() {
         focusAnimation: getComputedStyle(focused.querySelector('.home-focus-frame')).animationDuration,
         mediaAnimation: getComputedStyle(focused.querySelector('.home-focus-media')).animationDuration,
         artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
+        artworkLayers: focused.querySelectorAll('.home-focus-media > img').length,
         stripTransform: getComputedStyle(strip).transform,
         broken: Array.from(document.images).filter(function (image) { return image.complete && !image.naturalWidth; }).length
       };
@@ -422,7 +423,7 @@ async function main() {
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
     assert(horizontal.focusAnimation === '0s', `Focus outline animation is enabled: ${horizontal.focusAnimation}.`)
     assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
-    assert(horizontal.artworkTransition !== '0s', `Focused artwork transition is disabled: ${horizontal.artworkTransition}.`)
+    assert(horizontal.artworkTransition === '0s' && horizontal.artworkLayers === 1, `Focused tile crossfades multiple photos: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
 
@@ -503,6 +504,18 @@ async function main() {
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=search` })
     await waitFor("document.readyState === 'complete' && document.querySelector('[data-search-key=\"b\"]')")
     await waitFor("!document.getElementById('startup-splash')")
+    const searchFieldSpacing = await evaluate(`(() => {
+      var field = document.querySelector('.search-query');
+      var icon = field.querySelector('svg').getBoundingClientRect();
+      var input = field.querySelector('input').getBoundingClientRect();
+      return Math.round(input.left - icon.right);
+    })()`)
+    assert(searchFieldSpacing >= 12, `Search icon is only ${searchFieldSpacing}px from its text.`)
+    await evaluate("document.querySelector('[data-search-key=\"a\"]').focus()")
+    await press('ArrowLeft')
+    await waitFor("document.querySelector('[data-search-key=\"voice\"]').classList.contains('is-focused')")
+    await press('ArrowRight')
+    await waitFor("document.querySelector('.search-result-grid .browse-card.is-focused')")
     await evaluate("document.querySelector('[data-search-key=\"b\"]').focus()")
     await waitFor("document.querySelector('[data-search-key=\"b\"]').classList.contains('is-focused')")
     await press('ArrowUp')
@@ -524,6 +537,15 @@ async function main() {
       }
     }
     await capture('m56-search-keyboard.png')
+    await evaluate("document.querySelector('[data-focus-id=\"nav-0\"]').focus()")
+    await press('Enter')
+    const homeSkeleton = await waitFor(`(() => {
+      var skeleton = document.querySelector('.navigation-skeleton.skeleton-home');
+      if (!skeleton) return null;
+      var block = skeleton.querySelector('.skeleton-block');
+      return { blocks: skeleton.querySelectorAll('.skeleton-block').length, animation: getComputedStyle(block).animationName };
+    })()`)
+    assert(homeSkeleton.blocks >= 12 && homeSkeleton.animation.includes('skeleton-pulse'), `Home skeleton does not match or animate on M56: ${JSON.stringify(homeSkeleton)}.`)
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=buffering` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.player-buffering-status')")
@@ -542,6 +564,20 @@ async function main() {
     await press('ArrowRight')
     const scrubbedPosition = await evaluate("Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow'))")
     assert(scrubbedPosition > bufferingPlayer.position, `Buffering timeline did not seek: ${bufferingPlayer.position} -> ${scrubbedPosition}.`)
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'rawKeyDown', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
+    })
+    await wait(1_650)
+    const heldSeek = await evaluate(`(() => ({
+      position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow')),
+      multiplier: document.querySelector('.player-seek-feedback strong').textContent,
+      chevrons: document.querySelectorAll('.player-seek-chevrons svg').length
+    }))()`)
+    await cdp.call('Input.dispatchKeyEvent', {
+      type: 'keyUp', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
+    })
+    assert(heldSeek.position >= scrubbedPosition + 70, `Held fast-forward did not accumulate: ${scrubbedPosition} -> ${heldSeek.position}.`)
+    assert(heldSeek.multiplier === '3×' && heldSeek.chevrons === 3, `Held fast-forward feedback is incomplete: ${JSON.stringify(heldSeek)}.`)
     await press('ArrowDown')
     await waitFor("document.querySelector('.player-actions > button.is-focused')")
     await capture('m56-player-buffering.png')
@@ -553,11 +589,13 @@ async function main() {
       next: document.querySelector('.next-episode-card').textContent,
       skip: document.querySelector('.player-skip').textContent,
       markers: document.querySelectorAll('.player-segment-marker').length,
+      nextTop: Math.round(document.querySelector('.next-episode-card').getBoundingClientRect().top),
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
     assert(playbackPrompts.next.includes('S1 E13') && playbackPrompts.next.includes('Play next episode'), `Next episode prompt is incomplete: ${playbackPrompts.next}.`)
     assert(playbackPrompts.skip.toLowerCase().includes('skip'), `Skip prompt is incomplete: ${playbackPrompts.skip}.`)
     assert(playbackPrompts.markers === 2, `Expected two skip markers, received ${playbackPrompts.markers}.`)
+    assert(playbackPrompts.nextTop < 160, `Up-next card did not enter at its stable top position: ${playbackPrompts.nextTop}.`)
     assert(JSON.stringify(playbackPrompts.body) === '[1920,1080]', `Player prompts overflowed the TV viewport: ${playbackPrompts.body}.`)
     await capture('m56-player-prompts.png')
 
@@ -593,7 +631,7 @@ async function main() {
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write('Chromium 56 check passed: Home geometry, looping rails, straight keyboard navigation, trailer fallback, player prompts, and no application runtime errors.\n')
+    process.stdout.write('Chromium 56 check passed: Home geometry, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()

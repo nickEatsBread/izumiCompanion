@@ -35,9 +35,12 @@ import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './l
 import {
   activeSkipSegment,
   nextEpisodeFor,
+  PLAYER_SEEK_STEP_SECONDS,
+  playerSeekTarget,
   postPlayRecommendations,
   readPlaybackExperienceSettings,
   shouldOfferNextEpisode,
+  seekHoldMultiplier,
   skipSegmentKey,
   writePlaybackExperienceSettings,
   type PlaybackExperienceSettings,
@@ -73,7 +76,7 @@ interface PlayerView {
 const fallbackMedia: CompanionMedia = {
   ref: { provider: 'izumi', id: 'empty', type: 'anime' },
   title: 'Your anime, on the big screen',
-  description: 'Pair Izumi to fill this screen with your own library and progress.',
+  description: 'Pair izumi to fill this screen with your own library and progress.',
 }
 
 const emptySnapshot: CompanionHomeSnapshot = {
@@ -206,6 +209,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [playerControlFocus, setPlayerControlFocus] = useState(0)
   const [playerToolsActive, setPlayerToolsActive] = useState(false)
   const [playerControlsVisible, setPlayerControlsVisible] = useState(true)
+  const [seekFeedback, setSeekFeedback] = useState<{ direction: 'backward' | 'forward'; multiplier: number; seconds: number }>()
   const previewScenario = previewParameters.get('scenario')
   const [playbackMedia, setPlaybackMedia] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
   const [skipSegments, setSkipSegments] = useState<CompanionSkipSegment[]>(previewScenario === 'next' ? [
@@ -279,6 +283,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const searchQueryRef = useRef(searchQuery)
   const searchKeyboardColumnRef = useRef(0)
   const playerControlsTimerRef = useRef<number>()
+  const seekFeedbackTimerRef = useRef<number>()
+  const seekHoldDelayRef = useRef<number>()
+  const seekHoldIntervalRef = useRef<number>()
+  const seekHoldActionRef = useRef<'rewind' | 'fastForward'>()
+  const seekHoldStartedRef = useRef(0)
+  const pendingSeekRef = useRef<number>()
+  const seekInFlightRef = useRef(false)
   const catalogRequestRef = useRef<{ screen: string; label: string; timer: number; previousIndex: number }>()
   const externalSubtitlesRef = useRef(new ExternalSubtitleController())
   const activeSubtitleRef = useRef(activeSubtitle)
@@ -299,6 +310,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const focusRef = useRef<FocusLocation>(focus)
   const appliedFocusRef = useRef<{ focus: FocusLocation; screen: ScreenName }>()
   const remoteHandlerRef = useRef<(action: RemoteAction) => void>()
+  const seekHoldKeyDownRef = useRef<(action: RemoteAction, repeated: boolean) => boolean>()
+  const seekHoldKeyUpRef = useRef<(action: RemoteAction) => void>()
   const completedPlaybackRef = useRef<() => void>()
   const playbackTimeRef = useRef<(position: number, duration: number) => void>()
   const playNextEpisodeRef = useRef<() => void>()
@@ -964,7 +977,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setTrailerOpen(true)
     if (showPreviewTools) {
       const params = new URLSearchParams({
-        autoplay: '1', controls: '0', enablejsapi: '1', playsinline: '1', rel: '0', cc_load_policy: '1', cc_lang_pref: 'en',
+        autoplay: '1', controls: '0', disablekb: '1', enablejsapi: '1', playsinline: '1', rel: '0',
+        cc_load_policy: '1', cc_lang_pref: 'en', hl: 'en', iv_load_policy: '3',
       })
       if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
       const source = { url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
@@ -1019,7 +1033,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const timer = window.setTimeout(() => {
       if (showPreviewTools) {
         const params = new URLSearchParams({
-          autoplay: '1', controls: '0', enablejsapi: '1', playsinline: '1', rel: '0', mute: '1', modestbranding: '1',
+          autoplay: '1', controls: '0', disablekb: '1', enablejsapi: '1', playsinline: '1', rel: '0',
+          mute: '1', hl: 'en', iv_load_policy: '3',
         })
         if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
         const source = { mediaKey: focusedHomeMediaKey, url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
@@ -1040,7 +1055,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }).catch(() => {
         // Artwork remains visible when a provider or paired device cannot prepare the trailer.
       })
-    }, 900)
+    }, 1_500)
 
     return () => window.clearTimeout(timer)
   }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, screen, showPreviewTools])
@@ -1288,16 +1303,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       currentSourceLabelRef.current = selectedSource?.label ?? result.sources.find((source) => source.id === sourceId)?.label ?? ''
       await startAvPlay(request)
     } else if (result === 'open-client') {
-      setErrorMessage('Open Izumi on your linked device, then try again.')
+      setErrorMessage('Open izumi on your linked device, then try again.')
       setScreen('error')
     } else if (result === 'queued') {
-      setErrorMessage('The request is waiting in your private Worker, but phone notifications are not enrolled. Open Izumi to continue.')
+      setErrorMessage('The request is waiting in your private Worker, but phone notifications are not enrolled. Open izumi to continue.')
       setScreen('error')
     } else if (result === 'worker-error') {
-      setErrorMessage('Your private Izumi Worker could not be reached. Check its deployment and try again.')
+      setErrorMessage('Your private izumi Worker could not be reached. Check its deployment and try again.')
       setScreen('error')
     } else if (result === 'no-source') {
-      setErrorMessage('Your private Worker found no TV-playable source. In Izumi, enable “Cloudflare + connected Izumi device” to allow debrid, P2P, or device-only sources.')
+      setErrorMessage('Your private Worker found no TV-playable source. In izumi, enable “Cloudflare + connected izumi device” to allow debrid, P2P, or device-only sources.')
       setScreen('error')
     } else if (result === 'notified') {
       simulationTimerRef.current = window.setTimeout(() => {
@@ -1405,12 +1420,80 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
   }
 
-  const seekFromRemote = (delta: number) => {
-    const view = playerRef.current
-    const position = Math.max(0, Math.min(view.duration || Number.MAX_SAFE_INTEGER, view.position + delta))
-    updatePlayer({ position })
-    if (avplayRef.current.available) void avplayRef.current.seek(position).then(() => publishStatus(true))
+  const showSeekFeedback = (direction: -1 | 1, multiplier: number) => {
+    if (seekFeedbackTimerRef.current) window.clearTimeout(seekFeedbackTimerRef.current)
+    setSeekFeedback({
+      direction: direction > 0 ? 'forward' : 'backward',
+      multiplier,
+      seconds: PLAYER_SEEK_STEP_SECONDS * multiplier,
+    })
+    seekFeedbackTimerRef.current = window.setTimeout(() => setSeekFeedback(undefined), 700)
   }
+
+  /** AVPlay treats each seek as asynchronous. Keep the UI immediate, but permit only one hardware
+   * seek at a time and collapse every repeat event into the newest requested position. */
+  const flushPendingSeek = (): void => {
+    const target = pendingSeekRef.current
+    if (target === undefined || seekInFlightRef.current || !avplayRef.current.available) return
+    seekInFlightRef.current = true
+    const finish = () => {
+      if (pendingSeekRef.current === target) pendingSeekRef.current = undefined
+      seekInFlightRef.current = false
+      if (pendingSeekRef.current !== undefined) flushPendingSeek()
+    }
+    void avplayRef.current.seek(target).then(() => {
+      publishStatus(true)
+      finish()
+    }, finish)
+  }
+
+  const seekFromRemote = (direction: -1 | 1, multiplier = 1) => {
+    const view = playerRef.current
+    const position = playerSeekTarget(pendingSeekRef.current ?? view.position, view.duration, direction, multiplier)
+    pendingSeekRef.current = position
+    updatePlayer({ position })
+    setPlayerToolsActive(false)
+    setPlayerPromptFocus('timeline')
+    revealPlayerControls(true)
+    showSeekFeedback(direction, multiplier)
+    flushPendingSeek()
+  }
+
+  const stopSeekHold = (action?: RemoteAction) => {
+    if (action && action !== seekHoldActionRef.current) return
+    if (seekHoldDelayRef.current) window.clearTimeout(seekHoldDelayRef.current)
+    if (seekHoldIntervalRef.current) window.clearInterval(seekHoldIntervalRef.current)
+    seekHoldDelayRef.current = undefined
+    seekHoldIntervalRef.current = undefined
+    seekHoldActionRef.current = undefined
+    if (seekFeedbackTimerRef.current) window.clearTimeout(seekFeedbackTimerRef.current)
+    seekFeedbackTimerRef.current = window.setTimeout(() => setSeekFeedback(undefined), 450)
+  }
+
+  seekHoldKeyDownRef.current = (action, repeated) => {
+    if (action !== 'rewind' && action !== 'fastForward') return false
+    if (screen !== 'player' || trailerOpen || stillWatching || Boolean(playerMenu)) {
+      stopSeekHold()
+      return false
+    }
+    if (repeated && seekHoldActionRef.current === action) return true
+    if (repeated) return false
+    stopSeekHold()
+    seekHoldActionRef.current = action
+    seekHoldStartedRef.current = tvNow()
+    seekHoldDelayRef.current = window.setTimeout(() => {
+      const pulse = () => {
+        const active = seekHoldActionRef.current
+        if (!active) return
+        const multiplier = seekHoldMultiplier(tvNow() - seekHoldStartedRef.current)
+        seekFromRemote(active === 'fastForward' ? 1 : -1, multiplier)
+      }
+      pulse()
+      seekHoldIntervalRef.current = window.setInterval(pulse, 360)
+    }, 360)
+    return false
+  }
+  seekHoldKeyUpRef.current = stopSeekHold
 
   const activatePlayerControl = (index: number) => {
     setPlayerControlFocus(index)
@@ -1444,10 +1527,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       await startAvPlay({ ...result.request, positionSeconds: playerRef.current.position })
     } else if (result === 'local') showNotice('Finding linked-device sources…')
     else if (result === 'notified') showNotice('A source-picker notification was sent to your linked phone.')
-    else if (result === 'queued') showNotice('Open Izumi on your linked phone to choose a source.')
-    else if (result === 'worker-error') showNotice('Your private Izumi Worker could not send the source request.')
+    else if (result === 'queued') showNotice('Open izumi on your linked phone to choose a source.')
+    else if (result === 'worker-error') showNotice('Your private izumi Worker could not send the source request.')
     else if (result === 'no-source') showNotice('Linked-device sources are disabled in Cloudflare-only mode.')
-    else showNotice('Open Izumi on your linked device to choose a source.')
+    else showNotice('Open izumi on your linked device to choose a source.')
   }
 
   const selectLinkedDeviceSource = (choice: LinkedDeviceSourceChoice) => {
@@ -1717,6 +1800,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (!currentKey) return changeSearchKeyFocus(0)
       if (action === 'left') {
         const next = adjacentSearchKey(focus.index, 'left')
+        if (next === undefined && currentKey.value === 'a') return changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)
         return next === undefined
           ? changeFocus({ zone: 'nav', index: activeNav })
           : changeSearchKeyFocus(next)
@@ -1755,6 +1839,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (focus.zone === 'search-input') {
       if (action === 'down' && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
+      if (action === 'right' && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
       if (action === 'left' || action === 'back') return changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)
       return
     }
@@ -1982,14 +2067,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         ? setPlayerControlFocus((index) => Math.max(0, index - 1))
         : playerPromptFocus === 'next' && visibleSkipSegment
           ? setPlayerPromptFocus('skip')
-          : seekFromRemote(-10)
+          : seekFromRemote(-1)
       else if (action === 'right') playerToolsActive
         ? setPlayerControlFocus((index) => Math.min(3, index + 1))
         : playerPromptFocus === 'skip' && nextEpisodeVisible
           ? setPlayerPromptFocus('next')
-          : seekFromRemote(10)
-      else if (action === 'rewind') seekFromRemote(-10)
-      else if (action === 'fastForward') seekFromRemote(10)
+          : seekFromRemote(1)
+      else if (action === 'rewind') seekFromRemote(-1)
+      else if (action === 'fastForward') seekFromRemote(1)
       else if (action === 'select') {
         if (playerToolsActive) activatePlayerControl(playerControlFocus)
         else if (playerPromptFocus === 'transport') togglePlayback()
@@ -2047,10 +2132,20 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (!action) return
       event.preventDefault()
       event.stopPropagation()
-      remoteHandlerRef.current?.(action)
+      const holdConsumed = seekHoldKeyDownRef.current?.(action, event.repeat) ?? false
+      if (!holdConsumed) remoteHandlerRef.current?.(action)
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      const action = remoteAction(event)
+      if (action) seekHoldKeyUpRef.current?.(action)
     }
     window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
+      stopSeekHold()
+    }
   }, [])
 
   const previewScreen = (next: ScreenName) => {
@@ -2192,7 +2287,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         <CatalogScreen
           mode={name}
           title={name === 'trending' ? 'Browse' : name === 'movies' ? 'Movies' : 'My List'}
-          description={name === 'trending' ? 'Trending titles, series and films from your active Izumi catalogue.' : name === 'movies' ? 'Feature-length stories for tonight.' : 'Saved and in-progress titles from your Izumi library.'}
+          description={name === 'trending' ? 'Trending titles, series and films from your active izumi catalogue.' : name === 'movies' ? 'Feature-length stories for tonight.' : 'Saved and in-progress titles from your izumi library.'}
           items={browseItemsFor(name)}
           selected={selected}
           focus={focus}
@@ -2259,6 +2354,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           previewBackdrop={showPreviewTools ? selected.backdrop || selected.poster : undefined}
           controlsVisible={playerControlsVisible}
           bufferingProgress={loadingProgress}
+          seekFeedback={seekFeedback}
           transportFocused={!playerToolsActive && playerPromptFocus === 'transport'}
           timelineFocused={!playerToolsActive && playerPromptFocus === 'timeline'}
           skipSegments={skipSegments}

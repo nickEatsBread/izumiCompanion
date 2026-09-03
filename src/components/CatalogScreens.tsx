@@ -32,6 +32,7 @@ export type TrailerPlaybackState = 'buffering' | 'playing' | 'paused' | 'ended' 
 
 /** YouTube's iframe API only starts emitting state events after this exact widget handshake. */
 export const TRAILER_LISTENING_MESSAGE = { event: 'listening', id: 1, channel: 'widget' } as const
+const YOUTUBE_PLAYER_ORIGINS = ['https://www.youtube-nocookie.com', 'https://www.youtube.com']
 
 export function trailerPlaybackState(value: unknown): TrailerPlaybackState | undefined {
   const state = Number(value)
@@ -125,6 +126,7 @@ function TrailerPlayer({
     const onMessage = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return
       if (bridgeOrigin && event.origin !== bridgeOrigin) return
+      if (!bridgeOrigin && !YOUTUBE_PLAYER_ORIGINS.includes(event.origin)) return
       let raw = event.data
       if (bridgeOrigin) {
         if (!raw || raw.type !== 'izumi-youtube-event' || typeof raw.payload !== 'string') return
@@ -134,7 +136,9 @@ function TrailerPlayer({
       try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw }
       catch { return }
       if (!payload || typeof payload !== 'object') return
-      if (payload.event === 'onReady') {
+      const info = payload.info && typeof payload.info === 'object' ? payload.info as Record<string, unknown> : undefined
+      const firstReadyEvent = payload.event === 'onReady' || payload.event === 'initialDelivery' || payload.event === 'infoDelivery'
+      if (firstReadyEvent && !readyRef.current) {
         readyRef.current = true
         requestEnglishCaptions()
         send('playVideo')
@@ -145,8 +149,9 @@ function TrailerPlayer({
       }
       if (payload.event === 'onError') applyPlayback('error')
       if (payload.event === 'onAutoplayBlocked') applyPlayback('paused')
-      if (payload.event === 'infoDelivery' && payload.info && typeof payload.info === 'object') {
-        const info = payload.info as Record<string, unknown>
+      if (payload.event === 'initialDelivery' && info?.videoData && typeof info.videoData === 'object'
+        && (info.videoData as Record<string, unknown>).isPlayable === false) applyPlayback('error')
+      if (payload.event === 'infoDelivery' && info) {
         const nextPosition = Number(info.currentTime)
         const nextDuration = Number(info.duration)
         const nextState = trailerPlaybackState(info.playerState)
@@ -162,8 +167,12 @@ function TrailerPlayer({
       }
     }
     window.addEventListener('message', onMessage)
+    post(TRAILER_LISTENING_MESSAGE)
     const connect = window.setInterval(() => {
-      if (!readyRef.current) post(TRAILER_LISTENING_MESSAGE)
+      if (readyRef.current) return
+      post(TRAILER_LISTENING_MESSAGE)
+    }, 150)
+    const poll = window.setInterval(() => {
       send('getCurrentTime')
       send('getDuration')
       send('getPlayerState')
@@ -175,6 +184,7 @@ function TrailerPlayer({
     return () => {
       window.removeEventListener('message', onMessage)
       window.clearInterval(connect)
+      window.clearInterval(poll)
       window.clearTimeout(captions)
       window.clearTimeout(watchdog)
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current)
@@ -219,7 +229,8 @@ function TrailerPlayer({
         ref={iframeRef}
         src={source}
         title={`${title} trailer`}
-        allow="autoplay; encrypted-media"
+        allow="autoplay; encrypted-media; fullscreen"
+        allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
         tabIndex={-1}
         onLoad={() => {
@@ -850,7 +861,7 @@ export function SearchScreen({
             </label>
           </header>
           <div class="search-result-heading">
-            <h2>{query ? `Titles related to “${query}”` : 'Popular on Izumi'}</h2>
+            <h2>{query ? `Titles related to “${query}”` : 'Popular on izumi'}</h2>
             <span>{results.length} {results.length === 1 ? 'title' : 'titles'}</span>
           </div>
           {loading ? (
@@ -983,10 +994,10 @@ export function SettingsScreen({
   const settingsOptions = [
     { title: 'Cinematic home carousel', detail: 'Keep featured artwork above the rows instead of expanding each focused card.', icon: Tv, enabled: playbackSettings.homeCarouselLayout },
     { title: 'Autoplay next episode', detail: 'Show a short countdown, then continue the series.', icon: Play, enabled: playbackSettings.autoplayNextEpisode },
-    { title: 'Automatically skip segments', detail: 'Use AniSkip, IntroDB and chapter timing supplied by Izumi.', icon: Captions, enabled: playbackSettings.autoSkipSegments },
+    { title: 'Automatically skip segments', detail: 'Use AniSkip, IntroDB and chapter timing supplied by izumi.', icon: Captions, enabled: playbackSettings.autoSkipSegments },
     { title: 'Still watching check', detail: 'Pause autoplay after three episodes until you confirm.', icon: ShieldCheck, enabled: playbackSettings.stillWatchingEnabled },
     { title: 'Keep the current source', detail: 'Prefer the same provider when the next episode is available.', icon: History, enabled: playbackSettings.preferBingeSource },
-    { title: 'Unpair this TV', detail: 'Disconnect this TV from your Izumi sync group.', icon: Link2Off },
+    { title: 'Unpair this TV', detail: 'Disconnect this TV from your izumi sync group.', icon: Link2Off },
     { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
   ]
   return (
@@ -999,7 +1010,7 @@ export function SettingsScreen({
       <section class="settings-panel">
         <div class="device-summary">
           <div class={`device-status-dot${connected ? ' online' : ''}`} />
-          <div><p>{paired ? 'Paired with Izumi' : 'Not paired'}</p><span>{connected ? 'Receiver online' : 'Waiting for a nearby device'} · TV {deviceId?.slice(-6).toUpperCase() || 'PREVIEW'}</span></div>
+          <div><p>{paired ? 'Paired with izumi' : 'Not paired'}</p><span>{connected ? 'Receiver online' : 'Waiting for a nearby device'} · TV {deviceId?.slice(-6).toUpperCase() || 'PREVIEW'}</span></div>
         </div>
         <div class="settings-options">
           {settingsOptions.map(({ title, detail, icon: Icon, enabled }, index) => (
@@ -1025,7 +1036,7 @@ export function SettingsScreen({
           <section class="settings-confirm" role="dialog" aria-modal="true" aria-label={confirmTitle}>
             <h2>{confirmTitle}</h2>
             <p>{confirmation === 'unpair'
-              ? 'You will need to scan a new pairing code before this TV can access your Izumi home again.'
+              ? 'You will need to scan a new pairing code before this TV can access your izumi home again.'
               : 'This removes all companion data stored on the TV and creates a new TV identity.'}</p>
             <div>
               {['Cancel', confirmation === 'unpair' ? 'Unpair' : 'Reset'].map((label, index) => (

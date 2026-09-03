@@ -41,7 +41,7 @@ function renderStartupFailure(error: unknown): void {
   screen.style.cssText = 'width:100%;height:100%;padding:9vh 8vw;background:#07111e;color:#f6f6f6;font-family:Arial,sans-serif;box-sizing:border-box;'
   const label = document.createElement('p')
   label.style.cssText = 'margin:0 0 18px;color:#f04b5f;font-size:20px;font-weight:700;letter-spacing:3px;'
-  label.textContent = 'IZUMI STARTUP ERROR'
+  label.textContent = 'izumi startup error'
   const heading = document.createElement('h1')
   heading.style.cssText = 'margin:0 0 22px;font-size:54px;line-height:1.05;'
   heading.textContent = 'The TV client could not start'

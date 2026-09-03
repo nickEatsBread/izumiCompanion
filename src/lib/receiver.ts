@@ -342,7 +342,7 @@ function normalizeLoad(value: unknown): CastLoadRequest | undefined {
   return {
     sessionId: input.sessionId,
     url: input.url,
-    title: typeof input.title === 'string' && input.title ? input.title.slice(0, 240) : 'Izumi',
+    title: typeof input.title === 'string' && input.title ? input.title.slice(0, 240) : 'izumi',
     contentRating: typeof input.contentRating === 'string' ? input.contentRating.slice(0, 32) : undefined,
     contentType: typeof input.contentType === 'string' ? input.contentType.slice(0, 120) : undefined,
     positionSeconds: Math.max(0, Math.min(Number(input.positionSeconds) || 0, 604_800)),

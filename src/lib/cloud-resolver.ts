@@ -152,7 +152,7 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
     request: {
       sessionId: `cloud-${requestId.slice(0, 80)}-${index + 1}`,
       url: candidate.url,
-      title: boundedText(media.title, 240) ?? 'Izumi',
+      title: boundedText(media.title, 240) ?? 'izumi',
       contentRating: boundedText(media.contentRating, 32),
       contentType: candidate.contentType,
       positionSeconds: resumePosition(media),

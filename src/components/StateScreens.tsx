@@ -3,6 +3,8 @@ import {
   ArrowRight,
   Captions,
   Check,
+  ChevronLeft,
+  ChevronRight,
   LogOut,
   House,
   MonitorUp,
@@ -227,6 +229,7 @@ export function PlayerScreen({
   previewBackdrop,
   controlsVisible,
   bufferingProgress,
+  seekFeedback,
   transportFocused,
   timelineFocused,
   skipSegments,
@@ -277,6 +280,7 @@ export function PlayerScreen({
   previewBackdrop?: string
   controlsVisible: boolean
   bufferingProgress: number
+  seekFeedback?: { direction: 'backward' | 'forward'; multiplier: number; seconds: number }
   transportFocused: boolean
   timelineFocused: boolean
   skipSegments: CompanionSkipSegment[]
@@ -343,6 +347,17 @@ export function PlayerScreen({
             <strong>Buffering</strong>
             <small>{bufferingProgress > 0 && bufferingProgress < 100 ? `${Math.round(bufferingProgress)}%` : 'Loading video'}</small>
           </span>
+        </div>
+      )}
+      {seekFeedback && (
+        <div class={`player-seek-feedback is-${seekFeedback.direction}`} role="status" aria-live="polite">
+          <span class="player-seek-chevrons" aria-hidden="true">
+            {[0, 1, 2].map((index) => seekFeedback.direction === 'forward'
+              ? <ChevronRight size={42} strokeWidth={3.2} key={index} />
+              : <ChevronLeft size={42} strokeWidth={3.2} key={index} />)}
+          </span>
+          <strong>{seekFeedback.multiplier}×</strong>
+          <small>{seekFeedback.direction === 'forward' ? '+' : '−'}{seekFeedback.seconds} seconds</small>
         </div>
       )}
       {subtitleText && !menu && (
@@ -536,7 +551,7 @@ export function PlayerScreen({
           <div class="still-watching-panel">
             <p class="state-kicker">AUTOPLAY PAUSED</p>
             <h2>Still watching?</h2>
-            <p>Izumi will wait here until you’re ready for the next episode.</p>
+            <p>izumi will wait here until you’re ready for the next episode.</p>
             <div>
               <button type="button" class={stillWatchingFocus === 0 ? 'is-focused' : ''} onClick={() => onStillWatching(true)}><Play size={20} /><span>Keep watching</span></button>
               <button type="button" class={stillWatchingFocus === 1 ? 'is-focused' : ''} onClick={() => onStillWatching(false)}><House size={20} /><span>Exit to home</span></button>
