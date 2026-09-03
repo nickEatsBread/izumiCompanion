@@ -270,6 +270,26 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
+  it('requests audible trailer previews unless muted playback is explicitly requested', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+
+    const pending = receiver.requestTrailer('M7lc1UVf-VE', 'Audible preview')
+    const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.trailer')?.[1] as { requestId: string; muted: boolean }
+    expect(sent.muted).toBe(false)
+    channel.emit('izumi.companion.trailer-result', {
+      credential,
+      requestId: sent.requestId,
+      url: 'http://192.168.1.20:44123/token/youtube?id=M7lc1UVf-VE&muted=0',
+    })
+    await pending
+    receiver.disconnect()
+  })
+
   it('loads AniList episode details from the private Worker when the paired client is unavailable', async () => {
     FakeXmlHttpRequest.responder = () => ({
       status: 200,

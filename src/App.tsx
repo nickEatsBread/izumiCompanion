@@ -1098,7 +1098,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (showPreviewTools) {
         const params = new URLSearchParams({
           autoplay: '1', controls: '0', disablekb: '1', enablejsapi: '1', playsinline: '1', rel: '0',
-          mute: '1', hl: 'en', iv_load_policy: '3',
+          mute: '0', hl: 'en', iv_load_policy: '3',
         })
         if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
         const source = { mediaKey: focusedHomeMediaKey, url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
@@ -1108,7 +1108,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       const receiver = receiverRef.current
       if (!receiver) return
-      void receiver.requestTrailer(videoId, `${focusedHomeMedia.title} home preview`, true).then((result) => {
+      void receiver.requestTrailer(videoId, `${focusedHomeMedia.title} home preview`, false).then((result) => {
         if (generation !== homeTrailerGenerationRef.current) {
           receiver.releaseTrailer(result.requestId)
           return

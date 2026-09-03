@@ -102,6 +102,15 @@ export function wrappedHeroIndex(current: number, direction: -1 | 1, length: num
   return (Math.max(0, current) + direction + length) % length
 }
 
+/** Render a cyclic slice of a shelf so wrapping its focus never exposes a finite-strip seam. */
+export function cyclicRailIndexes(length: number, start: number, count: number): number[] {
+  const safeLength = Math.max(0, Math.floor(length))
+  const safeCount = Math.min(safeLength, Math.max(0, Math.floor(count)))
+  if (!safeLength || !safeCount) return []
+  const safeStart = ((Math.floor(start) % safeLength) + safeLength) % safeLength
+  return Array.from({ length: safeCount }, (_, offset) => (safeStart + offset) % safeLength)
+}
+
 /** Each rail owns its horizontal position. Entering an unseen rail starts at its first item
  * instead of copying a potentially very large index from the rail above it. */
 export function rememberedHomeRowIndex(

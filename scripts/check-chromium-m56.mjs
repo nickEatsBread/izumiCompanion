@@ -452,12 +452,14 @@ async function main() {
         fallbackWeight: focused.querySelector('.home-focus-title') ? getComputedStyle(focused.querySelector('.home-focus-title')).fontWeight : '',
         artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
         artworkLayers: focused.querySelectorAll('.home-focus-media > img').length,
+        cyclic: strip.getAttribute('data-cyclic'),
+        spacers: strip.querySelectorAll('.media-card-spacer').length,
         stripTransform: getComputedStyle(strip).transform,
         broken: Array.from(document.images).filter(function (image) { return image.complete && !image.naturalWidth; }).length
       };
     })()`)
     assert(horizontal.index === 8, `Expected rail index 8, received ${horizontal.index}.`)
-    assert(horizontal.scrollLeft > 0, 'Horizontal navigation did not scroll its local viewport.')
+    assert(horizontal.scrollLeft === 0 && horizontal.cyclic === 'true' && horizontal.spacers === 0, `Horizontal navigation still exposes a finite rail seam: ${JSON.stringify(horizontal)}.`)
     assert(horizontal.width === 960 && horizontal.visualWidth === 960, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
     assert(JSON.stringify(horizontal.posterWidths) === '[320]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
@@ -472,8 +474,22 @@ async function main() {
 
     await press('ArrowRight')
     await press('ArrowRight')
-    const wrappedRailIndex = await evaluate("Number(document.querySelector('.home-focus-card.is-focused').getAttribute('data-media-index'))")
-    assert(wrappedRailIndex === 0, `Right navigation did not loop to the start of the rail: ${wrappedRailIndex}.`)
+    await wait(220)
+    const wrappedRail = await evaluate(`(() => {
+      var focused = document.querySelector('.home-focus-card.is-focused');
+      var strip = focused.closest('.media-row').querySelector('.media-strip');
+      return {
+        index: Number(focused.getAttribute('data-media-index')),
+        motion: focused.className,
+        neighbours: Array.from(strip.querySelectorAll('.home-poster-card')).map(function (card) { return Number(card.getAttribute('data-media-index')); }),
+        spacers: strip.querySelectorAll('.media-card-spacer').length,
+        outlines: focused.closest('.media-row').querySelectorAll('.home-focus-outline').length
+      };
+    })()`)
+    assert(wrappedRail.index === 0, `Right navigation did not loop to the start of the rail: ${JSON.stringify(wrappedRail)}.`)
+    assert(wrappedRail.motion.includes('motion-forward') && JSON.stringify(wrappedRail.neighbours.slice(0, 4)) === '[1,2,3,4]', `The wrapped rail exposes its end seam instead of continuing forward: ${JSON.stringify(wrappedRail)}.`)
+    assert(wrappedRail.spacers === 0 && wrappedRail.outlines === 1, `The wrapped rail left a spacer or focus line behind: ${JSON.stringify(wrappedRail)}.`)
+    await capture('m56-looping-rail.png')
     await press('ArrowLeft')
     await waitFor("document.querySelector('.nav-rail.is-open .nav-item.is-focused')")
     const navigation = await evaluate(`(() => ({
@@ -517,6 +533,7 @@ async function main() {
         hero: [hero.left, hero.top, hero.width, hero.height],
         rows: [rows.top, rows.height],
         card: [card.width, card.height],
+        cardLeft: card.left,
         expanded: Boolean(document.querySelector('.home-focus-card')),
         receding: document.querySelector('.hero').classList.contains('is-receding'),
         heroTitle: heroTitle.getAttribute('alt') || heroTitle.textContent,
@@ -536,12 +553,29 @@ async function main() {
     assert(!carouselHome.expanded && !carouselHome.receding, 'Cinematic mode expanded a card or hid its hero.')
     assert(carouselHome.cardTitle.includes(carouselHome.heroTitle), 'Focused carousel artwork did not update the hero.')
     assert(/Continue Watching|Trending|Popular/i.test(carouselHome.rankContext), `Hero ranking context is missing: ${carouselHome.rankContext}.`)
+    for (let index = 0; index < carouselHome.cards.length; index += 1) await press('ArrowRight')
+    await wait(220)
+    const carouselLoop = await evaluate(`(() => {
+      var row = document.querySelector('.media-row.is-active');
+      var strip = row.querySelector('.media-strip');
+      var focused = row.querySelector('.home-poster-card.is-focused');
+      return {
+        index: Number(focused.getAttribute('data-media-index')),
+        left: focused.getBoundingClientRect().left,
+        focusedCards: row.querySelectorAll('.home-poster-card.is-focused').length,
+        cyclic: strip.getAttribute('data-cyclic'),
+        spacers: strip.querySelectorAll('.media-card-spacer').length
+      };
+    })()`)
+    assert(carouselLoop.index === 0 && carouselLoop.left === carouselHome.cardLeft, `Carousel wrapping moved its fixed focus slot: ${JSON.stringify(carouselLoop)}.`)
+    assert(carouselLoop.focusedCards === 1 && carouselLoop.cyclic === 'true' && carouselLoop.spacers === 0, `Carousel wrapping left a visible line or finite spacer: ${JSON.stringify(carouselLoop)}.`)
+    await capture('m56-carousel-loop.png')
     await waitFor("document.querySelector('.home-hover-trailer')")
     const hoverTrailer = await evaluate(`(() => {
       var trailer = document.querySelector('.home-hover-trailer');
       return { source: trailer.src, title: trailer.title };
     })()`)
-    assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=1'), `Focused-card trailer is not muted autoplay: ${hoverTrailer.source}.`)
+    assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=0'), `Focused-card trailer is not configured for audible autoplay: ${hoverTrailer.source}.`)
     assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
     await evaluate("document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing')")
     await wait(220)

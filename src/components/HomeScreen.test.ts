@@ -94,6 +94,7 @@ describe('TV home presentation', () => {
   it('describes horizontal and vertical spotlight movement for the TV transition', () => {
     expect(homeFocusMotion({ zone: 'row', row: 0, index: 1 }, { zone: 'row', row: 0, index: 2 })).toBe('forward')
     expect(homeFocusMotion({ zone: 'row', row: 0, index: 2 }, { zone: 'row', row: 0, index: 1 })).toBe('backward')
+    expect(homeFocusMotion({ zone: 'row', row: 0, index: 4 }, { zone: 'row', row: 0, index: 0 }, 5)).toBe('forward')
     expect(homeFocusMotion({ zone: 'row', row: 0, index: 2 }, { zone: 'row', row: 1, index: 0 })).toBe('vertical')
   })
 })

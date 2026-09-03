@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
 import {
+  cyclicRailIndexes,
   homeHeroItems,
   isMergedCatalog,
   mergeHomeMediaDetails,
@@ -83,6 +84,12 @@ describe('TV home navigation model', () => {
     expect(wrappedHeroIndex(0, -1, 5)).toBe(4)
     expect(wrappedHeroIndex(4, 1, 5)).toBe(0)
     expect(wrappedHeroIndex(0, 1, 1)).toBe(0)
+  })
+
+  it('renders shelf neighbours as a cyclic window without duplicate filler cards', () => {
+    expect(cyclicRailIndexes(10, 8, 4)).toEqual([8, 9, 0, 1])
+    expect(cyclicRailIndexes(3, 2, 8)).toEqual([2, 0, 1])
+    expect(cyclicRailIndexes(0, 4, 6)).toEqual([])
   })
 
   it('keeps an independent horizontal position for every home rail', () => {

@@ -2,6 +2,7 @@ import { Award, Flame, History, Info, Play, Star, TrendingUp, Trophy, UsersRound
 import { memo } from 'preact/compat'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
+import { cyclicRailIndexes } from '../lib/home-navigation'
 import { tvMotionValue } from '../lib/tv-motion'
 import { linearWindow } from '../lib/windowing'
 import type { CompanionCatalogOption, CompanionHomeSnapshot, CompanionMedia, FocusLocation } from '../types'
@@ -148,9 +149,10 @@ function eventIndex(event: Event, attribute: string): number | undefined {
 
 export type HomeFocusMotion = 'forward' | 'backward' | 'vertical' | 'still'
 
-export function homeFocusMotion(previous: FocusLocation, current: FocusLocation): HomeFocusMotion {
+export function homeFocusMotion(previous: FocusLocation, current: FocusLocation, rowLength = 0): HomeFocusMotion {
   if (previous.zone !== 'row' || current.zone !== 'row') return 'vertical'
   if (previous.row !== current.row) return 'vertical'
+  if (rowLength > 1 && previous.index === rowLength - 1 && current.index === 0) return 'forward'
   if (previous.index < current.index) return 'forward'
   if (previous.index > current.index) return 'backward'
   return 'still'
@@ -252,7 +254,8 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
   }
   const start = () => {
     post({ event: 'listening', id: 1, channel: 'widget' })
-    post({ event: 'command', func: 'mute', args: [] })
+    post({ event: 'command', func: 'setVolume', args: [100] })
+    post({ event: 'command', func: 'unMute', args: [] })
     post({ event: 'command', func: 'playVideo', args: [] })
   }
 
@@ -288,6 +291,10 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
         const next = state === 1
         setPlaying(next)
         onPlayingChange?.(next)
+        if (next) {
+          post({ event: 'command', func: 'setVolume', args: [100] })
+          post({ event: 'command', func: 'unMute', args: [] })
+        }
       }
     }
     window.addEventListener('message', onMessage)
@@ -511,7 +518,8 @@ export function HomeScreen({
   const previousFocusRef = useRef<FocusLocation>(focus)
   const activeRow = focus.zone === 'row' ? focus.row : 0
   const horizontalCenter = focus.zone === 'row' ? focus.index : 0
-  const focusMotion = homeFocusMotion(previousFocusRef.current, focus)
+  const focusedRowLength = focus.zone === 'row' ? snapshot.rows[focus.row]?.items.length ?? 0 : 0
+  const focusMotion = homeFocusMotion(previousFocusRef.current, focus, focusedRowLength)
 
   useEffect(() => {
     previousFocusRef.current = focus
@@ -527,7 +535,15 @@ export function HomeScreen({
       const viewport = strip?.parentElement as HTMLElement | null
       const nextCard = strip?.querySelector<HTMLElement>(`[data-media-index="${focus.index + 1}"]`)
       const selectedCard = strip?.querySelector<HTMLElement>(`[data-media-index="${focus.index}"]`)
-      if (!strip || !viewport || (!nextCard && !selectedCard)) return
+      if (!strip || !viewport) return
+      if (strip.getAttribute('data-cyclic') === 'true') {
+        const previousFrame = railScrollAnimations.get(viewport)
+        if (previousFrame !== undefined) window.cancelAnimationFrame(previousFrame)
+        railScrollAnimations.delete(viewport)
+        viewport.scrollLeft = 0
+        return
+      }
+      if (!nextCard && !selectedCard) return
       const maximum = Math.max(0, strip.scrollWidth - viewport.clientWidth)
       if (carouselLayout && selectedCard) {
         const left = selectedCard.offsetLeft
@@ -674,6 +690,19 @@ export function HomeScreen({
             rowIndex === activeRow ? horizontalCenter : 0,
             carouselLayout || focus.zone !== 'row' ? 6 : 4,
           )
+          const cyclicIndexes = rowActive
+            ? cyclicRailIndexes(
+                row.items.length,
+                carouselLayout ? focus.index : focus.index + 1,
+                carouselLayout ? 8 : Math.min(4, Math.max(0, row.items.length - 1)),
+              )
+            : []
+          const renderedIndexes = rowActive
+            ? cyclicIndexes
+            : Array.from(
+                { length: Math.max(0, horizontalWindow.end - horizontalWindow.start) },
+                (_, offset) => horizontalWindow.start + offset,
+              )
           const focusedItem = rowActive && !carouselLayout ? row.items[focus.index] : undefined
           const rowTop = carouselLayout
             ? homeCarouselRowTop(rowIndex, activeRow, focus.zone === 'row')
@@ -691,12 +720,12 @@ export function HomeScreen({
             {!rowVisible
               ? <div class="media-strip-viewport"><div class="media-strip is-placeholder" aria-hidden="true" /></div>
               : <div class={`home-row-stage${rowActive ? ' is-active' : ''}`}>
-                {!carouselLayout && rowActive && focus.index > 0 && (
+                {!carouselLayout && rowActive && row.items.length > 1 && (
                   <div class="home-previous-peek" aria-hidden="true">
                     <HomePosterCard
-                      item={row.items[focus.index - 1]}
+                      item={row.items[(focus.index - 1 + row.items.length) % row.items.length]}
                       rowIndex={rowIndex}
-                      index={focus.index - 1}
+                      index={(focus.index - 1 + row.items.length) % row.items.length}
                       episodeCard={continueRow}
                       topTenRow={topTenRow}
                       selectedSource={false}
@@ -720,6 +749,7 @@ export function HomeScreen({
                 <div class="media-strip-viewport"><div
                   class="media-strip"
                   data-motion-row={rowIndex}
+                  data-cyclic={rowActive ? 'true' : undefined}
                   onFocusCapture={(event) => {
                     const index = eventIndex(event, 'data-media-index')
                     if (index !== undefined) onFocus({ zone: 'row', row: rowIndex, index })
@@ -734,7 +764,7 @@ export function HomeScreen({
                     if (item) (row.kind === 'continue' ? onPlay : onOpenSeries)(item)
                   }}
                 >
-              {horizontalWindow.start > 0 && (
+              {!rowActive && horizontalWindow.start > 0 && (
                 <span
                   class="media-card-spacer"
                   style={rowSpacerDimensions(horizontalWindow.start, carouselLayout ? HOME_CAROUSEL_POSTER_STRIDE : HOME_POSTER_STRIDE)}
@@ -742,8 +772,8 @@ export function HomeScreen({
                   key={`leading-${row.id}`}
                 />
               )}
-              {row.items.slice(horizontalWindow.start, horizontalWindow.end).map((item, offset) => {
-                const index = horizontalWindow.start + offset
+              {renderedIndexes.map((index) => {
+                const item = row.items[index]
                 const focusedPoster = carouselLayout && rowActive && focus.index === index
                 const selectedSource = !carouselLayout && rowActive && focus.index === index
                 return (
@@ -759,7 +789,7 @@ export function HomeScreen({
                   />
                 )
               })}
-              {horizontalWindow.end < row.items.length && (
+              {!rowActive && horizontalWindow.end < row.items.length && (
                 <span
                   class="media-card-spacer"
                   style={rowSpacerDimensions(row.items.length - horizontalWindow.end, carouselLayout ? HOME_CAROUSEL_POSTER_STRIDE : HOME_POSTER_STRIDE)}
