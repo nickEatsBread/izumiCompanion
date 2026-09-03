@@ -59,6 +59,7 @@ interface SamsungVoiceControlClient {
   unsetCommandList(type?: 'FOREGROUND'): void
   addResultListener(listener: (event: string, list: SamsungVoiceControlCommand[], result: string) => void): number
   removeResultListener(id: number): void
+  release?(): void
 }
 
 interface SamsungVoiceInteraction {

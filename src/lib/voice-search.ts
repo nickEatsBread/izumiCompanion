@@ -1,7 +1,8 @@
 import type { CompanionMedia, ScreenName } from '../types'
 
 export const VOICE_SEARCH_EVENT = 'izumi:voice-search'
-export const MAX_VOICE_SEARCH_COMMANDS = 96
+export const MAX_VOICE_SEARCH_COMMANDS = 512
+export const MAX_VOICE_CONTEXT_TITLES = 120
 
 interface VoiceSearchCallbacks {
   getScreen(): ScreenName
@@ -18,6 +19,7 @@ interface VoiceControlClientLike {
   unsetCommandList(type?: 'FOREGROUND'): void
   addResultListener(listener: (event: string, list: VoiceCommandLike[], result: string) => void): number
   removeResultListener(id: number): void
+  release?(): void
 }
 
 interface VoiceSearchRuntime {
@@ -53,15 +55,35 @@ export function voiceSearchCommands(media: CompanionMedia[], limit = MAX_VOICE_S
   const maximum = Math.max(2, Math.floor(limit))
   const commands = ['search', 'find']
   const seen = new Set(commands)
+  const titles: string[] = []
   for (const item of media) {
     const title = normalizedSpeech(item.title)
     if (!title || title.length > 80) continue
+    const titleKey = title.toLowerCase()
+    if (seen.has(`title:${titleKey}`)) continue
+    seen.add(`title:${titleKey}`)
+    titles.push(title)
+  }
+  // Register the exact phrase first for as many catalogue titles as possible. Older Tizen 4
+  // firmware only exposes predefined foreground commands, so this ordering is important.
+  for (const title of titles) {
     const command = `search ${title}`
     const key = command.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
     commands.push(command)
     if (commands.length >= maximum) break
+  }
+  const variants = ['search for', 'find', 'look for']
+  for (const prefix of variants) {
+    for (const title of titles) {
+      if (commands.length >= maximum) return commands
+      const command = `${prefix} ${title}`
+      const key = command.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      commands.push(command)
+    }
   }
   return commands
 }
@@ -109,7 +131,13 @@ export function installVoiceSearch(
   const interaction = runtime.interaction
   if (interaction) {
     try {
-      const titles = voiceSearchCommands(media, 34).slice(2).map((command) => command.slice(7))
+      const titleKeys = new Set<string>()
+      const titles = media.map((item) => normalizedSpeech(item.title)).filter((title) => {
+        const key = title.toLowerCase()
+        if (!title || titleKeys.has(key)) return false
+        titleKeys.add(key)
+        return true
+      }).slice(0, MAX_VOICE_CONTEXT_TITLES)
       interaction.setCallback({
         onupdatestate: () => voiceApplicationState(callbacks.getScreen()),
         onchangeappstate: (state: never) => {
@@ -118,14 +146,21 @@ export function installVoiceSearch(
           return true
         },
         ontitleselection: (title: never) => {
-          const query = normalizedSpeech(String(title))
+          const spoken = normalizedSpeech(String(title))
+          const query = voiceSearchQuery(spoken) ?? spoken
           if (!query) return false
           callbacks.onSearch(query)
           return true
         },
         onrequestcontentcontext: () => {
           if (!interaction.buildVoiceInteractionContentContextItem || !interaction.buildVoiceInteractionContentContextResponse) return '[]'
-          const items = titles.map((title, index) => interaction.buildVoiceInteractionContentContextItem!(index % 6, Math.floor(index / 6), title, [], false))
+          const items = titles.map((title, index) => interaction.buildVoiceInteractionContentContextItem!(
+            index % 6,
+            Math.floor(index / 6),
+            title,
+            [`search ${title}`, `search for ${title}`, `find ${title}`],
+            false,
+          ))
           return interaction.buildVoiceInteractionContentContextResponse(items)
         },
       })
@@ -163,5 +198,6 @@ export function installVoiceSearch(
     if (!client) return
     try { if (listenerId !== undefined) client.removeResultListener(listenerId) } catch { /* already released by firmware */ }
     try { client.unsetCommandList('FOREGROUND') } catch { /* unsupported during application exit */ }
+    try { client.release?.() } catch { /* already released by firmware */ }
   }
 }
