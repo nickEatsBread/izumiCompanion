@@ -357,6 +357,11 @@ async function main() {
       })(),
       continueCopy: document.querySelector('.home-focus-context').textContent,
       continueProgress: document.querySelector('.home-focus-card .home-card-progress > span').style.width,
+      continueProgressGeometry: (() => {
+        var frame = document.querySelector('.home-focus-frame').getBoundingClientRect();
+        var progress = document.querySelector('.home-focus-card .home-card-progress').getBoundingClientRect();
+        return [progress.height, Math.round(frame.bottom - progress.bottom)];
+      })(),
       rowTransition: getComputedStyle(document.querySelector('.media-row')).transitionDuration,
       focusAnimation: getComputedStyle(document.querySelector('.home-focus-frame')).animationDuration,
       mediaAnimation: getComputedStyle(document.querySelector('.home-focus-media')).animationDuration,
@@ -370,6 +375,7 @@ async function main() {
     assert(JSON.stringify(rows.focus) === '[132,106,960,700,952,536]', `Unexpected focus spotlight geometry ${rows.focus}.`)
     assert(rows.continueCopy.includes('S1 E12') && rows.continueCopy.includes('9m left'), `Continue Watching context is incomplete: ${rows.continueCopy}.`)
     assert(rows.continueProgress === '64%', `Continue Watching progress is ${rows.continueProgress}.`)
+    assert(JSON.stringify(rows.continueProgressGeometry) === '[8,5]', `Continue Watching progress is hidden by the focus outline: ${rows.continueProgressGeometry}.`)
     assert(rows.rowTransition === '0s', `The rail frame moves during vertical navigation: ${rows.rowTransition}.`)
     assert(rows.focusAnimation === '0s', `The focus outline moves with its content: ${rows.focusAnimation}.`)
     assert(rows.mediaAnimation !== '0s', `Focused artwork transition is disabled: ${rows.mediaAnimation}.`)
@@ -416,6 +422,12 @@ async function main() {
     assert(verticalDestination.factsColor === 'rgb(255, 255, 255)', `Focused metadata is not white: ${verticalDestination.factsColor}.`)
     assert(verticalDestination.description.includes('devil hunter') && verticalDestination.descriptionWeight === '500', `Focused synopsis is missing or over-emphasized: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.descriptionColor !== verticalDestination.factsColor && verticalDestination.descriptionBounds[1] <= verticalDestination.descriptionBounds[2], `Focused synopsis hierarchy or clipping is incorrect: ${JSON.stringify(verticalDestination)}.`)
+    await evaluate("document.querySelector('.home-focus-card').classList.add('is-trailer-playing')")
+    await wait(200)
+    const hiddenFocusAchievements = await evaluate("getComputedStyle(document.querySelector('.home-focus-achievements')).opacity")
+    assert(hiddenFocusAchievements === '0', `Focused score badges remain over trailer playback: ${hiddenFocusAchievements}.`)
+    await evaluate("document.querySelector('.home-focus-card').classList.remove('is-trailer-playing')")
+    await wait(200)
     await capture('m56-focused-rail.png')
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art')")
@@ -436,6 +448,8 @@ async function main() {
         mediaAnimation: getComputedStyle(focused.querySelector('.home-focus-media')).animationDuration,
         mediaOpacity: getComputedStyle(focused.querySelector('.home-focus-media')).opacity,
         mediaWillChange: getComputedStyle(focused.querySelector('.home-focus-media')).willChange,
+        fallbackTitle: focused.querySelector('.home-focus-title') ? focused.querySelector('.home-focus-title').textContent.trim() : '',
+        fallbackWeight: focused.querySelector('.home-focus-title') ? getComputedStyle(focused.querySelector('.home-focus-title')).fontWeight : '',
         artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
         artworkLayers: focused.querySelectorAll('.home-focus-media > img').length,
         stripTransform: getComputedStyle(strip).transform,
@@ -451,6 +465,7 @@ async function main() {
     assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
     assert(horizontal.mediaOpacity === '1', `Horizontal navigation dims the focused tile to ${horizontal.mediaOpacity}.`)
     assert(horizontal.mediaWillChange === 'transform', `Focused artwork allocates unnecessary compositor properties: ${horizontal.mediaWillChange}.`)
+    assert(horizontal.fallbackTitle && horizontal.fallbackWeight === '600', `Logo-free titles do not use the normal text fallback: ${JSON.stringify(horizontal)}.`)
     assert(horizontal.artworkTransition === '0s' && horizontal.artworkLayers === 1, `Focused tile crossfades multiple photos: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
@@ -528,6 +543,10 @@ async function main() {
     })()`)
     assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=1'), `Focused-card trailer is not muted autoplay: ${hoverTrailer.source}.`)
     assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
+    await evaluate("document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing')")
+    await wait(220)
+    const hiddenHeroRank = await evaluate("getComputedStyle(document.querySelector('.hero-rank-context')).opacity")
+    assert(hiddenHeroRank === '0', `Hero score badge remains over trailer playback: ${hiddenHeroRank}.`)
     await capture('m56-home-carousel.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=trending&layout=carousel` })
@@ -600,12 +619,16 @@ async function main() {
     await evaluate("document.querySelector('[data-focus-id=\"nav-0\"]').focus()")
     await press('Enter')
     const homeSkeleton = await waitFor(`(() => {
-      var skeleton = document.querySelector('.navigation-skeleton.skeleton-home');
-      if (!skeleton) return null;
-      var block = skeleton.querySelector('.skeleton-block');
-      return { blocks: skeleton.querySelectorAll('.skeleton-block').length, animation: getComputedStyle(block).animationName };
-    })()`)
-    assert(homeSkeleton.blocks >= 12 && homeSkeleton.animation.includes('skeleton-pulse'), `Home skeleton does not match or animate on M56: ${JSON.stringify(homeSkeleton)}.`)
+       var skeleton = document.querySelector('.navigation-skeleton.skeleton-home');
+       if (!skeleton) return null;
+       var block = skeleton.querySelector('.skeleton-block');
+       return {
+         blocks: skeleton.querySelectorAll('.skeleton-block').length,
+         blockAnimation: getComputedStyle(block).animationName,
+         sweepAnimation: getComputedStyle(skeleton, '::after').animationName
+       };
+     })()`)
+    assert(homeSkeleton.blocks >= 12 && homeSkeleton.blockAnimation === 'none' && homeSkeleton.sweepAnimation.includes('skeleton-page-sweep'), `Home skeleton is not using its single M56 compositor sweep: ${JSON.stringify(homeSkeleton)}.`)
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=buffering` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.player-buffering-status')")

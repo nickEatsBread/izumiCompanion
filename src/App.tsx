@@ -289,6 +289,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const playRequestGenerationRef = useRef(0)
   const navigationTimerRef = useRef<number>()
   const navigationExitTimerRef = useRef<number>()
+  const navigationStartedAtRef = useRef(0)
   const subtitleTimerRef = useRef<number>()
   const searchTimerRef = useRef<number>()
   const searchResponseTimerRef = useRef<number>()
@@ -714,7 +715,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if (pendingCatalog && next.catalog.screen !== pendingCatalog.screen) return
         const destination = pendingCatalog?.destination
           ?? (screenRef.current === 'trending' && isMergedCatalog(next) ? 'trending' : 'home')
-        if (pendingCatalog && next.catalog.screen === pendingCatalog.screen) {
+        const completedCatalogRequest = Boolean(pendingCatalog && next.catalog.screen === pendingCatalog.screen)
+        if (completedCatalogRequest && pendingCatalog) {
           window.clearTimeout(pendingCatalog.timer)
           catalogRequestRef.current = undefined
           showNotice(`${pendingCatalog.label} catalogue loaded`)
@@ -727,6 +729,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         setFocusLocation({ zone: 'hero', index: 0 })
         setActiveNav(destination === 'trending' ? 2 : 0)
         setScreen(destination)
+        if (completedCatalogRequest) finishNavigationTransition()
         settleStartupAfterPaint()
       },
       onCatalogError: (catalogScreen, message) => {
@@ -734,7 +737,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if (!pendingCatalog || pendingCatalog.screen !== catalogScreen) return
         window.clearTimeout(pendingCatalog.timer)
         catalogRequestRef.current = undefined
-        setNavigationPhase('idle')
+        finishNavigationTransition()
         setActiveNav(0)
         setScreen('home')
         setCatalogMenuOpen(true)
@@ -1066,7 +1069,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     if (!cinematicScreen || !homePreviewMedia || !homePreviewMediaKey) return
-    if (homePreviewMedia.logoImage && homePreviewMedia.description) return
+    if (homePreviewMedia.logoImage && homePreviewMedia.description && youtubeTrailerId(homePreviewMedia)) return
     if (homeDetailRequestsRef.current.has(homePreviewMediaKey)) return
     const media = homePreviewMedia
     const timer = window.setTimeout(() => {
@@ -1080,7 +1083,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       else void receiverRef.current?.requestDetails(media).then(apply)
     }, 320)
     return () => window.clearTimeout(timer)
-  }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, showPreviewTools])
+  }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, homePreviewMedia?.trailer?.id, homePreviewMedia?.trailer?.site, showPreviewTools])
 
   useEffect(() => {
     const generation = ++homeTrailerGenerationRef.current
@@ -1251,7 +1254,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const timer = window.setTimeout(() => {
       if (catalogRequestRef.current?.screen !== option.screen) return
       catalogRequestRef.current = undefined
-      setNavigationPhase('idle')
+      finishNavigationTransition()
       if (destination === 'trending') enterCinematicDestination('home')
       showNotice(`${option.label} did not respond. Still showing ${snapshot.catalog.label}.`)
     }, 8_000)
@@ -1262,7 +1265,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setScreen(destination)
     if (destination === 'trending') changeFocus({ zone: 'hero', index: 0 })
     else changeFocus({ zone: 'nav', index: -1 })
-    beginNavigationTransition()
+    beginNavigationTransition(true)
     showNotice(`Switching to ${option.label}`)
   }
 
@@ -1448,14 +1451,23 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     else openSeries(media)
   }
 
-  const beginNavigationTransition = () => {
+  const finishNavigationTransition = () => {
     if (navigationTimerRef.current) window.clearTimeout(navigationTimerRef.current)
     if (navigationExitTimerRef.current) window.clearTimeout(navigationExitTimerRef.current)
-    setNavigationPhase('loading')
+    const minimumVisibleMs = 320
+    const delay = Math.max(34, minimumVisibleMs - Math.max(0, tvNow() - navigationStartedAtRef.current))
     navigationTimerRef.current = window.setTimeout(() => {
       setNavigationPhase('leaving')
-      navigationExitTimerRef.current = window.setTimeout(() => setNavigationPhase('idle'), 220)
-    }, 520)
+      navigationExitTimerRef.current = window.setTimeout(() => setNavigationPhase('idle'), 180)
+    }, delay)
+  }
+
+  const beginNavigationTransition = (waitForData = false) => {
+    if (navigationTimerRef.current) window.clearTimeout(navigationTimerRef.current)
+    if (navigationExitTimerRef.current) window.clearTimeout(navigationExitTimerRef.current)
+    navigationStartedAtRef.current = tvNow()
+    setNavigationPhase('loading')
+    if (!waitForData) navigationTimerRef.current = window.setTimeout(finishNavigationTransition, 520)
   }
 
   const selectNav = (index: number) => {

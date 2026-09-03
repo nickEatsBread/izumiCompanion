@@ -176,6 +176,26 @@ function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void 
   image.src = source
 }
 
+/** Keep the readable text fallback mounted until a clear-logo has actually decoded. */
+function useLoadedImage(source?: string): string {
+  const [loaded, setLoaded] = useState('')
+  useEffect(() => {
+    let active = true
+    setLoaded('')
+    if (!source) return () => { active = false }
+    const image = new Image()
+    image.onload = () => { if (active) setLoaded(source) }
+    image.onerror = () => { if (active) setLoaded('') }
+    image.src = source
+    return () => {
+      active = false
+      image.onload = null
+      image.onerror = null
+    }
+  }, [source])
+  return loaded === source ? loaded : ''
+}
+
 function animateRailScroll(element: HTMLElement, target: number, duration = 160): void {
   const previousFrame = railScrollAnimations.get(element)
   if (previousFrame !== undefined) window.cancelAnimationFrame(previousFrame)
@@ -214,7 +234,7 @@ function HeroArtwork({ source }: { source?: string }) {
   )
 }
 
-function HeroTrailer({ source, title }: { source: string; title: string }) {
+function HeroTrailer({ source, title, onPlayingChange }: { source: string; title: string; onPlayingChange?(playing: boolean): void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [playing, setPlaying] = useState(false)
   const bridgeOrigin = (() => {
@@ -238,6 +258,7 @@ function HeroTrailer({ source, title }: { source: string; title: string }) {
 
   useEffect(() => {
     setPlaying(false)
+    onPlayingChange?.(false)
     let attempts = 0
     start()
     const timer = window.setInterval(() => {
@@ -263,7 +284,11 @@ function HeroTrailer({ source, title }: { source: string; title: string }) {
       catch { return }
       const info = payload?.info
       const state = typeof info === 'object' && info ? Number((info as Record<string, unknown>).playerState) : Number(info ?? payload?.data)
-      if ((payload?.event === 'onStateChange' || payload?.event === 'initialDelivery' || payload?.event === 'infoDelivery') && state === 1) setPlaying(true)
+      if ((payload?.event === 'onStateChange' || payload?.event === 'initialDelivery' || payload?.event === 'infoDelivery') && Number.isFinite(state)) {
+        const next = state === 1
+        setPlaying(next)
+        onPlayingChange?.(next)
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -379,7 +404,8 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const artwork = focusArtwork(item, episodeCard)
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
-  const [logoFailed, setLogoFailed] = useState(false)
+  const [trailerPlaying, setTrailerPlaying] = useState(false)
+  const logoImage = useLoadedImage(item.logoImage)
   const image = artwork[artworkIndex]
   const context = homeCardContext(item, episodeCard)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
@@ -393,14 +419,10 @@ const HomeFocusCard = memo(function HomeFocusCard({
     setArtworkIndex(0)
   }, [artworkKey])
 
-  useEffect(() => {
-    setLogoFailed(false)
-  }, [item.logoImage])
-
   return (
     <button
       type="button"
-      class={`home-focus-card is-focused motion-${motion}${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${index > 0 ? ' has-previous' : ''}`}
+      class={`home-focus-card is-focused motion-${motion}${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${index > 0 ? ' has-previous' : ''}${trailerSource && trailerPlaying ? ' is-trailer-playing' : ''}`}
       data-focus-id={`row-${rowIndex}-${index}`}
       data-media-index={index}
       tabIndex={0}
@@ -423,11 +445,11 @@ const HomeFocusCard = memo(function HomeFocusCard({
                 }}
               />
             : <span class="home-card-placeholder">{item.title}</span>}
-          {trailerSource && <HeroTrailer source={trailerSource} title={item.title} />}
+          {trailerSource && <HeroTrailer source={trailerSource} title={item.title} onPlayingChange={setTrailerPlaying} />}
         </span>
         <span class="home-focus-shade" aria-hidden="true" />
-        {item.logoImage && !logoFailed
-          ? <img class="home-focus-logo" src={item.logoImage} alt={item.title} decoding="async" onError={() => setLogoFailed(true)} />
+        {logoImage
+          ? <img class="home-focus-logo" src={logoImage} alt={item.title} decoding="async" />
           : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
         {achievements.length > 0 && <span class="home-focus-achievements">
           {achievements.map((achievement, achievementIndex) => <span class={`home-achievement is-${achievement.kind}`} key={`${achievement.kind}-${achievement.label}-${achievementIndex}`}>
@@ -484,6 +506,7 @@ export function HomeScreen({
     : snapshot.catalog.label
   const heroImage = hero.episodeImage || hero.backdrop || hero.poster
   const heroTrailerSource = trailerPreview?.mediaKey === mediaIdentity(hero) ? trailerPreview.url : undefined
+  const heroLogoImage = useLoadedImage(hero.logoImage)
   const homeTrackRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<FocusLocation>(focus)
   const activeRow = focus.zone === 'row' ? focus.row : 0
@@ -589,8 +612,8 @@ export function HomeScreen({
         {carouselLayout && heroTrailerSource && <HeroTrailer source={heroTrailerSource} title={hero.title} />}
         <div class="hero-shade" />
         <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
-          {hero.logoImage
-            ? <img class="hero-title-logo" src={hero.logoImage} alt={hero.title} decoding="async" />
+          {heroLogoImage
+            ? <img class="hero-title-logo" src={heroLogoImage} alt={hero.title} decoding="async" />
             : <h1>{hero.title}</h1>}
           {isContinueHero && hero.episode && (
             <div class="hero-resume">
