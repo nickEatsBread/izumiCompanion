@@ -200,12 +200,17 @@ describe('companion play routing', () => {
       activeTrackIds: [],
       media,
       trackPreferences: { audio: { language: 'ja-JP', codec: 'aac' } },
+      skipSegments: [
+        { type: 'op', startTime: 42, endTime: 132, label: 'Opening' },
+        { type: 'invalid', startTime: 0, endTime: -1 },
+      ],
     })
 
     expect(receiverEvents.onLoad).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'session-one',
       media,
       trackPreferences: { audio: { language: 'ja-JP', codec: 'aac', title: undefined }, subtitle: undefined },
+      skipSegments: [{ type: 'op', startTime: 42, endTime: 132, label: 'Opening' }],
     }), 'sender-one')
     receiver.disconnect()
   })
@@ -444,6 +449,23 @@ describe('companion play routing', () => {
 
     await expect(pending).resolves.toBe('local')
     receiver.disconnect()
+  })
+
+  it('prefetches a Worker source once and consumes it on next-episode playback', async () => {
+    FakeXmlHttpRequest.responder = () => ({
+      status: 200,
+      body: {
+        ok: true,
+        selectedId: 'direct',
+        candidates: [{ id: 'direct', label: 'Binge source', url: 'https://media.example/next.mp4', subtitles: [] }],
+      },
+    })
+    const receiver = new CompanionReceiver(events())
+    expect(await receiver.prefetchPlay(media)).toBe(true)
+    const result = await receiver.requestPlay(media)
+
+    expect(result).toMatchObject({ kind: 'resolved', request: { url: 'https://media.example/next.mp4' } })
+    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
   })
 
   it('keeps device source URLs private while selecting an opaque row on the TV', async () => {

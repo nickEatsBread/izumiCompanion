@@ -351,9 +351,66 @@ async function main() {
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
 
+    for (let index = 0; index < 9; index += 1) await press('ArrowLeft')
+    await waitFor("document.querySelector('.nav-rail.is-open .nav-item.is-focused')")
+    const navigation = await evaluate(`(() => ({
+      width: document.querySelector('.nav-rail').getBoundingClientRect().width,
+      items: Array.from(document.querySelectorAll('.nav-item-label strong')).map(function (item) { return item.textContent; }),
+      details: Array.from(document.querySelectorAll('.nav-item-label small')).map(function (item) { return item.textContent; }),
+      focused: document.querySelector('.nav-item.is-focused').textContent
+    }))()`)
+    assert(navigation.width >= 370 && navigation.width <= 430, `Navigation drawer width is ${navigation.width}px.`)
+    assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","My List","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
+    assert(navigation.details.every((detail) => detail.length > 0), 'Navigation destinations are missing descriptions.')
+    await capture('m56-navigation.png')
+
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=next` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.next-episode-card')")
+    await waitFor("document.querySelector('.player-skip')")
+    const playbackPrompts = await evaluate(`(() => ({
+      next: document.querySelector('.next-episode-card').textContent,
+      skip: document.querySelector('.player-skip').textContent,
+      markers: document.querySelectorAll('.player-segment-marker').length,
+      body: [document.body.scrollWidth, document.body.scrollHeight]
+    }))()`)
+    assert(playbackPrompts.next.includes('S1 E13') && playbackPrompts.next.includes('Play next episode'), `Next episode prompt is incomplete: ${playbackPrompts.next}.`)
+    assert(playbackPrompts.skip.toLowerCase().includes('skip'), `Skip prompt is incomplete: ${playbackPrompts.skip}.`)
+    assert(playbackPrompts.markers === 2, `Expected two skip markers, received ${playbackPrompts.markers}.`)
+    assert(JSON.stringify(playbackPrompts.body) === '[1920,1080]', `Player prompts overflowed the TV viewport: ${playbackPrompts.body}.`)
+    await capture('m56-player-prompts.png')
+
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=postplay` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.post-play-recommendations button')")
+    await waitFor("!document.getElementById('startup-splash')")
+    const postPlay = await evaluate(`(() => ({
+      heading: document.querySelector('.post-play-recommendations header p').textContent,
+      recommendations: document.querySelectorAll('.post-play-recommendations button').length,
+      actions: document.querySelectorAll('.post-play-actions button').length,
+      body: [document.body.scrollWidth, document.body.scrollHeight]
+    }))()`)
+    assert(postPlay.heading === 'More like this', `Post-play heading is ${postPlay.heading}.`)
+    assert(postPlay.recommendations >= 4, `Post-play has only ${postPlay.recommendations} recommendations.`)
+    assert(postPlay.actions === 2, `Post-play action count is ${postPlay.actions}.`)
+    assert(JSON.stringify(postPlay.body) === '[1920,1080]', `Post-play overflowed the TV viewport: ${postPlay.body}.`)
+    await capture('m56-post-play.png')
+
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=settings` })
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 6")
+    await waitFor("!document.getElementById('startup-splash')")
+    const settings = await evaluate(`(() => ({
+      options: document.querySelectorAll('.settings-options > button').length,
+      toggles: document.querySelectorAll('.settings-toggle').length,
+      panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
+      body: [document.body.scrollWidth, document.body.scrollHeight]
+    }))()`)
+    assert(settings.options === 6 && settings.toggles === 4, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
+    assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
+    await capture('m56-playback-settings.png')
+
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     assert(exceptions.length === 0, `Chromium 56 reported ${exceptions.length} uncaught exception(s).`)
-    process.stdout.write('Chromium 56 Home check passed: 1920x1080 hero, 700px focus spotlight, fixed poster stride, local rail scrolling, Continue Watching context, no runtime errors.\n')
+    process.stdout.write('Chromium 56 check passed: Home geometry, redesigned navigation, skip and next-episode prompts, post-play recommendations, no runtime errors.\n')
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()

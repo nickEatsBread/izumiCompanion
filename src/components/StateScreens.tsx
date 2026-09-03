@@ -1,8 +1,10 @@
 import {
   AlertTriangle,
+  ArrowRight,
   Captions,
   Check,
   LogOut,
+  House,
   MonitorUp,
   Pause,
   Play,
@@ -14,6 +16,8 @@ import {
 import { useEffect, useRef, useState } from 'preact/hooks'
 import companionLockup from '../../brand/png/izumi-companion-lockup-dark-936.png'
 import type {
+  CompanionMedia,
+  CompanionSkipSegment,
   LinkedDeviceSourceChoice,
   LinkedDeviceSourceOptions,
   PlaybackState,
@@ -222,6 +226,16 @@ export function PlayerScreen({
   subtitlePreferences,
   previewBackdrop,
   controlsVisible,
+  skipSegments,
+  skipSegment,
+  skipFocused,
+  nextEpisode,
+  nextEpisodeVisible,
+  nextFocused,
+  nextCountdown,
+  nextSourceReady,
+  stillWatching,
+  stillWatchingFocus,
   onControlFocus,
   onControl,
   onMenuFocus,
@@ -231,6 +245,9 @@ export function PlayerScreen({
   onAudio,
   onSubtitle,
   onAppearance,
+  onSkip,
+  onNext,
+  onStillWatching,
 }: {
   title: string
   state: PlaybackState
@@ -253,6 +270,16 @@ export function PlayerScreen({
   subtitlePreferences: SubtitlePreferences
   previewBackdrop?: string
   controlsVisible: boolean
+  skipSegments: CompanionSkipSegment[]
+  skipSegment?: CompanionSkipSegment
+  skipFocused: boolean
+  nextEpisode?: CompanionMedia
+  nextEpisodeVisible: boolean
+  nextFocused: boolean
+  nextCountdown?: number
+  nextSourceReady: boolean
+  stillWatching: boolean
+  stillWatchingFocus: number
   onControlFocus(index: number): void
   onControl(index: number): void
   onMenuFocus(index: number): void
@@ -262,6 +289,9 @@ export function PlayerScreen({
   onAudio(track: PlaybackTrack): void
   onSubtitle(choice: SubtitleChoice): void
   onAppearance(setting: 'size' | 'background' | 'delay'): void
+  onSkip(): void
+  onNext(): void
+  onStillWatching(continueWatching: boolean): void
 }) {
   const progress = isLive ? 100 : duration ? Math.min(100, position / duration * 100) : 0
   const selectedAudio = audioTracks.find((track) => track.index === activeAudio)?.label ?? 'Default'
@@ -298,6 +328,22 @@ export function PlayerScreen({
           {subtitleText}
         </div>
       )}
+      {skipSegment && !menu && (
+        <button type="button" class={`player-skip${skipFocused ? ' is-focused' : ''}`} onClick={onSkip}>
+          <span>{skipSegment.label || (skipSegment.type === 'recap' ? 'Skip recap' : skipSegment.type === 'op' || skipSegment.type === 'intro' ? 'Skip intro' : 'Skip ending')}</span>
+          <ArrowRight size={22} />
+        </button>
+      )}
+      {nextEpisodeVisible && nextEpisode && !menu && (
+        <button type="button" class={`next-episode-card${nextFocused ? ' is-focused' : ''}`} onClick={onNext}>
+          {nextEpisode.episodeImage || nextEpisode.backdrop ? <img src={nextEpisode.episodeImage || nextEpisode.backdrop} alt="" /> : <span class="next-episode-art-fallback"><Play size={27} /></span>}
+          <span class="next-episode-copy">
+            <small>{nextCountdown != null ? `Playing in ${nextCountdown}` : 'Up next'}{nextSourceReady ? ' · Ready' : ''}</small>
+            <strong>S{nextEpisode.season ?? 1} E{nextEpisode.episode} · {nextEpisode.episodeTitle || nextEpisode.title}</strong>
+            <span>Play next episode <ArrowRight size={17} /></span>
+          </span>
+        </button>
+      )}
       <div class={`player-controls${controlsVisible ? ' is-visible' : ' is-hidden'}`}>
         <div class="player-heading">
           <span class="player-state-icon">
@@ -308,7 +354,16 @@ export function PlayerScreen({
             <h1>{title}</h1>
           </div>
         </div>
-        <div class="player-timeline"><span style={{ width: `${progress}%` }} /></div>
+        <div class="player-timeline">
+          <span style={{ width: `${progress}%` }} />
+          {skipSegments.map((segment) => duration > 0 && (
+            <i
+              class={`player-segment-marker is-${segment.type}`}
+              style={{ left: `${Math.min(100, segment.startTime / duration * 100)}%`, width: `${Math.max(.25, (segment.endTime - segment.startTime) / duration * 100)}%` }}
+              key={`${segment.type}-${segment.startTime}`}
+            />
+          ))}
+        </div>
         <div class="player-times"><span>{isLive ? 'LIVE' : formatTime(position)}</span><span>{isLive ? '' : formatTime(duration)}</span></div>
         <div class="player-actions" aria-label="Playback options">
           {controls.map(({ label, detail, icon: Icon }, index) => (
@@ -433,6 +488,75 @@ export function PlayerScreen({
           )}
         </section>
       )}
+      {stillWatching && (
+        <section class="still-watching-backdrop" role="dialog" aria-modal="true" aria-label="Still watching">
+          <div class="still-watching-panel">
+            <p class="state-kicker">AUTOPLAY PAUSED</p>
+            <h2>Still watching?</h2>
+            <p>Izumi will wait here until you’re ready for the next episode.</p>
+            <div>
+              <button type="button" class={stillWatchingFocus === 0 ? 'is-focused' : ''} onClick={() => onStillWatching(true)}><Play size={20} /><span>Keep watching</span></button>
+              <button type="button" class={stillWatchingFocus === 1 ? 'is-focused' : ''} onClick={() => onStillWatching(false)}><House size={20} /><span>Exit to home</span></button>
+            </div>
+          </div>
+        </section>
+      )}
+    </main>
+  )
+}
+
+export function PostPlayScreen({
+  media,
+  recommendations,
+  authored,
+  focus,
+  onFocus,
+  onReplay,
+  onHome,
+  onRecommendation,
+}: {
+  media: CompanionMedia
+  recommendations: CompanionMedia[]
+  authored: boolean
+  focus: number
+  onFocus(index: number): void
+  onReplay(): void
+  onHome(): void
+  onRecommendation(media: CompanionMedia): void
+}) {
+  return (
+    <main class="post-play-screen">
+      {media.backdrop && <img class="post-play-backdrop" src={media.backdrop} alt="" />}
+      <div class="post-play-shade" />
+      <section class="post-play-content">
+        <p class="state-kicker">FINISHED WATCHING</p>
+        <h1>{media.title}</h1>
+        <p>Your progress is saved. Pick something related or head back to your home screen.</p>
+        <div class="post-play-actions">
+          <button type="button" class={focus === 0 ? 'is-focused' : ''} onFocus={() => onFocus(0)} onClick={onReplay}><RotateCcw size={21} /><span>Replay</span></button>
+          <button type="button" class={focus === 1 ? 'is-focused' : ''} onFocus={() => onFocus(1)} onClick={onHome}><House size={21} /><span>Back home</span></button>
+        </div>
+        {recommendations.length > 0 && (
+          <section class="post-play-recommendations">
+            <header><p>{authored ? 'More like this' : 'More from your catalogue'}</p><span>{recommendations.length} picks</span></header>
+            <div>
+              {recommendations.map((item, index) => (
+                <button
+                  type="button"
+                  class={focus === index + 2 ? 'is-focused' : ''}
+                  onFocus={() => onFocus(index + 2)}
+                  onClick={() => onRecommendation(item)}
+                  key={`${item.ref.provider}-${item.ref.type}-${item.ref.id}`}
+                >
+                  {item.poster ? <img src={item.poster} alt="" /> : <span class="post-play-poster-fallback"><Play size={25} /></span>}
+                  <strong>{item.title}</strong>
+                  <small>{item.subtitle || 'Open details'}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+      </section>
     </main>
   )
 }

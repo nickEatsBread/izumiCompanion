@@ -157,6 +157,8 @@ const popular = [
   media(101922, 'Demon Slayer', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101922-WBsBl0ClmgYL.jpg', { subtitle: '2019 · Action', backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/101922-33MtJGsUSxga.jpg', seasonEpisodeCounts: [26, 18, 11, 8] }),
 ]
 
+frieren.recommendations = popular.slice(1, 7).map(relationSummary)
+
 const continueItems: CompanionMedia[] = [
   {
     ...frieren,

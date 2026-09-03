@@ -21,6 +21,7 @@ import { memo } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CompanionMedia, FocusLocation } from '../types'
 import { episodeCountsFor, episodeDetailsFor, seasonNumberFor } from '../lib/catalog'
+import type { PlaybackExperienceSettings } from '../lib/playback-experience'
 import { gridWindow, linearWindow } from '../lib/windowing'
 import { NavRail } from './NavRail'
 
@@ -926,11 +927,6 @@ export function DetailScreen({
   )
 }
 
-const settingsOptions = [
-  { title: 'Unpair this TV', detail: 'Disconnect this TV from your Izumi sync group.', icon: Link2Off },
-  { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
-]
-
 export function SettingsScreen({
   focus,
   activeNav,
@@ -938,6 +934,7 @@ export function SettingsScreen({
   connected,
   deviceId,
   confirmation,
+  playbackSettings,
   onNav,
   onNavFocus,
   onFocus,
@@ -949,12 +946,21 @@ export function SettingsScreen({
   connected: boolean
   deviceId?: string
   confirmation: SettingsConfirmation
+  playbackSettings: PlaybackExperienceSettings
   onNav(index: number): void
   onNavFocus(index: number): void
   onFocus(index: number): void
   onAction(index: number): void
 }) {
   const confirmTitle = confirmation === 'unpair' ? 'Unpair this TV?' : 'Reset the companion?'
+  const settingsOptions = [
+    { title: 'Autoplay next episode', detail: 'Show a short countdown, then continue the series.', icon: Play, enabled: playbackSettings.autoplayNextEpisode },
+    { title: 'Automatically skip segments', detail: 'Use AniSkip, IntroDB and chapter timing supplied by Izumi.', icon: Captions, enabled: playbackSettings.autoSkipSegments },
+    { title: 'Still watching check', detail: 'Pause autoplay after three episodes until you confirm.', icon: ShieldCheck, enabled: playbackSettings.stillWatchingEnabled },
+    { title: 'Keep the current source', detail: 'Prefer the same provider when the next episode is available.', icon: History, enabled: playbackSettings.preferBingeSource },
+    { title: 'Unpair this TV', detail: 'Disconnect this TV from your Izumi sync group.', icon: Link2Off },
+    { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
+  ]
   return (
     <main class="utility-screen settings-screen">
       <NavRail activeIndex={activeNav} focus={focus} onFocus={onNavFocus} onSelect={onNav} />
@@ -968,10 +974,11 @@ export function SettingsScreen({
           <div><p>{paired ? 'Paired with Izumi' : 'Not paired'}</p><span>{connected ? 'Receiver online' : 'Waiting for a nearby device'} · TV {deviceId?.slice(-6).toUpperCase() || 'PREVIEW'}</span></div>
         </div>
         <div class="settings-options">
-          {settingsOptions.map(({ title, detail, icon: Icon }, index) => (
+          {settingsOptions.map(({ title, detail, icon: Icon, enabled }, index) => (
             <button
               type="button"
-              class={focus.zone === 'setting' && focus.index === index && !confirmation ? 'is-focused' : ''}
+              class={`${focus.zone === 'setting' && focus.index === index && !confirmation ? 'is-focused' : ''}${enabled !== undefined ? ' is-toggle' : ''}`}
+              aria-pressed={enabled}
               data-focus-id={!confirmation ? `setting-${index}` : undefined}
               tabIndex={!confirmation && focus.zone === 'setting' && focus.index === index ? 0 : -1}
               onFocus={() => onFocus(index)}
@@ -979,7 +986,8 @@ export function SettingsScreen({
               onClick={() => onAction(index)}
               key={title}
             >
-              <Icon size={28} /><span><strong>{title}</strong><small>{detail}</small></span><ChevronRight size={24} />
+              <Icon size={28} /><span><strong>{title}</strong><small>{detail}</small></span>
+              {enabled !== undefined ? <span class={`settings-toggle${enabled ? ' is-on' : ''}`}><i />{enabled ? 'On' : 'Off'}</span> : <ChevronRight size={24} />}
             </button>
           ))}
         </div>

@@ -10,6 +10,7 @@ export type ScreenName =
   | 'ready'
   | 'loading'
   | 'player'
+  | 'postplay'
   | 'error'
 export type PlaybackState = 'idle' | 'buffering' | 'playing' | 'paused'
 
@@ -49,6 +50,8 @@ export interface CompanionMedia {
   episodes?: CompanionEpisode[]
   /** Provider relations kept shallow so the TV can present sequels, films and side stories. */
   relations?: CompanionRelation[]
+  /** Provider-authored recommendations kept shallow for the post-play experience. */
+  recommendations?: CompanionMedia[]
   placement?: {
     label: string
     position?: number
@@ -68,6 +71,26 @@ export interface CompanionEpisode {
   watched?: boolean
   /** The paired client marked this unwatched episode for spoiler-safe presentation. */
   spoiler?: boolean
+  /** ISO release timestamp when the catalogue supplies one. */
+  releasedAt?: string
+}
+
+export type CompanionSkipSegmentType =
+  | 'intro'
+  | 'op'
+  | 'mixed-op'
+  | 'recap'
+  | 'outro'
+  | 'ed'
+  | 'mixed-ed'
+  | 'credits'
+  | 'ending'
+
+export interface CompanionSkipSegment {
+  type: CompanionSkipSegmentType
+  startTime: number
+  endTime: number
+  label?: string
 }
 
 export interface CompanionRelation {
@@ -152,6 +175,8 @@ export interface CastLoadRequest {
   subtitles: CastSubtitleTrack[]
   activeTrackIds: number[]
   media?: CompanionMedia
+  /** Normalized segments resolved by Izumi (AniSkip, IntroDB or file chapters). */
+  skipSegments?: CompanionSkipSegment[]
   trackPreferences?: CastTrackPreferences
   subtitleStyle?: SubtitleStyle
   adaptive?: {

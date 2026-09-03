@@ -320,6 +320,25 @@ function normalizeLoad(value: unknown): CastLoadRequest | undefined {
   const subtitlePreference = trackPreference(rawPreferences?.subtitle)
   const drmSystem = rawDrm?.system === 'playready' || rawDrm?.system === 'widevine' ? rawDrm.system : undefined
   const drmLicense = rawDrm && validUrl(rawDrm.licenseServer) ? rawDrm.licenseServer : undefined
+  const skipTypes = ['intro', 'op', 'mixed-op', 'recap', 'outro', 'ed', 'mixed-ed', 'credits', 'ending']
+  const skipSegments = (Array.isArray(input.skipSegments) ? input.skipSegments : []).slice(0, 16).flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const segment = value as Record<string, unknown>
+    const startTime = Number(segment.startTime)
+    const endTime = Number(segment.endTime)
+    if (!skipTypes.includes(String(segment.type))
+      || !Number.isFinite(startTime)
+      || !Number.isFinite(endTime)
+      || startTime < 0
+      || endTime <= startTime
+      || endTime > 604_800) return []
+    return [{
+      type: segment.type as NonNullable<CastLoadRequest['skipSegments']>[number]['type'],
+      startTime,
+      endTime,
+      label: typeof segment.label === 'string' ? segment.label.trim().slice(0, 80) : undefined,
+    }]
+  })
   return {
     sessionId: input.sessionId,
     url: input.url,
@@ -332,6 +351,7 @@ function normalizeLoad(value: unknown): CastLoadRequest | undefined {
       ? input.activeTrackIds.slice(0, 1).map(Number).filter(Number.isFinite)
       : [],
     media: validCompanionMedia(input.media) ? input.media : undefined,
+    skipSegments,
     trackPreferences: audioPreference || subtitlePreference ? {
       audio: audioPreference,
       subtitle: subtitlePreference,
@@ -386,6 +406,7 @@ export class CompanionReceiver {
   private deviceSourceRequests = new Map<string, number>()
   private detailRequests = new Map<string, (media: CompanionMedia | null) => void>()
   private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
+  private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
 
   constructor(private readonly events: ReceiverEvents) {
     this.events.onPairingInfo(this.pairing)
@@ -589,6 +610,12 @@ export class CompanionReceiver {
     const requestId = secureRequestId ?? randomHex(16)
     const pairingId = this.cloudflare?.pairingId ?? this.credential.slice(0, 16)
     const playbackMode = this.cloudflare?.playbackMode ?? 'device-only'
+    const prefetched = this.prefetchedPlays.get(this.playKey(media))
+    if (prefetched && prefetched.expiresAt > Date.now()) {
+      this.prefetchedPlays.delete(this.playKey(media))
+      return prefetched.result
+    }
+    if (prefetched) this.prefetchedPlays.delete(this.playKey(media))
 
     if (this.cloudflare && playbackMode !== 'device-only') {
       try {
@@ -613,6 +640,37 @@ export class CompanionReceiver {
     }
 
     return this.requestFromDevice(media, requestId, secureRequestId)
+  }
+
+  /** Warm a Worker-resolved source without waking the paired device or interrupting playback. */
+  async prefetchPlay(media: CompanionMedia): Promise<boolean> {
+    if (!this.credential || !this.cloudflare || this.cloudflare.playbackMode === 'device-only') return false
+    const key = this.playKey(media)
+    const cached = this.prefetchedPlays.get(key)
+    if (cached && cached.expiresAt > Date.now()) return true
+    const requestId = secureRandomHex(16) ?? randomHex(16)
+    try {
+      const result = await workerRequest(
+        this.cloudflare,
+        `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/resolve`,
+        'POST',
+        cloudResolveRequest(media),
+        30_000,
+      )
+      const selection = cloudResolveSelection(result, media, requestId)
+      if (!selection) return false
+      this.prefetchedPlays.set(key, {
+        expiresAt: Date.now() + 5 * 60_000,
+        result: { kind: 'resolved', ...selection },
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private playKey(media: CompanionMedia): string {
+    return `${media.ref.provider}:${media.ref.type}:${media.ref.id}:${media.season ?? ''}:${media.episode ?? ''}`
   }
 
   canRequestDeviceSourceChange(): boolean {

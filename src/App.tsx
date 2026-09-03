@@ -21,7 +21,8 @@ import {
 import { HomeScreen } from './components/HomeScreen'
 import { NavigationSkeleton } from './components/NavigationSkeleton'
 import { PreviewToolbar } from './components/PreviewToolbar'
-import { ErrorScreen, ExitConfirmation, LoadingScreen, PlayerScreen, ReadyScreen } from './components/StateScreens'
+import { ErrorScreen, ExitConfirmation, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen } from './components/StateScreens'
+import { navItemCount } from './components/NavRail'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
 import { catalogCollections, episodeCountsFor } from './lib/catalog'
@@ -31,11 +32,22 @@ import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
 import { preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
+import {
+  activeSkipSegment,
+  nextEpisodeFor,
+  postPlayRecommendations,
+  readPlaybackExperienceSettings,
+  shouldOfferNextEpisode,
+  skipSegmentKey,
+  writePlaybackExperienceSettings,
+  type PlaybackExperienceSettings,
+} from './lib/playback-experience'
 import type {
   CastControlRequest,
   CastLoadRequest,
   CompanionHomeSnapshot,
   CompanionMedia,
+  CompanionSkipSegment,
   FocusLocation,
   LinkedDeviceSourceChoice,
   LinkedDeviceSourceOptions,
@@ -160,7 +172,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings', 'ready', 'loading', 'player', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -187,13 +199,31 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [player, setPlayer] = useState<PlayerView>({
     title: previewSnapshot.hero?.title ?? 'Now Playing',
     state: 'playing',
-    position: 523,
+    position: previewParameters.get('scenario') === 'next' ? 1_225 : 523,
     duration: 1_422,
     isLive: false,
   })
   const [playerControlFocus, setPlayerControlFocus] = useState(0)
   const [playerToolsActive, setPlayerToolsActive] = useState(false)
   const [playerControlsVisible, setPlayerControlsVisible] = useState(true)
+  const previewScenario = previewParameters.get('scenario')
+  const [playbackMedia, setPlaybackMedia] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
+  const [skipSegments, setSkipSegments] = useState<CompanionSkipSegment[]>(previewScenario === 'next' ? [
+    { type: 'op', startTime: 45, endTime: 135, label: 'Skip intro' },
+    { type: 'ed', startTime: 1_200, endTime: 1_390, label: 'Skip ending' },
+  ] : [])
+  const [visibleSkipSegment, setVisibleSkipSegment] = useState<CompanionSkipSegment>()
+  const [nextEpisodeVisible, setNextEpisodeVisible] = useState(previewScenario === 'next')
+  const [nextEpisodeDismissed, setNextEpisodeDismissed] = useState(false)
+  const [nextCountdown, setNextCountdown] = useState<number>()
+  const [nextSourceReady, setNextSourceReady] = useState(false)
+  const [playerPromptFocus, setPlayerPromptFocus] = useState<'transport' | 'skip' | 'next'>('transport')
+  const [postPlayMedia, setPostPlayMedia] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
+  const [postPlayFocus, setPostPlayFocus] = useState(0)
+  const [stillWatching, setStillWatching] = useState(false)
+  const [stillWatchingFocus, setStillWatchingFocus] = useState(0)
+  const [playbackSettings, setPlaybackSettings] = useState<PlaybackExperienceSettings>(readPlaybackExperienceSettings)
+  const upcomingEpisode = useMemo(() => nextEpisodeFor(playbackMedia), [playbackMedia])
   const [playerMenu, setPlayerMenu] = useState<PlayerMenu | null>(null)
   const [playerMenuFocus, setPlayerMenuFocus] = useState(0)
   const [sourceChoices, setSourceChoices] = useState<PlaybackSourceChoice[]>([])
@@ -258,6 +288,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const focusRef = useRef<FocusLocation>(focus)
   const appliedFocusRef = useRef<{ focus: FocusLocation; screen: ScreenName }>()
   const remoteHandlerRef = useRef<(action: RemoteAction) => void>()
+  const completedPlaybackRef = useRef<() => void>()
+  const playbackTimeRef = useRef<(position: number, duration: number) => void>()
+  const playNextEpisodeRef = useRef<() => void>()
+  const handledSkipSegmentsRef = useRef<string[]>([])
+  const prefetchedNextRef = useRef('')
+  const autoplayCountRef = useRef(0)
+  const currentSourceLabelRef = useRef('')
 
   const setFocusLocation = (next: FocusLocation) => {
     focusRef.current = next
@@ -431,6 +468,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     receiverRef.current?.clearPlayback()
     externalSubtitlesRef.current.clear()
     setSubtitleText('')
+    subtitleLoadGenerationRef.current += 1
+    activeSubtitleRef.current = 'off'
+    activeSubtitleLabelRef.current = ''
+    subtitleStateRef.current = 'off'
+    subtitleErrorRef.current = ''
     setPlayerMenu(null)
     subtitleLoadGenerationRef.current += 1
     activeSubtitleRef.current = 'off'
@@ -464,6 +506,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const requestedSubtitle = externalChoices.find((choice) => request.activeTrackIds.includes(Number(choice.id.replace('external-', ''))))
     selectSubtitleChoice(requestedSubtitle ?? offSubtitle)
     activeLoadRef.current = request
+    const requestedMedia = request.media ?? selected
+    setPlaybackMedia(requestedMedia)
+    if (request.media) setSelected(request.media)
+    setSkipSegments(request.skipSegments ?? [])
+    handledSkipSegmentsRef.current = []
+    prefetchedNextRef.current = ''
+    setVisibleSkipSegment(undefined)
+    setNextEpisodeVisible(false)
+    setNextEpisodeDismissed(false)
+    setNextCountdown(undefined)
+    setNextSourceReady(false)
+    setStillWatching(false)
+    setPlayerPromptFocus('transport')
     setLoadingProgress(12)
     updatePlayer({ title: request.title, state: 'buffering', position: request.positionSeconds, duration: 0, isLive: false })
     setScreen('loading')
@@ -482,6 +537,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         },
         onTime: (position, duration) => {
           updatePlayer({ position, duration })
+          playbackTimeRef.current?.(position, duration)
           if (activeSubtitleRef.current.startsWith('external-')) {
             setSubtitleText(externalSubtitlesRef.current.textAt(position, subtitlePreferencesRef.current.delayMs))
           }
@@ -530,8 +586,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           subtitleTimerRef.current = window.setTimeout(() => setSubtitleText(''), Math.max(500, durationMs || 3_000))
         },
         onComplete: () => {
-          publishStatus(true)
-          stopPlayback('ready')
+          completedPlaybackRef.current?.()
         },
         onError: (message) => {
           setErrorMessage(message)
@@ -572,7 +627,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       } catch { /* Audio control is optional in the browser/emulator. */ }
       publishStatus(true)
     } else if (command.action === 'stop') {
-      stopPlayback('ready')
+      stopPlayback(paired ? 'home' : 'ready')
       if (command.exitApp) {
         // Let the terminal idle status reach the sender before Tizen tears down the application.
         window.setTimeout(() => {
@@ -768,7 +823,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     const element = document.querySelector<HTMLElement>(`[data-focus-id="${focusId(focus)}"]`)
-    if (!element || ['ready', 'loading', 'player', 'error'].includes(screen)) return
+    if (!element || ['ready', 'loading', 'player', 'postplay', 'error'].includes(screen)) return
     const previous = appliedFocusRef.current
     appliedFocusRef.current = { focus, screen }
     if (document.activeElement !== element) {
@@ -813,10 +868,38 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (!showPreviewTools || screen !== 'player' || player.state !== 'playing' || activeLoadRef.current) return
     const timer = window.setInterval(() => {
       const view = playerRef.current
-      updatePlayer({ position: Math.min(view.duration, view.position + 1) })
+      const position = Math.min(view.duration, view.position + 1)
+      updatePlayer({ position })
+      playbackTimeRef.current?.(position, view.duration)
     }, 1_000)
     return () => window.clearInterval(timer)
   }, [screen, player.state, showPreviewTools])
+
+  useEffect(() => {
+    writePlaybackExperienceSettings(playbackSettings)
+  }, [playbackSettings])
+
+  useEffect(() => {
+    if (!nextEpisodeVisible
+      || nextEpisodeDismissed
+      || !upcomingEpisode
+      || !playbackSettings.autoplayNextEpisode
+      || stillWatching) {
+      setNextCountdown(undefined)
+      return
+    }
+    let remaining = 10
+    setNextCountdown(remaining)
+    const timer = window.setInterval(() => {
+      remaining -= 1
+      if (remaining <= 0) {
+        window.clearInterval(timer)
+        setNextCountdown(undefined)
+        playNextEpisodeRef.current?.()
+      } else setNextCountdown(remaining)
+    }, 1_000)
+    return () => window.clearInterval(timer)
+  }, [nextEpisodeVisible, nextEpisodeDismissed, playbackSettings.autoplayNextEpisode, stillWatching, playbackMedia])
 
   const showNotice = (message: string) => {
     setNotice(message)
@@ -891,6 +974,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const homeHeroRail = useMemo(() => homeHeroItems(snapshot), [snapshot])
   const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
   const allMedia = collections.search
+  const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
   const localSearchResults = useMemo(() => allMedia.filter((item) => {
     const searchable = [item.title, item.subtitle, item.placement?.label].filter(Boolean).join(' ').toLowerCase()
@@ -1010,7 +1094,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (focus.zone !== 'nav') lastHomeContentFocusRef.current = focus
     if (focus.zone === 'nav') {
       if (action === 'up') next = { zone: 'nav', index: Math.max(-1, focus.index - 1) }
-      else if (action === 'down') next = { zone: 'nav', index: Math.min(6, focus.index + 1) }
+      else if (action === 'down') next = { zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) }
       else if (action === 'right') {
         const previous = lastHomeContentFocusRef.current
         if (previous.zone === 'hero') {
@@ -1048,10 +1132,37 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     changeFocus(next)
   }
 
-  const playMedia = async (media: CompanionMedia) => {
+  const finishActivePlayback = () => {
+    updatePlayer({ state: 'idle' })
+    publishStatus(true)
+    avplayRef.current.close()
+    activeLoadRef.current = undefined
+    receiverRef.current?.clearPlayback()
+    externalSubtitlesRef.current.clear()
+    setSubtitleText('')
+    subtitleLoadGenerationRef.current += 1
+    activeSubtitleRef.current = 'off'
+    activeSubtitleLabelRef.current = ''
+    subtitleStateRef.current = 'off'
+    subtitleErrorRef.current = ''
+    setPlayerMenu(null)
+    setSourceChoices([])
+    setDeviceSourceOptions(undefined)
+    setActiveSourceId(undefined)
+  }
+
+  const playMedia = async (media: CompanionMedia, autoplay = false) => {
     const generation = ++playRequestGenerationRef.current
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
+    if (activeLoadRef.current) finishActivePlayback()
     setSelected(media)
+    setPlaybackMedia(media)
+    setNextEpisodeVisible(false)
+    setNextEpisodeDismissed(false)
+    setNextCountdown(undefined)
+    setVisibleSkipSegment(undefined)
+    setStillWatching(false)
+    if (autoplay) autoplayCountRef.current += 1
     setSourceChoices([])
     setActiveSourceId(undefined)
     setLoadingProgress(18)
@@ -1070,8 +1181,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (generation !== playRequestGenerationRef.current) return
     if (typeof result !== 'string') {
       setSourceChoices(result.sources)
-      setActiveSourceId(result.selectedId)
-      await startAvPlay(result.request)
+      const preferred = playbackSettings.preferBingeSource && currentSourceLabelRef.current
+        ? result.sources.find((source) => source.label.trim().toLowerCase() === currentSourceLabelRef.current.trim().toLowerCase())
+        : undefined
+      const selectedSource = preferred ?? result.sources.find((source) => source.id === result.selectedId)
+      const request = selectedSource?.request ?? result.request
+      const sourceId = selectedSource?.id ?? result.selectedId
+      setActiveSourceId(sourceId)
+      currentSourceLabelRef.current = selectedSource?.label ?? result.sources.find((source) => source.id === sourceId)?.label ?? ''
+      await startAvPlay(request)
     } else if (result === 'open-client') {
       setErrorMessage('Open Izumi on your linked device, then try again.')
       setScreen('error')
@@ -1118,7 +1236,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       ? Math.max(0, Math.min(seasonCounts.length - 1, (media.season ?? 1) - 1))
       : 0
     setSeriesSeason(initialSeason)
-    setActiveNav(3)
+    setActiveNav(2)
     setCatalogMenuOpen(false)
     setScreen('series')
     changeFocus(initialSeriesFocus())
@@ -1153,7 +1271,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setCatalogMenuOpen(false)
     setActiveNav(index)
     setSettingsConfirmation(null)
-    const destinations: ScreenName[] = ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings']
+    const destinations: ScreenName[] = ['home', 'search', 'trending', 'my-list', 'settings']
     const destination = destinations[index] ?? 'home'
     if (destination !== screen) beginNavigationTransition()
     setScreen(destination)
@@ -1173,7 +1291,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     else if (destination === 'settings') changeFocus({ zone: 'setting', index: 0 })
     else {
-      const items = destination === 'trending' ? trendingItems : destination === 'movies' ? movieItems : myListItems
+      const items = destination === 'trending' ? browseItemsFor(destination) : myListItems
       setSelected(items[0] ?? fallbackMedia)
       changeFocus({ zone: 'grid', index: 0 })
     }
@@ -1215,6 +1333,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     const positionSeconds = playerRef.current.position
     setActiveSourceId(choice.id)
+    currentSourceLabelRef.current = choice.label
     void startAvPlay({ ...choice.request, positionSeconds })
   }
 
@@ -1283,7 +1402,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const browseItemsFor = (name: ScreenName): CompanionMedia[] => name === 'trending'
-    ? trendingItems
+    ? Array.from(new Map([...trendingItems, ...seriesItems, ...movieItems].map((item) => [`${item.ref.provider}:${item.ref.type}:${item.ref.id}`, item])).values())
     : name === 'series' ? seriesItems : name === 'movies' ? movieItems : myListItems
 
   const playSeriesEpisode = (index: number) => {
@@ -1297,6 +1416,88 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const episode = index + 1
     const isResumeEpisode = season === (selected.season ?? 1) && episode === selected.episode
     playMedia({ ...selected, season, episode, progress: isResumeEpisode ? selected.progress : undefined })
+  }
+
+  const skipCurrentSegment = () => {
+    const segment = visibleSkipSegment
+    if (!segment) return
+    handledSkipSegmentsRef.current = [...handledSkipSegmentsRef.current, skipSegmentKey(segment)]
+    setVisibleSkipSegment(undefined)
+    const position = segment.endTime + 0.2
+    updatePlayer({ position })
+    if (avplayRef.current.available) void avplayRef.current.seek(position).then(() => publishStatus(true))
+    setPlayerPromptFocus(nextEpisodeVisible ? 'next' : 'transport')
+  }
+
+  const playNextEpisode = (autoplay = false) => {
+    if (!upcomingEpisode) return
+    setNextCountdown(undefined)
+    void playMedia(upcomingEpisode.media, autoplay)
+  }
+  playNextEpisodeRef.current = () => playNextEpisode(true)
+
+  playbackTimeRef.current = (position, duration) => {
+    const segment = activeSkipSegment(skipSegments, position, handledSkipSegmentsRef.current)
+    if (segment) {
+      if (playbackSettings.autoSkipSegments) {
+        handledSkipSegmentsRef.current = [...handledSkipSegmentsRef.current, skipSegmentKey(segment)]
+        const destination = segment.endTime + 0.2
+        updatePlayer({ position: destination })
+        if (avplayRef.current.available) void avplayRef.current.seek(destination).then(() => publishStatus(true))
+      } else {
+        setVisibleSkipSegment(segment)
+        if (!playerToolsActive) setPlayerPromptFocus('skip')
+      }
+    } else if (visibleSkipSegment) setVisibleSkipSegment(undefined)
+
+    if (!upcomingEpisode || nextEpisodeDismissed || !shouldOfferNextEpisode(position, duration, skipSegments)) return
+    if (!nextEpisodeVisible) {
+      setNextEpisodeVisible(true)
+      setPlayerPromptFocus('next')
+    }
+    const nextKey = `${upcomingEpisode.media.ref.provider}:${upcomingEpisode.media.ref.id}:${upcomingEpisode.media.season}:${upcomingEpisode.media.episode}`
+    if (prefetchedNextRef.current !== nextKey) {
+      prefetchedNextRef.current = nextKey
+      setNextSourceReady(false)
+      void receiverRef.current?.prefetchPlay(upcomingEpisode.media).then(setNextSourceReady)
+    }
+    if (playbackSettings.autoplayNextEpisode && playbackSettings.stillWatchingEnabled && autoplayCountRef.current >= 3) {
+      setNextCountdown(undefined)
+      setStillWatching(true)
+      setStillWatchingFocus(0)
+    }
+  }
+
+  completedPlaybackRef.current = () => {
+    updatePlayer({ position: playerRef.current.duration, state: 'idle' })
+    publishStatus(true)
+    finishActivePlayback()
+    if (upcomingEpisode) {
+      updatePlayer({ state: 'paused' })
+      setNextEpisodeVisible(true)
+      setPlayerPromptFocus('next')
+      if (playbackSettings.autoplayNextEpisode && playbackSettings.stillWatchingEnabled && autoplayCountRef.current >= 3) {
+        setStillWatching(true)
+        setStillWatchingFocus(0)
+      }
+      setScreen('player')
+      return
+    }
+    setPostPlayMedia(playbackMedia)
+    setPostPlayFocus(0)
+    setScreen('postplay')
+  }
+
+  const answerStillWatching = (continueWatching: boolean) => {
+    setStillWatching(false)
+    if (!continueWatching) {
+      autoplayCountRef.current = 0
+      stopPlayback('home')
+      return
+    }
+    autoplayCountRef.current = 0
+    setNextEpisodeDismissed(false)
+    setNextEpisodeVisible(true)
   }
 
   const activateSeriesOverviewAction = (action: SeriesOverviewAction) => {
@@ -1371,7 +1572,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const items = browseItemsFor(screen)
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(6, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) })
       else if (action === 'right' && items.length) {
         changeFocus({ zone: 'grid', index: 0 })
         setSelected(items[0])
@@ -1410,7 +1611,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const focus = focusRef.current
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(6, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) })
       else if (action === 'right') changeFocus({ zone: 'keyboard', index: 0 })
       return
     }
@@ -1481,13 +1682,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const runSettingsAction = (index: number) => {
     if (!settingsConfirmation) {
-      setSettingsConfirmation(index === 0 ? 'unpair' : 'reset')
+      if (index < 4) {
+        const key = (['autoplayNextEpisode', 'autoSkipSegments', 'stillWatchingEnabled', 'preferBingeSource'] as const)[index]
+        setPlaybackSettings((current) => ({ ...current, [key]: !current[key] }))
+        showNotice(`${index === 0 ? 'Autoplay' : index === 1 ? 'Automatic skipping' : index === 2 ? 'Still watching check' : 'Source continuity'} updated`)
+        return
+      }
+      setSettingsConfirmation(index === 4 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
       return
     }
     if (index === 0) {
       setSettingsConfirmation(null)
-      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 0 : 1 })
+      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 4 : 5 })
       return
     }
     if (settingsConfirmation === 'unpair') receiverRef.current?.unpair()
@@ -1497,6 +1704,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       const defaults = sourceSubtitlePreferences()
       subtitlePreferencesRef.current = defaults
       setSubtitlePreferences(defaults)
+      setPlaybackSettings(readPlaybackExperienceSettings())
     }
     setSnapshot(emptySnapshot)
     setSelected(fallbackMedia)
@@ -1514,12 +1722,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(6, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) })
       else if (action === 'right') changeFocus({ zone: 'setting', index: 0 })
     } else if (focus.zone === 'setting') {
       if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
       else if (action === 'up') changeFocus({ zone: 'setting', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(1, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(5, focus.index + 1) })
     }
   }
 
@@ -1628,6 +1836,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (screen === 'player') {
       revealPlayerControls(playerRef.current.state !== 'playing' || playerToolsActive || Boolean(playerMenu))
+      if (stillWatching) {
+        if (action === 'left' || action === 'up') setStillWatchingFocus(0)
+        else if (action === 'right' || action === 'down') setStillWatchingFocus(1)
+        else if (action === 'select') answerStillWatching(stillWatchingFocus === 0)
+        else if (action === 'back' || action === 'stop') answerStillWatching(false)
+        return
+      }
       if (playerMenu) {
         if (action === 'up') setPlayerMenuFocus((index) => Math.max(0, index - 1))
         else if (action === 'down') setPlayerMenuFocus((index) => Math.min(Math.max(0, playerMenuLength - 1), index + 1))
@@ -1635,14 +1850,40 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (action === 'left' || action === 'back') setPlayerMenu(null)
         return
       }
-      if (action === 'down') setPlayerToolsActive(true)
-      else if (action === 'up') setPlayerToolsActive(false)
+      if (action === 'select' && playerPromptFocus === 'skip' && visibleSkipSegment) {
+        skipCurrentSegment()
+        return
+      }
+      if (action === 'select' && playerPromptFocus === 'next' && nextEpisodeVisible && upcomingEpisode) {
+        playNextEpisode()
+        return
+      }
+      if ((action === 'back' || action === 'stop') && playerPromptFocus === 'next' && nextEpisodeVisible) {
+        setNextEpisodeDismissed(true)
+        setNextEpisodeVisible(false)
+        setNextCountdown(undefined)
+        setPlayerPromptFocus('transport')
+        return
+      }
+      if (action === 'down') {
+        setPlayerToolsActive(true)
+        setPlayerPromptFocus('transport')
+      }
+      else if (action === 'up') {
+        setPlayerToolsActive(false)
+        if (nextEpisodeVisible) setPlayerPromptFocus('next')
+        else if (visibleSkipSegment) setPlayerPromptFocus('skip')
+      }
       else if (action === 'left') playerToolsActive
         ? setPlayerControlFocus((index) => Math.max(0, index - 1))
-        : seekFromRemote(-10)
+        : playerPromptFocus === 'next' && visibleSkipSegment
+          ? setPlayerPromptFocus('skip')
+          : seekFromRemote(-10)
       else if (action === 'right') playerToolsActive
         ? setPlayerControlFocus((index) => Math.min(3, index + 1))
-        : seekFromRemote(10)
+        : playerPromptFocus === 'skip' && nextEpisodeVisible
+          ? setPlayerPromptFocus('next')
+          : seekFromRemote(10)
       else if (action === 'rewind') seekFromRemote(-10)
       else if (action === 'fastForward') seekFromRemote(10)
       else if (action === 'select') playerToolsActive ? activatePlayerControl(playerControlFocus) : togglePlayback()
@@ -1655,6 +1896,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         updatePlayer({ state: 'playing' })
         publishStatus(true)
       } else if (action === 'back' || action === 'stop') stopPlayback('home')
+      return
+    }
+    if (screen === 'postplay') {
+      const maximum = postPlayItems.length + 1
+      if (action === 'left') setPostPlayFocus((index) => Math.max(index === 2 ? 2 : 0, index - 1))
+      else if (action === 'right') setPostPlayFocus((index) => Math.min(maximum, index + 1))
+      else if (action === 'up' && postPlayFocus >= 2) setPostPlayFocus(0)
+      else if (action === 'down' && postPlayFocus < 2 && postPlayItems.length) setPostPlayFocus(2)
+      else if (action === 'select') {
+        if (postPlayFocus === 0) void playMedia(postPlayMedia)
+        else if (postPlayFocus === 1) restoreHomeNavigation()
+        else {
+          const media = postPlayItems[postPlayFocus - 2]
+          if (media) selectCatalogMedia(media)
+        }
+      } else if (action === 'back' || action === 'stop') restoreHomeNavigation()
       return
     }
     if (screen === 'loading') {
@@ -1705,7 +1962,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       changeFocus({ zone: 'keyboard', index: 0 })
     }
     if (['trending', 'series', 'movies', 'my-list'].includes(next)) {
-      const navIndex = next === 'trending' ? 2 : next === 'series' ? 3 : next === 'movies' ? 4 : 5
+      const navIndex = next === 'my-list' ? 3 : 2
       const items = browseItemsFor(next)
       setActiveNav(navIndex)
       setSelected(items[0] ?? fallbackMedia)
@@ -1715,7 +1972,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       } else changeFocus({ zone: 'grid', index: 0 })
     }
     if (next === 'settings') {
-      setActiveNav(6)
+      setActiveNav(4)
       setSettingsConfirmation(null)
       changeFocus({ zone: 'setting', index: 0 })
     }
@@ -1727,6 +1984,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setPlayerControlsVisible(true)
       if (activeSubtitleRef.current !== 'off') setSubtitleText('Even the smallest journey can change the world.')
       updatePlayer({ title: selected.title, state: 'playing', duration: player.duration || 1_422 })
+    }
+    if (next === 'postplay') {
+      setPostPlayMedia(selected)
+      setPostPlayFocus(0)
     }
     setScreen(next)
   }
@@ -1820,8 +2081,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       {(['trending', 'movies', 'my-list'] as const).map((name) => screen === name && (
         <CatalogScreen
           mode={name}
-          title={name === 'trending' ? 'Trending Now' : name === 'movies' ? 'Movies' : 'My List'}
-          description={name === 'trending' ? 'The titles viewers are discovering right now.' : name === 'movies' ? 'Feature-length stories for tonight.' : 'Saved and in-progress titles from your Izumi library.'}
+          title={name === 'trending' ? 'Browse' : name === 'movies' ? 'Movies' : 'My List'}
+          description={name === 'trending' ? 'Trending titles, series and films from your active Izumi catalogue.' : name === 'movies' ? 'Feature-length stories for tonight.' : 'Saved and in-progress titles from your Izumi library.'}
           items={browseItemsFor(name)}
           selected={selected}
           focus={focus}
@@ -1845,6 +2106,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           connected={connected}
           deviceId={pairing?.deviceId}
           confirmation={settingsConfirmation}
+          playbackSettings={playbackSettings}
           onNav={selectNav}
           onNavFocus={(index) => changeFocus({ zone: 'nav', index })}
           onFocus={(index) => changeFocus({ zone: 'setting', index })}
@@ -1886,6 +2148,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           subtitlePreferences={subtitlePreferences}
           previewBackdrop={showPreviewTools ? selected.backdrop || selected.poster : undefined}
           controlsVisible={playerControlsVisible}
+          skipSegments={skipSegments}
+          skipSegment={visibleSkipSegment}
+          skipFocused={playerPromptFocus === 'skip'}
+          nextEpisode={upcomingEpisode?.media}
+          nextEpisodeVisible={nextEpisodeVisible && !nextEpisodeDismissed}
+          nextFocused={playerPromptFocus === 'next'}
+          nextCountdown={nextCountdown}
+          nextSourceReady={nextSourceReady}
+          stillWatching={stillWatching}
+          stillWatchingFocus={stillWatchingFocus}
           onControlFocus={(index) => {
             setPlayerControlFocus(index)
             setPlayerToolsActive(true)
@@ -1899,6 +2171,21 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onAudio={selectAudioTrack}
           onSubtitle={selectSubtitleChoice}
           onAppearance={changeSubtitleAppearance}
+          onSkip={skipCurrentSegment}
+          onNext={() => playNextEpisode(false)}
+          onStillWatching={answerStillWatching}
+        />
+      )}
+      {screen === 'postplay' && (
+        <PostPlayScreen
+          media={postPlayMedia}
+          recommendations={postPlayItems}
+          authored={Boolean(postPlayMedia.recommendations?.length)}
+          focus={postPlayFocus}
+          onFocus={setPostPlayFocus}
+          onReplay={() => void playMedia(postPlayMedia)}
+          onHome={restoreHomeNavigation}
+          onRecommendation={selectCatalogMedia}
         />
       )}
       {screen === 'error' && <ErrorScreen message={errorMessage} onRetry={retryPlayback} />}
