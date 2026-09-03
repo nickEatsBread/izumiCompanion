@@ -419,6 +419,7 @@ async function main() {
         index: Number(focused.getAttribute('data-media-index')),
         frame: [frame.left, frame.top, frame.width, frame.height],
         copy: [copyBounds.top, copyBounds.bottom],
+        copySize: [copyBounds.width, copyBounds.height],
         logo: copy.classList.contains('home-focus-logo') ? copy.getAttribute('alt') : '',
         plainTitle: Boolean(focused.querySelector('.home-focus-title')),
         copyAnimation: getComputedStyle(copy).animationName,
@@ -436,6 +437,7 @@ async function main() {
     assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 110) <= 3 && verticalDestination.frame[2] === 952 && verticalDestination.frame[3] === 536, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
     assert(verticalDestination.copy[0] >= verticalDestination.frame[1] && verticalDestination.copy[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title treatment is clipped outside its frame: ${verticalDestination.copy}.`)
     assert(verticalDestination.logo === 'Chainsaw Man' && !verticalDestination.plainTitle, `Focused card did not prefer its source logo: ${JSON.stringify(verticalDestination)}.`)
+    assert(JSON.stringify(verticalDestination.copySize) === '[410,116]', `Focused title logo has no stable M56 paint box: ${verticalDestination.copySize}.`)
     assert(verticalDestination.copyAnimation === 'home-focus-copy-change', `Focused title treatment uses the wrong animation: ${verticalDestination.copyAnimation}.`)
     assert(verticalDestination.achievements.length === 2 && verticalDestination.achievementIcons === 2, `Focused achievements are incomplete: ${JSON.stringify(verticalDestination)}.`)
     assert(JSON.stringify(verticalDestination.facts) === '["Show","Action","2022","12 episodes"]', `Focused facts repeat shelf copy or omit metadata: ${JSON.stringify(verticalDestination.facts)}.`)
@@ -532,6 +534,16 @@ async function main() {
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
     await capture('m56-late-title-logo.png')
+    await evaluate("document.querySelector('.home-focus-logo').src = 'https://image.tmdb.org/t/p/w500/wwemzKWzjKYJFfCeiB57q3r4Bcm.png'")
+    await waitFor("document.querySelector('.home-focus-logo').complete && document.querySelector('.home-focus-logo').naturalWidth > 0")
+    const remoteTmdbLogo = await evaluate(`(() => {
+      var image = document.querySelector('.home-focus-logo');
+      var box = image.getBoundingClientRect();
+      return { natural: [image.naturalWidth, image.naturalHeight], box: [box.width, box.height], source: image.src };
+    })()`)
+    assert(remoteTmdbLogo.natural[0] > 0 && JSON.stringify(remoteTmdbLogo.box) === '[410,116]',
+      `A live TMDB CDN logo did not paint inside the focused-card box: ${JSON.stringify(remoteTmdbLogo)}.`)
+    await capture('m56-tmdb-logo-network.png')
 
     await press('ArrowRight')
     await press('ArrowRight')

@@ -180,7 +180,7 @@ const titleImageLoads: Partial<Record<string, Promise<boolean>>> = {}
 const preloadedTitleImageOrder: string[] = []
 const failedTitleImageOrder: string[] = []
 const MAX_PRELOADED_TITLE_IMAGES = 24
-const TITLE_TEXT_FALLBACK_MS = 1_200
+const TITLE_TEXT_FALLBACK_MS = 350
 
 function preloadTitleImage(source?: string): Promise<boolean> {
   if (!source || failedTitleImages[source]) return Promise.resolve(false)
@@ -188,7 +188,14 @@ function preloadTitleImage(source?: string): Promise<boolean> {
   if (titleImageLoads[source]) return titleImageLoads[source]
   const request = new Promise<boolean>((resolve) => {
     const image = new Image()
+    const timeout = window.setTimeout(() => {
+      image.onload = null
+      image.onerror = null
+      delete titleImageLoads[source]
+      resolve(false)
+    }, 3_000)
     image.onload = () => {
+      window.clearTimeout(timeout)
       preloadedTitleImages[source] = true
       preloadedTitleImageOrder.push(source)
       while (preloadedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
@@ -201,6 +208,7 @@ function preloadTitleImage(source?: string): Promise<boolean> {
       resolve(true)
     }
     image.onerror = () => {
+      window.clearTimeout(timeout)
       failedTitleImages[source] = true
       failedTitleImageOrder.push(source)
       while (failedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
@@ -243,14 +251,16 @@ interface StableTitleSelection {
 function initialTitleSelection(identity: string, source?: string, settled = false): StableTitleSelection {
   return {
     identity,
-    logo: source && preloadedTitleImages[source] ? source : '',
+    // Give the physical TV a real, explicitly sized <img> immediately. Waiting for a detached
+    // Image.onload worked in desktop M56 but could leave the Tizen compositor with no paint layer.
+    logo: source && !failedTitleImages[source] ? source : '',
     showText: Boolean(source && failedTitleImages[source]) || (settled && !source),
   }
 }
 
-/** Hold the title slot while late provider metadata and its clear-logo decode. If the logo wins the
- * short grace period it is the only treatment shown; once readable text wins, that visit stays text
- * and the decoded logo is cached for the next card visit. */
+/** Hold the title slot briefly for late provider metadata. A known logo receives an explicit paint
+ * layer immediately; once readable text wins, that visit stays text and any late logo is only
+ * warmed for the next card visit. */
 function useStableTitleImage(identity: string, source?: string, settled = false): [string, boolean, () => void] {
   const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source, settled))
   const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source, settled)
@@ -272,13 +282,14 @@ function useStableTitleImage(identity: string, source?: string, settled = false)
   useEffect(() => {
     if (!source) return
     let active = true
+    setSelection((current) => current.identity === identity && !current.showText
+      ? { ...current, logo: source }
+      : current)
     void preloadTitleImage(source).then((loaded) => {
       if (!active) return
       setSelection((current) => {
-        if (current.identity !== identity || current.showText) return current
-        return loaded
-          ? { ...current, logo: source }
-          : { ...current, logo: '', showText: true }
+        if (current.identity !== identity || loaded) return current
+        return { ...current, logo: '', showText: true }
       })
     })
     return () => { active = false }
@@ -526,6 +537,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
       class={`home-focus-card is-focused motion-${motion}${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${index > 0 ? ' has-previous' : ''}${trailerSource && trailerPlaying ? ' is-trailer-playing' : ''}`}
       data-focus-id={`row-${rowIndex}-${index}`}
       data-media-index={index}
+      data-title-treatment={logoImage ? 'logo' : showTextTitle ? 'text' : 'pending'}
       tabIndex={0}
       aria-label={`${rank ? `Number ${rank}, ` : ''}${item.title}${item.episode ? `, episode ${item.episode}` : ''}`}
       onClick={onActivate}
@@ -550,7 +562,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
         </span>
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
-          ? <img class="home-focus-logo" src={logoImage} alt={item.title} decoding="async" onError={onLogoError} />
+          ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={410} height={116} decoding="async" onError={onLogoError} />
           : showTextTitle
             ? <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>
             : <span class="home-focus-title-pending" aria-hidden="true" />}

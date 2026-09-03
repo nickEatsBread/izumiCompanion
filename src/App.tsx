@@ -1083,7 +1083,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       if (showPreviewTools) apply(previewDetailsFor(media))
       else void receiverRef.current?.requestDetails(media).then(apply)
-    }, 120)
+    }, 80)
     return () => window.clearTimeout(timer)
   }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, homePreviewMedia?.trailer?.id, homePreviewMedia?.trailer?.site, showPreviewTools])
 
@@ -1097,14 +1097,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       const key = `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
       if (!candidates.some((candidate) => `${candidate.ref.provider}:${candidate.ref.type}:${candidate.ref.id}` === key)) candidates.push(media)
     }
-    remember(activeRow.items[(focus.index + 1) % activeRow.items.length])
+    for (let offset = 1; offset <= Math.min(4, activeRow.items.length - 1); offset += 1) {
+      remember(activeRow.items[(focus.index + offset) % activeRow.items.length])
+    }
     remember(activeRow.items[(focus.index - 1 + activeRow.items.length) % activeRow.items.length])
     for (const rowIndex of [focus.row - 1, focus.row + 1]) {
       const row = cinematicRows[rowIndex]
       remember(row?.items[rememberedHomeRowIndex(row, homeRowIndexesRef.current)])
     }
     const timer = window.setTimeout(() => {
-      candidates.slice(0, 4).forEach((media) => {
+      candidates.slice(0, 7).forEach((media) => {
         const key = `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
         if (homeDetailRequestsRef.current.has(key)) return
         homeDetailRequestsRef.current.add(key)
