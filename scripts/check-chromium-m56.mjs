@@ -23,6 +23,26 @@ function wait(milliseconds) {
   return new Promise((resolveWait) => setTimeout(resolveWait, milliseconds))
 }
 
+async function waitForExit(child, timeout = 2_000) {
+  if (child.exitCode !== null) return
+  await Promise.race([
+    new Promise((resolveExit) => child.once('exit', resolveExit)),
+    wait(timeout),
+  ])
+}
+
+async function removeTemporaryProfile(path) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (!['EBUSY', 'EPERM'].includes(error?.code) || attempt === 5) throw error
+      await wait(250 * (attempt + 1))
+    }
+  }
+}
+
 async function exists(path) {
   try {
     await stat(path)
@@ -487,6 +507,17 @@ async function main() {
     })()`)
     assert(JSON.stringify(restoredTrailerPresentation) === '{"shade":"1","title":"1","footer":"0","achievements":"1"}', `Trailer end-state did not restore the tile treatment: ${JSON.stringify(restoredTrailerPresentation)}.`)
     await capture('m56-focused-rail.png')
+    await press('ArrowRight')
+    await waitFor("document.querySelector('.home-focus-card.is-focused .home-focus-logo[alt=\"Solo Leveling\"]')")
+    const soloLevelingLogo = await evaluate(`(() => {
+      var image = document.querySelector('.home-focus-card.is-focused .home-focus-logo');
+      return { source: image.src, natural: [image.naturalWidth, image.naturalHeight], title: image.alt };
+    })()`)
+    assert(soloLevelingLogo.title === 'Solo Leveling' && soloLevelingLogo.source.includes('pFID4dA9XKFbFXlcnx24Nlmx0KX.png') && soloLevelingLogo.natural[0] > 0,
+      `Solo Leveling is not using its matching image logo: ${JSON.stringify(soloLevelingLogo)}.`)
+    await capture('m56-solo-leveling-title-logo.png')
+    await press('ArrowLeft')
+    await waitFor("document.querySelector('.home-focus-card.is-focused .home-focus-logo[alt=\"Chainsaw Man\"]')")
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art')")
     for (let index = 3; index < 8; index += 1) await press('ArrowRight')
@@ -510,6 +541,7 @@ async function main() {
         fallbackTitle: focused.querySelector('.home-focus-title') ? focused.querySelector('.home-focus-title').textContent.trim() : '',
         fallbackWeight: focused.querySelector('.home-focus-title') ? getComputedStyle(focused.querySelector('.home-focus-title')).fontWeight : '',
         titleLogo: focused.querySelector('.home-focus-logo') ? focused.querySelector('.home-focus-logo').getAttribute('alt') : '',
+        titleLogoSource: focused.querySelector('.home-focus-logo') ? focused.querySelector('.home-focus-logo').src : '',
         titlePending: Boolean(focused.querySelector('.home-focus-title-pending')),
         artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
         artworkLayers: focused.querySelectorAll('.home-focus-media > img').length,
@@ -530,22 +562,46 @@ async function main() {
     assert(horizontal.mediaWillChange === 'transform', `Focused artwork allocates unnecessary compositor properties: ${horizontal.mediaWillChange}.`)
     assert(horizontal.titleLogo === 'Attack on Titan' && !horizontal.fallbackTitle && !horizontal.titlePending,
       `Late provider title art disappeared or swapped through plain text: ${JSON.stringify(horizontal)}.`)
+    assert(horizontal.titleLogoSource.includes('attack-on-titan-logo'),
+      `The focused title is paired with unrelated logo artwork: ${horizontal.titleLogoSource}.`)
     assert(horizontal.artworkTransition === '0s' && horizontal.artworkLayers === 1, `Focused tile crossfades multiple photos: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
-    await capture('m56-late-title-logo.png')
-    await evaluate("document.querySelector('.home-focus-logo').src = 'https://image.tmdb.org/t/p/w500/wwemzKWzjKYJFfCeiB57q3r4Bcm.png'")
     await waitFor("document.querySelector('.home-focus-logo').complete && document.querySelector('.home-focus-logo').naturalWidth > 0")
-    const remoteTmdbLogo = await evaluate(`(() => {
+    const verifiedTitleLogo = await evaluate(`(() => {
       var image = document.querySelector('.home-focus-logo');
       var box = image.getBoundingClientRect();
-      return { natural: [image.naturalWidth, image.naturalHeight], box: [box.width, box.height], source: image.src };
+      var card = document.querySelector('.home-focus-card.is-focused');
+      return { title: card.getAttribute('aria-label'), alt: image.alt, natural: [image.naturalWidth, image.naturalHeight], box: [box.width, box.height], source: image.src };
     })()`)
-    assert(remoteTmdbLogo.natural[0] > 0 && JSON.stringify(remoteTmdbLogo.box) === '[410,116]',
-      `A live TMDB CDN logo did not paint inside the focused-card box: ${JSON.stringify(remoteTmdbLogo)}.`)
-    await capture('m56-tmdb-logo-network.png')
+    assert(verifiedTitleLogo.alt === 'Attack on Titan' && verifiedTitleLogo.title.includes('Attack on Titan')
+      && verifiedTitleLogo.source.includes('attack-on-titan-logo')
+      && verifiedTitleLogo.natural[0] > 0 && JSON.stringify(verifiedTitleLogo.box) === '[410,116]',
+      `Title-specific logo artwork did not paint for its matching card: ${JSON.stringify(verifiedTitleLogo)}.`)
+    await capture('m56-matching-title-logo.png')
 
     await press('ArrowRight')
+    await waitFor("document.querySelector('.home-focus-card.is-focused .home-focus-title')")
+    const fallbackTitle = await evaluate(`(() => {
+      var card = document.querySelector('.home-focus-card.is-focused');
+      var title = card.querySelector('.home-focus-title');
+      var style = getComputedStyle(title);
+      return {
+        label: card.getAttribute('aria-label'),
+        text: title.textContent.trim(),
+        logo: Boolean(card.querySelector('.home-focus-logo')),
+        treatment: card.getAttribute('data-title-treatment'),
+        size: style.fontSize,
+        weight: style.fontWeight,
+        transform: style.textTransform
+      };
+    })()`)
+    assert(fallbackTitle.label.includes('Jujutsu Kaisen') && fallbackTitle.text === 'Jujutsu Kaisen'
+      && !fallbackTitle.logo && fallbackTitle.treatment === 'text',
+      `A missing provider logo did not use the matching title fallback: ${JSON.stringify(fallbackTitle)}.`)
+    assert(parseFloat(fallbackTitle.size) <= 24 && Number(fallbackTitle.weight) <= 500 && fallbackTitle.transform === 'none',
+      `Fallback text is still styled as an oversized fake logo: ${JSON.stringify(fallbackTitle)}.`)
+    await capture('m56-compact-title-fallback.png')
     await press('ArrowRight')
     await wait(220)
     const wrappedRail = await evaluate(`(() => {
@@ -896,10 +952,13 @@ async function main() {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()
     await new Promise((resolveClose) => server.close(resolveClose))
-    await wait(300)
-    if (!browser.killed) browser.kill()
+    await waitForExit(browser)
+    if (browser.exitCode === null) {
+      browser.kill()
+      await waitForExit(browser)
+    }
     const runtimePrefix = `${runtime}${sep}`
-    if (profile.startsWith(runtimePrefix)) await rm(profile, { recursive: true, force: true })
+    if (profile.startsWith(runtimePrefix)) await removeTemporaryProfile(profile)
   }
 }
 

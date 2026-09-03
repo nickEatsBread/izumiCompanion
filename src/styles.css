@@ -4674,13 +4674,14 @@ body,
   right: auto;
   bottom: 25px;
   left: 28px;
-  width: 410px;
+  max-width: 410px;
   display: block;
   overflow: hidden;
   color: #fff;
-  font-size: 34px;
-  font-weight: 600;
-  line-height: 40px;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 30px;
+  letter-spacing: 0;
   text-overflow: ellipsis;
   text-shadow: 0 2px 7px #000;
   white-space: nowrap;

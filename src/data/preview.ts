@@ -1,4 +1,6 @@
 import type { CompanionEpisode, CompanionHomeSnapshot, CompanionMedia } from '../types'
+import attackOnTitanLogo from '../assets/preview/attack-on-titan-logo.svg'
+import chainsawManLogo from '../assets/preview/chainsaw-man-logo.svg'
 
 const media = (
   id: number,
@@ -20,7 +22,15 @@ const media = (
   }
 }
 
-const previewLogo = (label: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120"><text x="20" y="88" fill="white" font-family="Arial,sans-serif" font-size="72" font-weight="900" textLength="480" lengthAdjust="spacingAndGlyphs">${label}</text></svg>`)}`
+// Local preview data should exercise real title artwork, not turn ordinary text into a fake,
+// oversized "logo". These fixtures are title-specific public-domain wordmarks; titles without a
+// fixture deliberately exercise the compact text fallback used for missing provider artwork.
+const previewTitleLogos = {
+  frieren: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/S%C5%8Ds%C5%8D_no_Frieren_logo.png',
+  attackOnTitan: attackOnTitanLogo,
+  chainsawMan: chainsawManLogo,
+  soloLeveling: 'https://image.tmdb.org/t/p/w500/pFID4dA9XKFbFXlcnx24Nlmx0KX.png',
+} as const
 
 const frierenSeasonOneTitles = [
   "The Journey's End",
@@ -119,7 +129,7 @@ const frieren = media(
     subtitle: '2023 · 28 Episodes · Fantasy',
     description: 'Decades after the hero party defeated the Demon King, an elven mage begins a new journey to understand the people she once travelled beside.',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/154587-ivXNJ23SM1xB.jpg',
-    logoImage: previewLogo('FRIEREN'),
+    logoImage: previewTitleLogos.frieren,
     trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
     contentRating: 'TV-14',
     placement: { label: 'Top Rated This Season', position: 1, kind: 'ranking' },
@@ -163,7 +173,7 @@ const popular = [
     subtitle: '2022 · 12 Episodes · Action',
     description: 'A debt-ridden devil hunter is reborn with the power of his chainsaw-demon companion.',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/127230-o8IRwCGVr9KW.jpg',
-    logoImage: previewLogo('CHAINSAW MAN'),
+    logoImage: previewTitleLogos.chainsawMan,
     trailer: { id: 'dFlDRhvM4L0', site: 'youtube' },
     seasonEpisodeCounts: [12],
     achievements: [{ kind: 'rating', label: '#31 highest rated 2022', source: 'AniList' }],
@@ -172,7 +182,7 @@ const popular = [
   media(151807, 'Solo Leveling', 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx151807-it355ZgzquUd.png', {
     subtitle: '2024 · 12 Episodes · Fantasy',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/151807-37yfQA3ym8PA.jpg',
-    logoImage: previewLogo('SOLO LEVELING'),
+    logoImage: previewTitleLogos.soloLeveling,
     seasonEpisodeCounts: [12, 13],
     achievements: [{ kind: 'rating', label: '#5 highest rated all time', source: 'AniList' }],
     placement: { label: 'Popular This Week', position: 2, kind: 'ranking' },
@@ -273,7 +283,7 @@ export const previewSnapshot: CompanionHomeSnapshot = {
 }
 
 export function previewDetailsFor(item: CompanionMedia): CompanionMedia {
-  const detailLogo = item.ref.id === '16498' ? previewLogo('ATTACK ON TITAN') : undefined
+  const detailLogo = item.ref.id === '16498' ? previewTitleLogos.attackOnTitan : undefined
   const artwork = continueItems.flatMap((entry) => entry.episodeImage ? [entry.episodeImage] : [])
   const supplied = new Map((item.episodes ?? []).map((episode) => [`${episode.season}:${episode.episode}`, episode]))
   const counts = item.seasonEpisodeCounts ?? []
