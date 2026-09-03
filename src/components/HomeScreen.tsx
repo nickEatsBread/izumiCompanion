@@ -113,13 +113,62 @@ function AchievementIcon({ kind }: { kind: NonNullable<CompanionMedia['achieveme
 
 function AchievementSource({ source }: { source: string }) {
   return source.trim().toLowerCase() === 'anilist'
-    ? <img class="home-achievement-source-logo" src={anilistLogo} alt="AniList" width={22} height={22} />
+    ? <img class="home-achievement-source-logo" src={anilistLogo} alt="AniList" width={28} height={28} />
     : <small>{source}</small>
 }
 
-export function trailerFooterLabel(media: CompanionMedia): string {
+export interface AchievementLabelParts {
+  lead?: string
+  context: string
+}
+
+export function achievementLabelParts(label: string): AchievementLabelParts {
+  const value = label.trim()
+  const match = /^(#\d+|\d+(?:\.\d+)?%)\s+(.+)$/.exec(value)
+  const context = match?.[2] ?? value
+  const capitalized = context ? `${context.charAt(0).toUpperCase()}${context.slice(1)}` : ''
+  return { lead: match?.[1], context: capitalized }
+}
+
+function AchievementCopy({ label }: { label: string }) {
+  const copy = achievementLabelParts(label)
+  return <>
+    {copy.lead && <strong class="home-achievement-lead">{copy.lead}</strong>}
+    <span class="home-achievement-context">{copy.context}</span>
+  </>
+}
+
+type CompanionRating = NonNullable<CompanionMedia['ratings']>[number]
+
+export function ratingDisplayValue(rating: CompanionRating): string {
+  if (rating.scale === 100) {
+    const value = Math.round(rating.score)
+    return rating.source.trim().toLowerCase() === 'metacritic' ? String(value) : `${value}%`
+  }
+  return rating.score.toFixed(1)
+}
+
+export function displayRatings(media: CompanionMedia): CompanionRating[] {
+  return (media.ratings ?? [])
+    .filter((rating) => Number.isFinite(rating.score) && rating.score >= 0 && rating.score <= rating.scale)
+    .slice(0, 3)
+}
+
+function RatingSourceMark({ source }: { source: string }) {
+  const normalized = source.trim().toLowerCase().replace(/[^a-z]/g, '')
+  if (normalized === 'anilist') {
+    return <img class="hero-rating-source-logo" src={anilistLogo} alt="" width={26} height={26} />
+  }
+  const label = normalized === 'rottentomatoes' ? 'RT'
+    : normalized === 'metacritic' ? 'M'
+      : normalized === 'myanimelist' ? 'MAL'
+        : source
+  return <span class={`hero-rating-source is-${normalized || 'source'}`}>{label}</span>
+}
+
+export function trailerFooterLabel(media: CompanionMedia): string | undefined {
   if (media.mediaKind === 'movie' || media.ref.type === 'movie') return 'Complete movie'
-  if (media.episode) return 'Complete episode'
+  if (media.episode) return undefined
   return 'Series preview'
 }
 
@@ -520,6 +569,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const [logoImage, showTextTitle, onLogoError] = useStableTitleImage(mediaIdentity(item), item.logoImage, item.titleArtSettled)
   const image = artwork[artworkIndex]
   const context = homeCardContext(item, episodeCard)
+  const trailerLabel = trailerFooterLabel(item)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
   const achievements = item.achievements?.slice(0, 2) ?? (item.placement?.position ? [{
     kind: 'popularity' as const,
@@ -567,12 +617,13 @@ const HomeFocusCard = memo(function HomeFocusCard({
             ? <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>
             : <span class="home-focus-title-pending" aria-hidden="true" />}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
-          <span>{item.title}</span><i /><strong>{trailerFooterLabel(item)}</strong>
+          <span>{item.title}</span>
+          {trailerLabel && <><i /><strong>{trailerLabel}</strong></>}
         </span>}
         {achievements.length > 0 && <span class="home-focus-achievements">
           {achievements.map((achievement, achievementIndex) => <span class={`home-achievement is-${achievement.kind}`} key={`${achievement.kind}-${achievement.label}-${achievementIndex}`}>
             <AchievementIcon kind={achievement.kind} />
-            <span><strong>{achievement.label}</strong>{achievement.source && <AchievementSource source={achievement.source} />}</span>
+            <span><AchievementCopy label={achievement.label} />{achievement.source && <AchievementSource source={achievement.source} />}</span>
           </span>)}
         </span>}
         {inProgress && (
@@ -616,6 +667,7 @@ export function HomeScreen({
     ? snapshot.catalog.options
     : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }]
   const meta = informativeHeroMeta(hero)
+  const ratings = displayRatings(hero)
   const isContinueHero = hero.placement?.kind === 'continue'
   const ReasonIcon = isContinueHero ? History : TrendingUp
   const heroEpisodeProgress = Math.min(1, Math.max(0, hero.episodeProgress ?? 0))
@@ -773,7 +825,19 @@ export function HomeScreen({
               </div>
             </div>
           )}
-          {meta && <p class="hero-meta">{meta}</p>}
+          {(meta || ratings.length > 0) && <div class="hero-meta-line">
+            {meta && <p class="hero-meta">{meta}</p>}
+            {ratings.length > 0 && <div class="hero-ratings" aria-label="Ratings">
+              {ratings.map((rating) => <span
+                class="hero-rating"
+                aria-label={`${rating.source} ${ratingDisplayValue(rating)}`}
+                key={`${rating.source}-${rating.score}-${rating.scale}`}
+              >
+                <RatingSourceMark source={rating.source} />
+                <strong>{ratingDisplayValue(rating)}</strong>
+              </span>)}
+            </div>}
+          </div>}
           {hero.description && <p class="hero-description">{hero.description}</p>}
           {focus.zone === 'hero' && <div class="hero-actions">
             <button

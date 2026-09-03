@@ -8,6 +8,8 @@ import {
   HOME_POSTER_HEIGHT,
   HOME_POSTER_STRIDE,
   HOME_POSTER_WIDTH,
+  achievementLabelParts,
+  displayRatings,
   homeCardContext,
   achievementIconName,
   homeCarouselRowTop,
@@ -16,6 +18,7 @@ import {
   homeRowVisible,
   informativeHeroMeta,
   mediaFactTokens,
+  ratingDisplayValue,
   trailerFooterLabel,
 } from './HomeScreen'
 
@@ -92,10 +95,22 @@ describe('TV home presentation', () => {
     expect(new Set(kinds.map(achievementIconName)).size).toBe(3)
   })
 
-  it('keeps a compact content label beside the dimmed trailer title', () => {
+  it('separates rank emphasis from readable, capitalized achievement context', () => {
+    expect(achievementLabelParts('#31 highest rated 2022')).toEqual({ lead: '#31', context: 'Highest rated 2022' })
+    expect(achievementLabelParts('84% user score')).toEqual({ lead: '84%', context: 'User score' })
+  })
+
+  it('formats supplied rating scales without inventing missing ratings', () => {
+    expect(displayRatings(media())).toEqual([])
+    expect(ratingDisplayValue({ source: 'IMDb', score: 8.6, scale: 10 })).toBe('8.6')
+    expect(ratingDisplayValue({ source: 'Rotten Tomatoes', score: 91, scale: 100 })).toBe('91%')
+    expect(ratingDisplayValue({ source: 'Metacritic', score: 74, scale: 100 })).toBe('74')
+  })
+
+  it('keeps compact movie and series labels but omits episode completion copy', () => {
     expect(trailerFooterLabel({ ...media(), mediaKind: 'movie' })).toBe('Complete movie')
     expect(trailerFooterLabel({ ...media(), mediaKind: 'show' })).toBe('Series preview')
-    expect(trailerFooterLabel({ ...media(), mediaKind: 'show', episode: 4 })).toBe('Complete episode')
+    expect(trailerFooterLabel({ ...media(), mediaKind: 'show', episode: 4 })).toBeUndefined()
   })
 
   it('describes horizontal and vertical spotlight movement for the TV transition', () => {

@@ -132,6 +132,11 @@ const frieren = media(
     logoImage: previewTitleLogos.frieren,
     trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
     contentRating: 'TV-14',
+    ratings: [
+      { source: 'IMDb', score: 8.9, scale: 10, votes: 42_000 },
+      { source: 'Rotten Tomatoes', score: 97, scale: 100 },
+      { source: 'Metacritic', score: 82, scale: 100 },
+    ],
     placement: { label: 'Top Rated This Season', position: 1, kind: 'ranking' },
     progress: 0.42,
     episode: 12,
