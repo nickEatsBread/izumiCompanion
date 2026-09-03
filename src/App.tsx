@@ -28,6 +28,7 @@ import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
 import { catalogCollections, episodeCountsFor } from './lib/catalog'
 import {
+  catalogMediaDestination,
   homeHeroItems,
   isMergedCatalog,
   mergeHomeMediaDetails,
@@ -1442,7 +1443,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const initialSeriesFocus = (): FocusLocation => ({ zone: 'series-action', index: 0 })
 
   const selectCatalogMedia = (media: CompanionMedia) => {
-    if (media.ref.type === 'movie') playMedia(media)
+    if (catalogMediaDestination(media) === 'details') openDetails(media)
     else openSeries(media)
   }
 
@@ -2311,6 +2312,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           page={screen === 'trending' ? 'browse' : 'home'}
           carouselLayout={playbackSettings.homeCarouselLayout}
           focus={focus}
+          returnFocus={lastHomeContentFocusRef.current}
           activeNav={activeNav}
           catalogOpen={catalogMenuOpen}
           catalogFocus={catalogMenuFocus}

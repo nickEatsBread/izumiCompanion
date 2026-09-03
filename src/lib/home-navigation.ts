@@ -2,6 +2,16 @@ import type { CompanionCatalogOption, CompanionHomeRow, CompanionHomeSnapshot, C
 
 export const MERGED_CATALOG_SCREEN = 'merged'
 
+export type CatalogMediaDestination = 'details' | 'series'
+
+/** Catalogue tiles always open a title page. Continue Watching owns the only shelf-level
+ * direct-play shortcut, while provider mediaKind corrects inconsistent legacy ref types. */
+export function catalogMediaDestination(media: CompanionMedia): CatalogMediaDestination {
+  if (media.mediaKind === 'show') return 'series'
+  if (media.mediaKind === 'movie') return 'details'
+  return media.ref.type === 'movie' ? 'details' : 'series'
+}
+
 function mediaKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
 }

@@ -215,6 +215,7 @@ async function main() {
       mobile: false,
       fitWindow: false,
     })
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1918, y: 2 })
 
     const evaluate = async (expression) => {
       const response = await cdp.call('Runtime.evaluate', { expression, returnByValue: true })
@@ -267,6 +268,12 @@ async function main() {
 
     await waitFor("document.readyState === 'complete' && document.querySelector('.hero-feature-card')")
     await waitFor("Array.from(document.querySelectorAll('.home-poster-card img')).every(function (image) { return image.complete && image.naturalWidth > 0 })")
+    await evaluate("document.documentElement.style.pointerEvents = 'none'")
+    for (let index = 0; index < 8; index += 1) {
+      if (!(await evaluate("document.querySelector('.media-row.is-active')"))) break
+      await press('ArrowUp')
+    }
+    await waitFor("document.querySelector('.hero-button.primary.is-focused')")
 
     const hero = await evaluate(`(() => {
       var card = document.querySelector('.hero-feature-card').getBoundingClientRect();
@@ -498,14 +505,46 @@ async function main() {
       details: Array.from(document.querySelectorAll('.nav-item-label small')).map(function (item) { return item.textContent; }),
       labelLefts: Array.from(document.querySelectorAll('.nav-item-label strong')).map(function (item) { return Math.round(item.getBoundingClientRect().left); }),
       detailLefts: Array.from(document.querySelectorAll('.nav-item-label small')).map(function (item) { return Math.round(item.getBoundingClientRect().left); }),
-      focused: document.querySelector('.nav-item.is-focused').textContent
+      focused: document.querySelector('.nav-item.is-focused').textContent,
+      retainedRow: Number(document.querySelector('.media-row.is-active').getAttribute('data-home-row')),
+      retainedIndex: Number(document.querySelector('.home-focus-card.is-focused').getAttribute('data-media-index')),
+      retainedRowTop: Math.round(document.querySelector('.media-row.is-active').getBoundingClientRect().top),
+      rowsClass: document.querySelector('.catalog-rows').className,
+      heroReceding: document.querySelector('.hero').classList.contains('is-receding')
     }))()`)
     assert(navigation.width >= 370 && navigation.width <= 430, `Navigation drawer width is ${navigation.width}px.`)
     assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","My List","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
     assert(navigation.details.every((detail) => detail.length > 0), 'Navigation destinations are missing descriptions.')
     assert(Math.max(...navigation.labelLefts) - Math.min(...navigation.labelLefts) <= 1, `Navigation labels are not aligned: ${navigation.labelLefts}.`)
     assert(Math.max(...navigation.detailLefts) - Math.min(...navigation.detailLefts) <= 1, `Navigation descriptions are not aligned: ${navigation.detailLefts}.`)
+    assert(navigation.retainedRow === 1 && navigation.retainedIndex === 0 && navigation.retainedRowTop === 52, `Opening the sidebar reset the active rail: ${JSON.stringify(navigation)}.`)
+    assert(navigation.rowsClass.includes('is-browsing') && navigation.heroReceding, `Opening the sidebar restored the top-of-page presentation: ${JSON.stringify(navigation)}.`)
     await capture('m56-navigation.png')
+
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=spotlight&case=series-selection` })
+    await waitFor("location.search.indexOf('case=series-selection') >= 0 && document.readyState === 'complete' && document.querySelector('.home-screen.mode-spotlight .hero-button.primary.is-focused')")
+    await waitFor("!document.getElementById('startup-splash')")
+    await evaluate("document.documentElement.style.pointerEvents = 'none'")
+    await press('ArrowDown')
+    await waitFor("document.querySelector('.media-row.is-active')")
+    for (let index = 0; index < 8; index += 1) {
+      const activeRow = await evaluate("Number(document.querySelector('.media-row.is-active').getAttribute('data-home-row'))")
+      if (activeRow === 1) break
+      await press(activeRow < 1 ? 'ArrowDown' : 'ArrowUp')
+    }
+    await waitFor("document.querySelector('.media-row.is-active[data-home-row=\"1\"] .home-focus-card.is-focused')")
+    const seriesTitle = await evaluate("document.querySelector('.home-focus-card.is-focused').getAttribute('aria-label')")
+    await press('Enter')
+    await waitFor("document.querySelector('.app-shell.screen-series .series-screen')")
+    const seriesSelection = await evaluate(`(() => ({
+      shell: document.querySelector('.app-shell').className,
+      title: document.querySelector('.series-title-block h1').textContent.trim(),
+      player: Boolean(document.querySelector('.player-screen, .loading-screen')),
+      actions: document.querySelectorAll('.series-action').length
+    }))()`)
+    assert(seriesSelection.shell.includes('screen-series') && !seriesSelection.player, `A normal series tile started playback: ${JSON.stringify(seriesSelection)}.`)
+    assert(seriesSelection.title && seriesTitle.includes(seriesSelection.title) && seriesSelection.actions > 0, `The selected series page did not open: ${JSON.stringify({ seriesTitle, seriesSelection })}.`)
+    await capture('m56-series-selection.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=carousel` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.home-screen.mode-carousel')")
@@ -748,7 +787,7 @@ async function main() {
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write('Chromium 56 check passed: Home geometry, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
+    process.stdout.write('Chromium 56 check passed: Home geometry, retained mid-page sidebar position, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()

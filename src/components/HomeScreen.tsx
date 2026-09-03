@@ -16,6 +16,7 @@ interface HomeScreenProps {
   page?: 'home' | 'browse'
   carouselLayout: boolean
   focus: FocusLocation
+  returnFocus: FocusLocation
   activeNav: number
   catalogOpen: boolean
   catalogFocus: number
@@ -486,6 +487,7 @@ export function HomeScreen({
   page = 'home',
   carouselLayout,
   focus,
+  returnFocus,
   activeNav,
   catalogOpen,
   catalogFocus,
@@ -516,10 +518,20 @@ export function HomeScreen({
   const heroLogoImage = useLoadedImage(hero.logoImage)
   const homeTrackRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<FocusLocation>(focus)
-  const activeRow = focus.zone === 'row' ? focus.row : 0
-  const horizontalCenter = focus.zone === 'row' ? focus.index : 0
-  const focusedRowLength = focus.zone === 'row' ? snapshot.rows[focus.row]?.items.length ?? 0 : 0
-  const focusMotion = homeFocusMotion(previousFocusRef.current, focus, focusedRowLength)
+  const presentedFocus = focus.zone === 'row'
+    ? focus
+    : focus.zone === 'nav' && returnFocus.zone === 'row'
+      ? returnFocus
+      : undefined
+  const browsingRows = Boolean(presentedFocus)
+  const activeRow = presentedFocus?.row ?? 0
+  const horizontalCenter = presentedFocus?.index ?? 0
+  const focusedRowLength = presentedFocus ? snapshot.rows[presentedFocus.row]?.items.length ?? 0 : 0
+  const focusMotion = focus.zone === 'row'
+    ? previousFocusRef.current.zone === 'nav'
+      ? 'still'
+      : homeFocusMotion(previousFocusRef.current, focus, focusedRowLength)
+    : 'still'
 
   useEffect(() => {
     previousFocusRef.current = focus
@@ -571,7 +583,7 @@ export function HomeScreen({
 
   return (
     <main
-      class={`home-screen page-${page} mode-${carouselLayout ? 'carousel' : 'spotlight'}${focus.zone === 'row' ? ' is-browsing' : ''}`}
+      class={`home-screen page-${page} mode-${carouselLayout ? 'carousel' : 'spotlight'}${browsingRows ? ' is-browsing' : ''}`}
       aria-label={page === 'browse' ? 'Browse merged catalogue' : 'Home'}
     >
       <NavRail
@@ -618,9 +630,9 @@ export function HomeScreen({
 
       <div class="home-motion-track" ref={homeTrackRef}>
       <section
-        class={`hero${focus.zone === 'row' && !carouselLayout ? ' is-receding' : ''}${focus.zone === 'row' && carouselLayout ? ' is-contextual' : ''}`}
+        class={`hero${browsingRows && !carouselLayout ? ' is-receding' : ''}${browsingRows && carouselLayout ? ' is-contextual' : ''}`}
         aria-label={`Featured: ${hero.title}`}
-        aria-hidden={focus.zone === 'row' && !carouselLayout}
+        aria-hidden={browsingRows && !carouselLayout}
       >
         <article class="hero-feature-card">
         <img class="hero-brand" src={wordmark} alt="izumi" />
@@ -679,21 +691,21 @@ export function HomeScreen({
         </article>
       </section>
 
-      <div class={`catalog-rows${focus.zone === 'row' ? carouselLayout ? ' is-carousel-browsing' : ' is-browsing' : ' is-preview'}`}>
+      <div class={`catalog-rows${browsingRows ? carouselLayout ? ' is-carousel-browsing' : ' is-browsing' : ' is-preview'}`}>
         {snapshot.rows.map((row, rowIndex) => {
           const topTenRow = row.presentation === 'top-10'
           const continueRow = row.kind === 'continue'
           const rowVisible = homeRowVisible(rowIndex, activeRow)
-          const rowActive = focus.zone === 'row' && rowIndex === activeRow
+          const rowActive = browsingRows && rowIndex === activeRow
           const horizontalWindow = linearWindow(
             row.items.length,
             rowIndex === activeRow ? horizontalCenter : 0,
-            carouselLayout || focus.zone !== 'row' ? 6 : 4,
+            carouselLayout || !browsingRows ? 6 : 4,
           )
           const cyclicIndexes = rowActive
             ? cyclicRailIndexes(
                 row.items.length,
-                carouselLayout ? focus.index : focus.index + 1,
+                carouselLayout ? horizontalCenter : horizontalCenter + 1,
                 carouselLayout ? 8 : Math.min(4, Math.max(0, row.items.length - 1)),
               )
             : []
@@ -703,10 +715,10 @@ export function HomeScreen({
                 { length: Math.max(0, horizontalWindow.end - horizontalWindow.start) },
                 (_, offset) => horizontalWindow.start + offset,
               )
-          const focusedItem = rowActive && !carouselLayout ? row.items[focus.index] : undefined
+          const focusedItem = rowActive && !carouselLayout ? row.items[horizontalCenter] : undefined
           const rowTop = carouselLayout
-            ? homeCarouselRowTop(rowIndex, activeRow, focus.zone === 'row')
-            : homeRowTop(rowIndex, activeRow, focus.zone === 'row')
+            ? homeCarouselRowTop(rowIndex, activeRow, browsingRows)
+            : homeRowTop(rowIndex, activeRow, browsingRows)
           const rowTransform = `translate3d(0, ${rowTop}px, 0)`
           return (
           <section
@@ -723,9 +735,9 @@ export function HomeScreen({
                 {!carouselLayout && rowActive && row.items.length > 1 && (
                   <div class="home-previous-peek" aria-hidden="true">
                     <HomePosterCard
-                      item={row.items[(focus.index - 1 + row.items.length) % row.items.length]}
+                      item={row.items[(horizontalCenter - 1 + row.items.length) % row.items.length]}
                       rowIndex={rowIndex}
-                      index={(focus.index - 1 + row.items.length) % row.items.length}
+                      index={(horizontalCenter - 1 + row.items.length) % row.items.length}
                       episodeCard={continueRow}
                       topTenRow={topTenRow}
                       selectedSource={false}
@@ -738,7 +750,7 @@ export function HomeScreen({
                     key={mediaIdentity(focusedItem)}
                     item={focusedItem}
                     rowIndex={rowIndex}
-                    index={focus.index}
+                    index={horizontalCenter}
                     episodeCard={continueRow}
                     topTenRow={topTenRow}
                     motion={focusMotion}
@@ -774,8 +786,8 @@ export function HomeScreen({
               )}
               {renderedIndexes.map((index) => {
                 const item = row.items[index]
-                const focusedPoster = carouselLayout && rowActive && focus.index === index
-                const selectedSource = !carouselLayout && rowActive && focus.index === index
+                const focusedPoster = carouselLayout && rowActive && horizontalCenter === index
+                const selectedSource = !carouselLayout && rowActive && horizontalCenter === index
                 return (
                   <HomePosterCard
                     key={`${item.ref.provider}-${item.ref.id}`}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
 import {
+  catalogMediaDestination,
   cyclicRailIndexes,
   homeHeroItems,
   isMergedCatalog,
@@ -24,6 +25,13 @@ const row = (id: string, title: string, kind: CompanionHomeRow['kind'], items = 
 })
 
 describe('TV home navigation model', () => {
+  it('routes ordinary catalogue titles to information pages instead of playback', () => {
+    expect(catalogMediaDestination(media('show'))).toBe('series')
+    expect(catalogMediaDestination({ ...media('legacy-show'), mediaKind: 'show', ref: { provider: 'tmdb', type: 'movie', id: 'legacy-show' } })).toBe('series')
+    expect(catalogMediaDestination({ ...media('movie'), mediaKind: 'movie' })).toBe('details')
+    expect(catalogMediaDestination({ ...media('movie-ref'), ref: { provider: 'tmdb', type: 'movie', id: 'movie-ref' } })).toBe('details')
+  })
+
   it('puts Continue Watching before ranked and catalogue rows', () => {
     const rows = [row('new', 'New releases', 'catalog'), row('top', 'Trending now', 'catalog'), row('continue', 'Continue Watching', 'continue')]
     expect(orderedHomeRows(rows).map(({ id }) => id)).toEqual(['continue', 'top', 'new'])
