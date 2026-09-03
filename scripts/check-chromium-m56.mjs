@@ -419,6 +419,8 @@ async function main() {
         focusLeft: focused.getBoundingClientRect().left,
         focusAnimation: getComputedStyle(focused.querySelector('.home-focus-frame')).animationDuration,
         mediaAnimation: getComputedStyle(focused.querySelector('.home-focus-media')).animationDuration,
+        mediaOpacity: getComputedStyle(focused.querySelector('.home-focus-media')).opacity,
+        mediaWillChange: getComputedStyle(focused.querySelector('.home-focus-media')).willChange,
         artworkTransition: getComputedStyle(focused.querySelector('.home-focus-art')).transitionDuration,
         artworkLayers: focused.querySelectorAll('.home-focus-media > img').length,
         stripTransform: getComputedStyle(strip).transform,
@@ -432,6 +434,8 @@ async function main() {
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
     assert(horizontal.focusAnimation === '0s', `Focus outline animation is enabled: ${horizontal.focusAnimation}.`)
     assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
+    assert(horizontal.mediaOpacity === '1', `Horizontal navigation dims the focused tile to ${horizontal.mediaOpacity}.`)
+    assert(horizontal.mediaWillChange === 'transform', `Focused artwork allocates unnecessary compositor properties: ${horizontal.mediaWillChange}.`)
     assert(horizontal.artworkTransition === '0s' && horizontal.artworkLayers === 1, `Focused tile crossfades multiple photos: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)

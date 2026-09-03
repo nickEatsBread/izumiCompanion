@@ -176,7 +176,7 @@ function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void 
   image.src = source
 }
 
-function animateRailScroll(element: HTMLElement, target: number, duration = 240): void {
+function animateRailScroll(element: HTMLElement, target: number, duration = 160): void {
   const previousFrame = railScrollAnimations.get(element)
   if (previousFrame !== undefined) window.cancelAnimationFrame(previousFrame)
   const start = element.scrollLeft
@@ -682,6 +682,7 @@ export function HomeScreen({
                 )}
                 {focusedItem && (
                   <HomeFocusCard
+                    key={mediaIdentity(focusedItem)}
                     item={focusedItem}
                     rowIndex={rowIndex}
                     index={focus.index}

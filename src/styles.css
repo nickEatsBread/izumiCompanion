@@ -3759,18 +3759,18 @@ body.avplay-visible #av-player {
 }
 
 @keyframes home-focus-enter-forward {
-  from { opacity: .28; transform: translate3d(38px, 0, 0) scale(.985); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  from { transform: translate3d(26px, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
 }
 
 @keyframes home-focus-enter-backward {
-  from { opacity: .28; transform: translate3d(-38px, 0, 0) scale(.985); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  from { transform: translate3d(-26px, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
 }
 
 @keyframes home-focus-enter-vertical {
-  from { opacity: .2; transform: translate3d(0, 0, 0) scale(1.018); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  from { transform: translate3d(0, 14px, 0); }
+  to { transform: translate3d(0, 0, 0); }
 }
 
 @keyframes home-focus-copy-change {
@@ -4597,21 +4597,21 @@ body,
 
 .home-focus-card.motion-forward .home-focus-media,
 .home-focus-card.motion-forward .home-focus-context {
-  animation: home-focus-enter-forward 240ms cubic-bezier(.2, .78, .2, 1) both;
+  animation: home-focus-enter-forward 150ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
 .home-focus-card.motion-backward .home-focus-media,
 .home-focus-card.motion-backward .home-focus-context {
-  animation: home-focus-enter-backward 240ms cubic-bezier(.2, .78, .2, 1) both;
+  animation: home-focus-enter-backward 150ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
 .home-focus-card.motion-vertical .home-focus-media,
 .home-focus-card.motion-vertical .home-focus-context {
-  animation: home-focus-enter-vertical 230ms cubic-bezier(.2, .78, .2, 1) both;
+  animation: home-focus-enter-vertical 145ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
 .home-focus-card .home-focus-context {
-  animation-delay: 34ms;
+  animation-delay: 0ms;
 }
 
 .home-focus-frame {
@@ -4635,7 +4635,7 @@ body,
   overflow: hidden;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
-  will-change: opacity, transform;
+  will-change: transform;
 }
 
 .home-focus-outline {
