@@ -6,6 +6,7 @@ import type {
 } from '../types'
 
 export interface PlaybackExperienceSettings {
+  homeCarouselLayout: boolean
   autoplayNextEpisode: boolean
   autoSkipSegments: boolean
   stillWatchingEnabled: boolean
@@ -20,6 +21,7 @@ export interface NextEpisode {
 const STORAGE_KEY = 'izumi.companion.playback-experience'
 
 export const defaultPlaybackExperienceSettings: PlaybackExperienceSettings = {
+  homeCarouselLayout: false,
   autoplayNextEpisode: false,
   autoSkipSegments: false,
   stillWatchingEnabled: true,
@@ -31,6 +33,7 @@ export function readPlaybackExperienceSettings(): PlaybackExperienceSettings {
     const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') as Partial<PlaybackExperienceSettings> | null
     if (!value || typeof value !== 'object') return { ...defaultPlaybackExperienceSettings }
     return {
+      homeCarouselLayout: value.homeCarouselLayout === true,
       autoplayNextEpisode: value.autoplayNextEpisode === true,
       autoSkipSegments: value.autoSkipSegments === true,
       stillWatchingEnabled: value.stillWatchingEnabled !== false,

@@ -281,14 +281,31 @@ async function main() {
           aspectRatio: CSS.supports('aspect-ratio', '16 / 9')
         },
         shadeBackground: getComputedStyle(document.querySelector('.hero-shade')).backgroundImage,
-        trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform
+        trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform,
+        previewRhythm: (() => {
+          var rows = document.querySelectorAll('.media-row');
+          var card = rows[0].querySelector('.home-poster-card').getBoundingClientRect();
+          var nextTitle = rows[1].querySelector('h2').getBoundingClientRect();
+          return [Math.round(card.bottom), Math.round(nextTitle.top)];
+        })()
       };
     })()`)
     assert(JSON.stringify(hero.viewport) === '[1920,1080]', `Unexpected M56 viewport ${hero.viewport}.`)
-    assert(JSON.stringify(hero.card) === '[112,40,1744,680]', `Unexpected hero geometry ${hero.card}.`)
+    assert(JSON.stringify(hero.card) === '[0,0,1920,640]', `Unexpected hero geometry ${hero.card}.`)
     assert(Object.values(hero.supports).every((supported) => supported === false), 'The M56 feature baseline changed.')
     assert(hero.shadeBackground.includes('linear-gradient'), 'The M56 hero contrast gradient did not render.')
     assert(hero.trackTransform === 'none', 'Home uses a full-page compositor transform.')
+    assert(hero.previewRhythm[1] >= hero.previewRhythm[0], `Preview row titles overlap the cards: ${hero.previewRhythm}.`)
+    const collapsedNavigation = await evaluate(`(() => {
+      var items = Array.from(document.querySelectorAll('.nav-item'));
+      var tops = items.map(function (item) { return Math.round(item.getBoundingClientRect().top); });
+      return {
+        gaps: tops.slice(1).map(function (top, index) { return top - tops[index]; }),
+        activeMarker: getComputedStyle(document.querySelector('.nav-item.is-active .nav-item-glyph'), '::after').display
+      };
+    })()`)
+    assert(Math.max(...collapsedNavigation.gaps) - Math.min(...collapsedNavigation.gaps) <= 2, `Sidebar spacing is uneven: ${collapsedNavigation.gaps}.`)
+    assert(collapsedNavigation.activeMarker === 'none', 'The active Home icon still uses an underline marker.')
     await waitFor("!document.getElementById('startup-splash')")
     await capture('m56-home-hero.png')
 
@@ -421,6 +438,41 @@ async function main() {
     assert(navigation.details.every((detail) => detail.length > 0), 'Navigation destinations are missing descriptions.')
     await capture('m56-navigation.png')
 
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=carousel` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.home-screen.mode-carousel')")
+    await waitFor("!document.getElementById('startup-splash')")
+    await press('ArrowDown')
+    await waitFor("document.querySelector('.home-poster-card.is-focused')")
+    await waitFor("Array.from(document.querySelectorAll('.home-poster-card img')).every(function (image) { return image.complete && image.naturalWidth > 0 })")
+    await wait(460)
+    const carouselHome = await evaluate(`(() => {
+      var hero = document.querySelector('.hero').getBoundingClientRect();
+      var rows = document.querySelector('.catalog-rows').getBoundingClientRect();
+      var card = document.querySelector('.home-poster-card.is-focused').getBoundingClientRect();
+      var viewport = document.querySelector('.media-row.is-active .media-strip-viewport').getBoundingClientRect();
+      return {
+        hero: [hero.left, hero.top, hero.width, hero.height],
+        rows: [rows.top, rows.height],
+        card: [card.width, card.height],
+        expanded: Boolean(document.querySelector('.home-focus-card')),
+        receding: document.querySelector('.hero').classList.contains('is-receding'),
+        heroTitle: document.querySelector('.hero h1').textContent,
+        cardTitle: document.querySelector('.home-poster-card.is-focused').getAttribute('aria-label'),
+        viewport: [viewport.left, viewport.width],
+        cards: Array.from(document.querySelectorAll('.media-row.is-active .home-poster-card')).map(function (item) {
+          var bounds = item.getBoundingClientRect();
+          return [bounds.left, bounds.width, Boolean(item.querySelector('img'))];
+        })
+      };
+    })()`)
+    assert(JSON.stringify(carouselHome.hero) === '[0,0,1920,640]', `Cinematic hero geometry is ${carouselHome.hero}.`)
+    assert(JSON.stringify(carouselHome.rows) === '[640,440]', `Cinematic rail geometry is ${carouselHome.rows}.`)
+    assert(JSON.stringify(carouselHome.card) === '[238,340]', `Cinematic card geometry is ${carouselHome.card}.`)
+    assert(carouselHome.cards.length >= 5 && carouselHome.cards.every(function (card) { return card[2]; }), `Cinematic rail did not render its artwork: ${JSON.stringify(carouselHome)}.`)
+    assert(!carouselHome.expanded && !carouselHome.receding, 'Cinematic mode expanded a card or hid its hero.')
+    assert(carouselHome.cardTitle.includes(carouselHome.heroTitle), 'Focused carousel artwork did not update the hero.')
+    await capture('m56-home-carousel.png')
+
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=search` })
     await waitFor("document.readyState === 'complete' && document.querySelector('[data-search-key=\"b\"]')")
     await waitFor("!document.getElementById('startup-splash')")
@@ -485,7 +537,7 @@ async function main() {
     await capture('m56-post-play.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=settings` })
-    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 6")
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 7")
     await waitFor("!document.getElementById('startup-splash')")
     const settings = await evaluate(`(() => ({
       options: document.querySelectorAll('.settings-options > button').length,
@@ -493,7 +545,7 @@ async function main() {
       panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(settings.options === 6 && settings.toggles === 4, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.options === 7 && settings.toggles === 5, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
     assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
     assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
     await capture('m56-playback-settings.png')

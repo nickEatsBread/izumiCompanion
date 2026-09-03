@@ -12,6 +12,7 @@ interface HomeScreenProps {
   hero: CompanionMedia
   heroIndex: number
   heroCount: number
+  carouselLayout: boolean
   focus: FocusLocation
   activeNav: number
   catalogOpen: boolean
@@ -80,17 +81,25 @@ export function homeRowVisible(rowIndex: number, activeRow: number): boolean {
 export const HOME_POSTER_WIDTH = 272
 export const HOME_POSTER_HEIGHT = 408
 export const HOME_POSTER_STRIDE = 288
+export const HOME_CAROUSEL_POSTER_WIDTH = 238
+export const HOME_CAROUSEL_POSTER_HEIGHT = 340
+export const HOME_CAROUSEL_POSTER_STRIDE = 254
 
-function rowSpacerDimensions(count: number): { width: string; minWidth: string } {
-  const width = Math.max(0, count * HOME_POSTER_STRIDE - (count ? 16 : 0))
+function rowSpacerDimensions(count: number, stride = HOME_POSTER_STRIDE): { width: string; minWidth: string } {
+  const width = Math.max(0, count * stride - (count ? 16 : 0))
   return { width: `${width}px`, minWidth: `${width}px` }
 }
 
 export function homeRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
-  if (!browsing) return 24 + rowIndex * 360
+  if (!browsing) return 24 + rowIndex * 420
   const distance = rowIndex - activeRow
   if (distance <= 0) return 52 + distance * 500
   return distance === 1 ? 704 : 1220 + (distance - 2) * 360
+}
+
+export function homeCarouselRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
+  if (!browsing) return 24 + rowIndex * 420
+  return 24 + (rowIndex - activeRow) * 420
 }
 
 function eventIndex(event: Event, attribute: string): number | undefined {
@@ -187,6 +196,7 @@ const HomePosterCard = memo(function HomePosterCard({
   episodeCard,
   topTenRow,
   selectedSource,
+  focused,
 }: {
   item: CompanionMedia
   rowIndex: number
@@ -194,6 +204,7 @@ const HomePosterCard = memo(function HomePosterCard({
   episodeCard: boolean
   topTenRow: boolean
   selectedSource: boolean
+  focused: boolean
 }) {
   const cardProgress = episodeCard ? item.episodeProgress : item.progress
   const inProgress = typeof cardProgress === 'number' && cardProgress > 0 && cardProgress < 1
@@ -215,10 +226,11 @@ const HomePosterCard = memo(function HomePosterCard({
   return (
     <button
       type="button"
-      class={`home-poster-card${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${selectedSource ? ' is-selected-source' : ''}`}
+      class={`home-poster-card${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${selectedSource ? ' is-selected-source' : ''}${focused ? ' is-focused' : ''}`}
       data-focus-id={selectedSource ? undefined : `row-${rowIndex}-${index}`}
       data-media-index={index}
-      tabIndex={-1}
+      tabIndex={focused ? 0 : -1}
+      aria-current={focused ? 'true' : undefined}
       aria-label={`${rank ? `Number ${rank}, ` : ''}${item.title}${item.episode ? `, episode ${item.episode}` : ''}`}
     >
       <span class="home-poster-frame">
@@ -332,6 +344,7 @@ export function HomeScreen({
   hero,
   heroIndex,
   heroCount,
+  carouselLayout,
   focus,
   activeNav,
   catalogOpen,
@@ -379,15 +392,23 @@ export function HomeScreen({
       const nextCard = strip?.querySelector<HTMLElement>(`[data-media-index="${focus.index + 1}"]`)
       const selectedCard = strip?.querySelector<HTMLElement>(`[data-media-index="${focus.index}"]`)
       if (!strip || !viewport || (!nextCard && !selectedCard)) return
-      const target = nextCard || selectedCard!
       const maximum = Math.max(0, strip.scrollWidth - viewport.clientWidth)
-      animateRailScroll(viewport, Math.min(maximum, Math.max(0, target.offsetLeft + (nextCard ? 0 : HOME_POSTER_STRIDE))))
+      if (carouselLayout && selectedCard) {
+        const left = selectedCard.offsetLeft
+        const right = left + selectedCard.offsetWidth
+        const current = viewport.scrollLeft
+        const target = left < current ? left : right > current + viewport.clientWidth ? right - viewport.clientWidth + 24 : current
+        animateRailScroll(viewport, Math.min(maximum, Math.max(0, target)))
+      } else {
+        const target = nextCard || selectedCard!
+        animateRailScroll(viewport, Math.min(maximum, Math.max(0, target.offsetLeft + (nextCard ? 0 : HOME_POSTER_STRIDE))))
+      }
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [focus, snapshot.rows])
+  }, [carouselLayout, focus, snapshot.rows])
 
   return (
-    <main class={`home-screen${focus.zone === 'row' ? ' is-browsing' : ''}`}>
+    <main class={`home-screen mode-${carouselLayout ? 'carousel' : 'spotlight'}${focus.zone === 'row' ? ' is-browsing' : ''}`}>
       <NavRail
         activeIndex={activeNav}
         focus={focus}
@@ -431,7 +452,11 @@ export function HomeScreen({
       )}
 
       <div class="home-motion-track" ref={homeTrackRef}>
-      <section class={`hero${focus.zone === 'row' ? ' is-receding' : ''}`} aria-label={`Featured: ${hero.title}`} aria-hidden={focus.zone === 'row'}>
+      <section
+        class={`hero${focus.zone === 'row' && !carouselLayout ? ' is-receding' : ''}${focus.zone === 'row' && carouselLayout ? ' is-contextual' : ''}`}
+        aria-label={`Featured: ${hero.title}`}
+        aria-hidden={focus.zone === 'row' && !carouselLayout}
+      >
         <article class="hero-feature-card">
         <img class="hero-brand" src={wordmark} alt="Izumi" />
         <HeroArtwork source={heroImage} />
@@ -474,17 +499,21 @@ export function HomeScreen({
             </button>
           </div>}
         </div>
-        {heroCount > 1 && (
-          <div class="hero-carousel-pips" aria-hidden="true">
-            {Array.from({ length: heroCount }, (_, index) => (
-              <span class={index === heroIndex ? 'is-current' : ''} key={index} />
-            ))}
+        {heroCount > 1 && focus.zone === 'hero' && (
+          <div class="hero-carousel-status" aria-hidden="true">
+            <span>{String(heroIndex + 1).padStart(2, '0')}</span>
+            <div class="hero-carousel-pips">
+              {Array.from({ length: heroCount }, (_, index) => (
+                <i class={index === heroIndex ? 'is-current' : ''} key={index} />
+              ))}
+            </div>
+            <span>{String(heroCount).padStart(2, '0')}</span>
           </div>
         )}
         </article>
       </section>
 
-      <div class={`catalog-rows${focus.zone === 'row' ? ' is-browsing' : ' is-preview'}`}>
+      <div class={`catalog-rows${focus.zone === 'row' ? carouselLayout ? ' is-carousel-browsing' : ' is-browsing' : ' is-preview'}`}>
         {snapshot.rows.map((row, rowIndex) => {
           const topTenRow = row.presentation === 'top-10'
           const continueRow = row.kind === 'continue'
@@ -493,10 +522,13 @@ export function HomeScreen({
           const horizontalWindow = linearWindow(
             row.items.length,
             rowIndex === activeRow ? horizontalCenter : 0,
-            4,
+            carouselLayout || focus.zone !== 'row' ? 6 : 4,
           )
-          const focusedItem = rowActive ? row.items[focus.index] : undefined
-          const rowTransform = `translate3d(0, ${homeRowTop(rowIndex, activeRow, focus.zone === 'row')}px, 0)`
+          const focusedItem = rowActive && !carouselLayout ? row.items[focus.index] : undefined
+          const rowTop = carouselLayout
+            ? homeCarouselRowTop(rowIndex, activeRow, focus.zone === 'row')
+            : homeRowTop(rowIndex, activeRow, focus.zone === 'row')
+          const rowTransform = `translate3d(0, ${rowTop}px, 0)`
           return (
           <section
             class={`media-row${continueRow ? ' continue-row' : ''}${topTenRow ? ' top-ten-row' : ''}${rowActive ? ' is-active' : ''}${rowIndex > activeRow ? ' is-upcoming' : ''}`}
@@ -509,7 +541,7 @@ export function HomeScreen({
             {!rowVisible
               ? <div class="media-strip-viewport"><div class="media-strip is-placeholder" aria-hidden="true" /></div>
               : <div class={`home-row-stage${rowActive ? ' is-active' : ''}`}>
-                {rowActive && focus.index > 0 && (
+                {!carouselLayout && rowActive && focus.index > 0 && (
                   <div class="home-previous-peek" aria-hidden="true">
                     <HomePosterCard
                       item={row.items[focus.index - 1]}
@@ -518,6 +550,7 @@ export function HomeScreen({
                       episodeCard={continueRow}
                       topTenRow={topTenRow}
                       selectedSource={false}
+                      focused={false}
                     />
                   </div>
                 )}
@@ -552,14 +585,15 @@ export function HomeScreen({
               {horizontalWindow.start > 0 && (
                 <span
                   class="media-card-spacer"
-                  style={rowSpacerDimensions(horizontalWindow.start)}
+                  style={rowSpacerDimensions(horizontalWindow.start, carouselLayout ? HOME_CAROUSEL_POSTER_STRIDE : HOME_POSTER_STRIDE)}
                   aria-hidden="true"
                   key={`leading-${row.id}`}
                 />
               )}
               {row.items.slice(horizontalWindow.start, horizontalWindow.end).map((item, offset) => {
                 const index = horizontalWindow.start + offset
-                const selectedSource = rowActive && focus.index === index
+                const focusedPoster = carouselLayout && rowActive && focus.index === index
+                const selectedSource = !carouselLayout && rowActive && focus.index === index
                 return (
                   <HomePosterCard
                     key={`${item.ref.provider}-${item.ref.id}`}
@@ -569,13 +603,14 @@ export function HomeScreen({
                     episodeCard={continueRow}
                     topTenRow={topTenRow}
                     selectedSource={selectedSource}
+                    focused={focusedPoster}
                   />
                 )
               })}
               {horizontalWindow.end < row.items.length && (
                 <span
                   class="media-card-spacer"
-                  style={rowSpacerDimensions(row.items.length - horizontalWindow.end)}
+                  style={rowSpacerDimensions(row.items.length - horizontalWindow.end, carouselLayout ? HOME_CAROUSEL_POSTER_STRIDE : HOME_POSTER_STRIDE)}
                   aria-hidden="true"
                   key={`trailing-${row.id}`}
                 />

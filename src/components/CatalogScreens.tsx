@@ -979,6 +979,7 @@ export function SettingsScreen({
 }) {
   const confirmTitle = confirmation === 'unpair' ? 'Unpair this TV?' : 'Reset the companion?'
   const settingsOptions = [
+    { title: 'Cinematic home carousel', detail: 'Keep featured artwork above the rows instead of expanding each focused card.', icon: Tv, enabled: playbackSettings.homeCarouselLayout },
     { title: 'Autoplay next episode', detail: 'Show a short countdown, then continue the series.', icon: Play, enabled: playbackSettings.autoplayNextEpisode },
     { title: 'Automatically skip segments', detail: 'Use AniSkip, IntroDB and chapter timing supplied by Izumi.', icon: Captions, enabled: playbackSettings.autoSkipSegments },
     { title: 'Still watching check', detail: 'Pause autoplay after three episodes until you confirm.', icon: ShieldCheck, enabled: playbackSettings.stillWatchingEnabled },

@@ -222,7 +222,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [postPlayFocus, setPostPlayFocus] = useState(0)
   const [stillWatching, setStillWatching] = useState(false)
   const [stillWatchingFocus, setStillWatchingFocus] = useState(0)
-  const [playbackSettings, setPlaybackSettings] = useState<PlaybackExperienceSettings>(readPlaybackExperienceSettings)
+  const [playbackSettings, setPlaybackSettings] = useState<PlaybackExperienceSettings>(() => {
+    const settings = readPlaybackExperienceSettings()
+    const previewLayout = previewParameters.get('layout')
+    return showPreviewTools && (previewLayout === 'carousel' || previewLayout === 'spotlight')
+      ? { ...settings, homeCarouselLayout: previewLayout === 'carousel' }
+      : settings
+  })
   const upcomingEpisode = useMemo(() => nextEpisodeFor(playbackMedia), [playbackMedia])
   const [playerMenu, setPlayerMenu] = useState<PlayerMenu | null>(null)
   const [playerMenuFocus, setPlayerMenuFocus] = useState(0)
@@ -1052,7 +1058,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (focusId(focusRef.current) === focusId(next)) return
     if (next.zone === 'row') {
       const row = homeRows[next.row]
-      if (row) homeRowIndexesRef.current[row.id] = Math.max(0, Math.min(row.items.length - 1, next.index))
+      if (row) {
+        const index = Math.max(0, Math.min(row.items.length - 1, next.index))
+        homeRowIndexesRef.current[row.id] = index
+        if (screen === 'home' && playbackSettings.homeCarouselLayout && row.items[index]) setSelected(row.items[index])
+      }
     }
     setFocusLocation(next)
   }
@@ -1721,19 +1731,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const runSettingsAction = (index: number) => {
     if (!settingsConfirmation) {
-      if (index < 4) {
-        const key = (['autoplayNextEpisode', 'autoSkipSegments', 'stillWatchingEnabled', 'preferBingeSource'] as const)[index]
+      if (index < 5) {
+        const key = (['homeCarouselLayout', 'autoplayNextEpisode', 'autoSkipSegments', 'stillWatchingEnabled', 'preferBingeSource'] as const)[index]
         setPlaybackSettings((current) => ({ ...current, [key]: !current[key] }))
-        showNotice(`${index === 0 ? 'Autoplay' : index === 1 ? 'Automatic skipping' : index === 2 ? 'Still watching check' : 'Source continuity'} updated`)
+        showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Autoplay' : index === 2 ? 'Automatic skipping' : index === 3 ? 'Still watching check' : 'Source continuity'} updated`)
         return
       }
-      setSettingsConfirmation(index === 4 ? 'unpair' : 'reset')
+      setSettingsConfirmation(index === 5 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
       return
     }
     if (index === 0) {
       setSettingsConfirmation(null)
-      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 4 : 5 })
+      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 5 : 6 })
       return
     }
     if (settingsConfirmation === 'unpair') receiverRef.current?.unpair()
@@ -1766,7 +1776,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     } else if (focus.zone === 'setting') {
       if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
       else if (action === 'up') changeFocus({ zone: 'setting', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(5, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(6, focus.index + 1) })
     }
   }
 
@@ -2050,6 +2060,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           hero={selected}
           heroIndex={heroIndex}
           heroCount={homeHeroRail.length}
+          carouselLayout={playbackSettings.homeCarouselLayout}
           focus={focus}
           activeNav={activeNav}
           catalogOpen={catalogMenuOpen}

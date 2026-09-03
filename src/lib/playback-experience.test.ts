@@ -76,4 +76,9 @@ describe('playback experience', () => {
     writePlaybackExperienceSettings(settings)
     expect(readPlaybackExperienceSettings()).toEqual(settings)
   })
+
+  it('keeps the cinematic home layout opt-in for existing TVs', () => {
+    localStorage.setItem('izumi.companion.playback-experience', JSON.stringify({ autoplayNextEpisode: true }))
+    expect(readPlaybackExperienceSettings()).toMatchObject({ homeCarouselLayout: false, autoplayNextEpisode: true })
+  })
 })

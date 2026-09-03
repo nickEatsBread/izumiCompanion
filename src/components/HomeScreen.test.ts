@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionMedia } from '../types'
 import {
+  HOME_CAROUSEL_POSTER_HEIGHT,
+  HOME_CAROUSEL_POSTER_STRIDE,
+  HOME_CAROUSEL_POSTER_WIDTH,
   HOME_POSTER_HEIGHT,
   HOME_POSTER_STRIDE,
   HOME_POSTER_WIDTH,
   homeCardContext,
+  homeCarouselRowTop,
   homeFocusMotion,
   homeRowTop,
   homeRowVisible,
@@ -22,6 +26,7 @@ const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
 describe('TV home presentation', () => {
   it('uses living-room scale cards with a fixed, non-reflowing stride', () => {
     expect([HOME_POSTER_WIDTH, HOME_POSTER_HEIGHT, HOME_POSTER_STRIDE]).toEqual([272, 408, 288])
+    expect([HOME_CAROUSEL_POSTER_WIDTH, HOME_CAROUSEL_POSTER_HEIGHT, HOME_CAROUSEL_POSTER_STRIDE]).toEqual([238, 340, 254])
   })
 
   it('renders the active row and its immediate neighbors without mounting distant artwork', () => {
@@ -37,6 +42,8 @@ describe('TV home presentation', () => {
     expect(homeRowTop(3, 2, true)).toBe(704)
     expect(homeRowTop(4, 2, true)).toBe(1220)
     expect(homeRowTop(0, 0, false)).toBe(24)
+    expect(homeCarouselRowTop(2, 2, true)).toBe(24)
+    expect(homeCarouselRowTop(3, 2, true)).toBe(444)
   })
 
   it('removes generic media type labels from the hero metadata', () => {
