@@ -7,6 +7,6 @@ describe('TV onboarding handoff', () => {
   })
 
   it('builds the live Cloudflare TV Link URL', () => {
-    expect(tvLinkUrl('ABCD 2345')).toBe('https://tv-link.izumi.watch/?code=ABCD2345')
+    expect(tvLinkUrl('ABCD 2345', 'abcdefghijklmnopqrstuv')).toBe('https://tv-link.izumi.watch/#code=ABCD2345&secret=abcdefghijklmnopqrstuv')
   })
 })

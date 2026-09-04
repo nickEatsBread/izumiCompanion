@@ -3303,6 +3303,34 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
   line-height: 1.3;
 }
 
+.standalone-confirm-actions {
+  margin-top: 1.15vh;
+  display: flex;
+}
+
+.standalone-confirm-actions button {
+  min-height: 4.7vh;
+  padding: 0 1.15vw;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, .2);
+  background: rgba(255, 255, 255, .06);
+  color: rgba(255, 255, 255, .78);
+  font: inherit;
+  font-size: .78vw;
+  font-weight: 800;
+}
+
+.standalone-confirm-actions button + button { margin-left: .65vw; }
+.standalone-confirm-actions button > svg { margin-right: .45vw; }
+.standalone-confirm-actions button.is-focused {
+  border-color: #fff;
+  background: #fff;
+  color: #0a0a0a;
+  transform: scale(1.035);
+}
+.standalone-confirm-actions button.is-approve:not(.is-focused) { border-color: rgba(169, 231, 191, .45); }
+
 .standalone-link-back { margin-top: 3.2vh; }
 .standalone-link-back > svg { margin-right: .65vw; }
 

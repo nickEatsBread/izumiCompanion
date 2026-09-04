@@ -1100,11 +1100,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   useEffect(() => {
     if (screen !== 'standalone-link') return
     if (previewParameters.has('capture')) {
+      const confirming = previewParameters.get('scenario') === 'tv-link-confirming'
       setTvLinkInfo({
         code: 'ABCD2345',
+        linkSecret: 'abcdefghijklmnopqrstuv',
         expiresAt: Date.now() + 10 * 60_000,
-        phase: 'waiting',
-        message: 'Scan the QR code or enter the TV code on your phone.',
+        phase: confirming ? 'confirming' : 'waiting',
+        confirmation: confirming ? '418209' : undefined,
+        message: confirming ? 'Compare this number with your phone, then approve it here.' : 'Scan the QR code or enter the TV code on your phone.',
       })
       return
     }
@@ -1114,7 +1117,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     const link = new TvLinkReceiver(receiver.pairingInfo.deviceId, {
-      onInfo: setTvLinkInfo,
+      onInfo: (info) => {
+        setTvLinkInfo(info)
+        if (info.phase === 'confirming') setFocus({ zone: 'setting', index: 0 })
+      },
       onSetup: (transport) => {
         const activeReceiver = receiverRef.current
         if (!activeReceiver) throw new Error('The TV receiver closed before setup completed.')
@@ -1131,19 +1137,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }, [screen])
 
   useEffect(() => {
-    if (!tvLinkInfo.code) {
+    if (!tvLinkInfo.code || !tvLinkInfo.linkSecret) {
       setStandaloneQrCode(undefined)
       return
     }
     let cancelled = false
-    void QRCode.toDataURL(tvLinkUrl(tvLinkInfo.code), {
+    void QRCode.toDataURL(tvLinkUrl(tvLinkInfo.code, tvLinkInfo.linkSecret), {
       width: 420,
       margin: 2,
       color: { dark: '#050505', light: '#ffffff' },
       errorCorrectionLevel: 'H',
     }).then((value) => { if (!cancelled) setStandaloneQrCode(value) })
     return () => { cancelled = true }
-  }, [tvLinkInfo.code])
+  }, [tvLinkInfo.code, tvLinkInfo.linkSecret])
 
   useEffect(() => {
     const nativeVideo = avplayRef.current.available
@@ -2633,6 +2639,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     changeFocus({ zone: 'setting', index: 0 })
   }
 
+  const approveStandaloneLink = () => {
+    if (tvLinkReceiverRef.current?.approveSession()) changeFocus({ zone: 'setting', index: 0 })
+  }
+
+  const rejectStandaloneLink = () => {
+    tvLinkReceiverRef.current?.rejectSession()
+    changeFocus({ zone: 'setting', index: 0 })
+  }
+
   const runSettingsAction = (index: number) => {
     if (!settingsConfirmation) {
       if (index < 7) {
@@ -2801,7 +2816,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (screen === 'standalone-link') {
-      if (action === 'select' || action === 'back') closeStandaloneLink()
+      if (tvLinkInfo.phase === 'confirming') {
+        if (action === 'left' || action === 'up') changeFocus({ zone: 'setting', index: 0 })
+        else if (action === 'right' || action === 'down') changeFocus({ zone: 'setting', index: 1 })
+        else if (action === 'select') focus.index === 1 ? approveStandaloneLink() : rejectStandaloneLink()
+        else if (action === 'back') rejectStandaloneLink()
+      } else if (action === 'select' || action === 'back') closeStandaloneLink()
       return
     }
     if (screen === 'details') {
@@ -3255,10 +3275,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           phase={tvLinkInfo.phase}
           statusMessage={tvLinkInfo.message}
           confirmation={tvLinkInfo.confirmation}
+          confirmationFocus={focus.index}
           posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
           backFocused={focus.zone === 'setting'}
           onBackFocus={() => changeFocus({ zone: 'setting', index: 0 })}
+          onConfirmationFocus={(index) => changeFocus({ zone: 'setting', index })}
           onBack={closeStandaloneLink}
+          onApprove={approveStandaloneLink}
+          onReject={rejectStandaloneLink}
         />
       )}
       {screen === 'loading' && (

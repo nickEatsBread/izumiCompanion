@@ -5,8 +5,9 @@ const ROOM_LIFETIME_MS = 10 * 60_000
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{16,80}$/
+const LINK_SECRET_PATTERN = /^[A-Za-z0-9_-]{22}$/
 
-export type TvLinkPhase = 'preparing' | 'waiting' | 'phone-connected' | 'confirming' | 'installing' | 'complete' | 'error'
+export type TvLinkPhase = 'preparing' | 'waiting' | 'phone-connected' | 'confirming' | 'approved' | 'installing' | 'complete' | 'error'
 
 export interface TvLinkInfo {
   code: string
@@ -14,6 +15,7 @@ export interface TvLinkInfo {
   phase: TvLinkPhase
   message?: string
   confirmation?: string
+  linkSecret?: string
 }
 
 interface TvLinkEvents {
@@ -25,18 +27,21 @@ interface TvLinkSession {
   id: string
   key: CryptoKey
   confirmation: string
+  mode: 'qr' | 'manual'
+  approved: boolean
 }
 
 interface BrowserHello {
   type: 'browser.hello'
-  protocol: 1
+  protocol: 2
+  mode: 'qr' | 'manual'
   sessionId: string
   publicKey: JsonWebKey
 }
 
 interface EncryptedSetup {
   type: 'setup.payload'
-  protocol: 1
+  protocol: 2
   sessionId: string
   iv: string
   ciphertext: string
@@ -60,6 +65,16 @@ function bytesToBase64Url(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
   }
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+export function createTvLinkSecret(): string {
+  return bytesToBase64Url(randomBytes(16))
+}
+
+export async function createTvLinkTicket(code: string, linkSecret: string): Promise<string> {
+  if (!CODE_PATTERN.test(code) || !LINK_SECRET_PATTERN.test(linkSecret)) throw new Error('The secure TV invitation is invalid.')
+  const digest = await crypto.subtle.digest('SHA-256', encode(`izumi-tv-link-ticket-v2|${code}|${linkSecret}`))
+  return bytesToBase64Url(new Uint8Array(digest))
 }
 
 function base64UrlToBytes(value: string, maximumLength: number): Uint8Array<ArrayBuffer> {
@@ -152,14 +167,14 @@ export function parseTvLinkSetup(value: unknown): CompanionCloudflareTransport |
 
 function validBrowserHello(value: Record<string, unknown>): value is Record<string, unknown> & BrowserHello {
   const publicKey = value.publicKey && typeof value.publicKey === 'object' ? value.publicKey as JsonWebKey : null
-  return value.type === 'browser.hello' && value.protocol === 1
+  return value.type === 'browser.hello' && value.protocol === 2 && (value.mode === 'qr' || value.mode === 'manual')
     && typeof value.sessionId === 'string' && SESSION_PATTERN.test(value.sessionId)
     && Boolean(publicKey && publicKey.kty === 'EC' && publicKey.crv === 'P-256'
       && typeof publicKey.x === 'string' && typeof publicKey.y === 'string')
 }
 
 function validEncryptedSetup(value: Record<string, unknown>): value is Record<string, unknown> & EncryptedSetup {
-  return value.type === 'setup.payload' && value.protocol === 1
+  return value.type === 'setup.payload' && value.protocol === 2
     && typeof value.sessionId === 'string' && SESSION_PATTERN.test(value.sessionId)
     && typeof value.iv === 'string' && typeof value.ciphertext === 'string'
 }
@@ -168,20 +183,22 @@ export async function deriveTvLinkSession(
   privateKey: CryptoKey,
   code: string,
   challenge: string,
+  linkSecret: string,
   value: Record<string, unknown>,
 ): Promise<TvLinkSession> {
-  if (!CODE_PATTERN.test(code) || !/^[a-f0-9]{32}$/.test(challenge) || !validBrowserHello(value)) {
+  if (!CODE_PATTERN.test(code) || !/^[a-f0-9]{32}$/.test(challenge) || !LINK_SECRET_PATTERN.test(linkSecret) || !validBrowserHello(value)) {
     throw new Error('The phone sent an invalid secure handshake.')
   }
   const publicKey = await crypto.subtle.importKey('jwk', value.publicKey, { name: 'ECDH', namedCurve: 'P-256' }, false, [])
   const shared = await crypto.subtle.deriveBits({ name: 'ECDH', public: publicKey }, privateKey, 256)
-  const keyInfo = `izumi-tv-link-v1|${challenge}|${value.sessionId}`
-  const confirmationInfo = `izumi-tv-link-confirm-v1|${challenge}|${value.sessionId}`
-  const keyBits = await hkdf(shared, code, keyInfo, 32)
-  const confirmation = await hkdf(shared, code, confirmationInfo, 4)
+  const salt = `izumi-tv-link-v2|${code}|${value.mode === 'qr' ? linkSecret : 'manual'}`
+  const keyInfo = `izumi-tv-link-v2|${challenge}|${value.sessionId}`
+  const confirmationInfo = `izumi-tv-link-confirm-v2|${challenge}|${value.sessionId}`
+  const keyBits = await hkdf(shared, salt, keyInfo, 32)
+  const confirmation = await hkdf(shared, salt, confirmationInfo, 4)
   const key = await crypto.subtle.importKey('raw', keyBits, { name: 'AES-GCM' }, false, ['decrypt'])
   const number = (((confirmation[0] << 24) >>> 0) + (confirmation[1] << 16) + (confirmation[2] << 8) + confirmation[3]) % 1_000_000
-  return { id: value.sessionId, key, confirmation: String(number).padStart(6, '0') }
+  return { id: value.sessionId, key, confirmation: String(number).padStart(6, '0'), mode: value.mode, approved: false }
 }
 
 export async function decryptTvLinkSetup(
@@ -190,6 +207,7 @@ export async function decryptTvLinkSetup(
   challenge: string,
   value: Record<string, unknown>,
 ): Promise<CompanionCloudflareTransport> {
+  if (!session.approved) throw new Error('Approve the confirmation number on this TV before setup.')
   if (!validEncryptedSetup(value) || value.sessionId !== session.id) throw new Error('The setup message does not match this TV session.')
   const iv = base64UrlToBytes(value.iv, 32)
   const ciphertext = base64UrlToBytes(value.ciphertext, 96_000)
@@ -199,7 +217,7 @@ export async function decryptTvLinkSetup(
     plaintext = await crypto.subtle.decrypt({
       name: 'AES-GCM',
       iv,
-      additionalData: encode(`${code}|${challenge}|${session.id}`),
+      additionalData: encode(`v2|${code}|${challenge}|${session.id}|${session.mode}`),
       tagLength: 128,
     }, session.key, ciphertext)
   } catch { throw new Error('The phone setup could not be authenticated.') }
@@ -241,6 +259,8 @@ export class TvLinkReceiver {
   private expiryTimer?: number
   private generation = 0
   private pairingChallenge = ''
+  private linkSecret = ''
+  private pairingTicket = ''
   private stopped = true
   private finished = false
   private installing = false
@@ -267,7 +287,27 @@ export class TvLinkReceiver {
     this.privateKey = undefined
     this.publicKey = undefined
     this.session = undefined
+    this.linkSecret = ''
+    this.pairingTicket = ''
     this.installing = false
+  }
+
+  approveSession(): boolean {
+    if (this.stopped || this.finished || this.info.phase !== 'confirming' || !this.session) return false
+    this.session.approved = true
+    this.send({ type: 'tv.confirmed', protocol: 2, sessionId: this.session.id })
+    this.update({
+      phase: 'approved',
+      message: 'Numbers approved. Finish the one-time setup on your phone.',
+    })
+    return true
+  }
+
+  rejectSession(): boolean {
+    if (this.stopped || this.finished || !this.session) return false
+    this.send({ type: 'tv.error', protocol: 2, sessionId: this.session.id, message: 'The TV rejected the confirmation number.' })
+    void this.startRound()
+    return true
   }
 
   private update(next: Partial<TvLinkInfo>): void {
@@ -285,17 +325,21 @@ export class TvLinkReceiver {
     this.session = undefined
     this.installing = false
     const code = createTvLinkCode()
+    const linkSecret = createTvLinkSecret()
     this.pairingChallenge = randomHex(16)
+    this.linkSecret = linkSecret
     const expiresAt = Date.now() + ROOM_LIFETIME_MS
-    this.info = { code, expiresAt, phase: 'preparing', message: 'Creating an encrypted link for this TV.' }
+    this.info = { code, linkSecret, expiresAt, phase: 'preparing', message: 'Creating an encrypted link for this TV.' }
     this.events.onInfo(this.info)
     try {
       if (!crypto.subtle || !/^[a-f0-9]{24}$/i.test(this.deviceId)) throw new Error('Secure pairing is not supported by this TV software.')
       const keys = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']) as CryptoKeyPair
       const publicKey = await crypto.subtle.exportKey('jwk', keys.publicKey)
+      const pairingTicket = await createTvLinkTicket(code, linkSecret)
       if (this.stopped || generation !== this.generation) return
       this.privateKey = keys.privateKey
       this.publicKey = publicKey
+      this.pairingTicket = pairingTicket
       this.update({ phase: 'waiting', message: 'Scan the QR code or enter the TV code on your phone.' })
       this.expiryTimer = window.setTimeout(() => { if (!this.stopped && !this.finished) void this.startRound() }, ROOM_LIFETIME_MS)
       this.connect(generation)
@@ -307,7 +351,7 @@ export class TvLinkReceiver {
 
   private connect(generation: number): void {
     if (this.stopped || this.finished || generation !== this.generation) return
-    const url = `${RELAY_URL}?role=tv&code=${encodeURIComponent(this.info.code)}`
+    const url = `${RELAY_URL}?role=tv&code=${encodeURIComponent(this.info.code)}&protocol=2&ticket=${encodeURIComponent(this.pairingTicket)}`
     let socket: WebSocket
     try { socket = new WebSocket(url) } catch {
       this.scheduleReconnect(generation)
@@ -349,7 +393,7 @@ export class TvLinkReceiver {
     if (!this.publicKey || Date.now() >= this.info.expiresAt) return
     this.send({
       type: 'tv.hello',
-      protocol: 1,
+      protocol: 2,
       deviceId: this.deviceId.toLowerCase(),
       challenge: this.pairingChallenge,
       expiresAt: this.info.expiresAt,
@@ -369,13 +413,14 @@ export class TvLinkReceiver {
       if (message.connected === true) {
         this.update({ phase: 'phone-connected', message: 'Phone connected. Creating matching confirmation numbers…' })
         this.sendHello()
-      } else if (!this.session) this.update({ phase: 'waiting', message: 'Scan the QR code or enter the TV code on your phone.' })
+      } else if (this.session) void this.startRound()
+      else this.update({ phase: 'waiting', message: 'Scan the QR code or enter the TV code on your phone.' })
       return
     }
     if (message.type === 'browser.hello') {
       if (!this.privateKey) return
       try {
-        const session = await deriveTvLinkSession(this.privateKey, this.info.code, this.pairingChallenge, message)
+        const session = await deriveTvLinkSession(this.privateKey, this.info.code, this.pairingChallenge, this.linkSecret, message)
         if (this.stopped || this.finished) return
         this.session = session
         this.update({
@@ -383,17 +428,18 @@ export class TvLinkReceiver {
           confirmation: session.confirmation,
           message: 'Check that this number matches your phone before you deploy.',
         })
-        this.send({ type: 'tv.confirmed', protocol: 1, sessionId: session.id })
       } catch {
-        this.update({ phase: 'error', message: 'The phone could not establish a secure session. Refresh the code and try again.' })
+        this.update({ phase: 'error', message: 'The phone could not establish a secure session. Creating a new code…' })
+        window.setTimeout(() => { if (!this.stopped && !this.finished) void this.startRound() }, 900)
       }
       return
     }
-    if (message.type === 'setup.cancel') {
+    if (message.type !== 'setup.payload' || !this.session || this.installing) return
+    if (!this.session.approved) {
+      this.send({ type: 'tv.error', protocol: 2, sessionId: this.session.id, message: 'Approve the confirmation number on the TV first.' })
       void this.startRound()
       return
     }
-    if (message.type !== 'setup.payload' || !this.session || this.installing) return
     this.installing = true
     this.update({ phase: 'installing', message: 'Verifying and saving your private Cloudflare Worker…' })
     try {
@@ -401,7 +447,7 @@ export class TvLinkReceiver {
       await verifyWorker(transport)
       await this.events.onSetup(transport)
       if (this.stopped || this.finished) return
-      this.send({ type: 'tv.complete', protocol: 1, sessionId: this.session.id })
+      this.send({ type: 'tv.complete', protocol: 2, sessionId: this.session.id })
       this.finished = true
       if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer)
       if (this.expiryTimer) window.clearTimeout(this.expiryTimer)
@@ -413,7 +459,7 @@ export class TvLinkReceiver {
       }, 500)
     } catch (error) {
       const messageText = error instanceof Error ? error.message : 'The TV could not save the Cloudflare setup.'
-      this.send({ type: 'tv.error', protocol: 1, sessionId: this.session.id, message: messageText.slice(0, 240) })
+      this.send({ type: 'tv.error', protocol: 2, sessionId: this.session.id, message: messageText.slice(0, 240) })
       this.update({ phase: 'error', message: messageText })
       this.installing = false
     }

@@ -691,10 +691,14 @@ export function StandaloneLinkScreen({
   phase,
   statusMessage,
   confirmation,
+  confirmationFocus,
   posters,
   backFocused,
   onBackFocus,
+  onConfirmationFocus,
   onBack,
+  onApprove,
+  onReject,
 }: {
   connected: boolean
   qrCode?: string
@@ -703,15 +707,20 @@ export function StandaloneLinkScreen({
   phase: TvLinkPhase
   statusMessage?: string
   confirmation?: string
+  confirmationFocus: number
   posters: string[]
   backFocused: boolean
   onBackFocus(): void
+  onConfirmationFocus(index: number): void
   onBack(): void
+  onApprove(): void
+  onReject(): void
 }) {
   const { remainingSeconds, remainingLabel } = usePairingCountdown(expiresAt)
   const statusTitle = phase === 'phone-connected' ? 'Phone connected'
     : phase === 'confirming' ? 'Check the confirmation number'
-      : phase === 'installing' ? 'Linking your private Worker'
+      : phase === 'approved' ? 'Secure link approved'
+        : phase === 'installing' ? 'Linking your private Worker'
         : phase === 'complete' ? 'TV setup complete'
           : phase === 'error' ? 'Setup needs attention'
             : phase === 'preparing' ? 'Preparing secure setup'
@@ -733,21 +742,39 @@ export function StandaloneLinkScreen({
           <div class={`standalone-link-status is-${phase}`} aria-live="polite">
             <strong>{statusTitle}</strong>
             <span>{statusMessage || 'Scan the QR code to begin the one-time setup.'}</span>
-            {confirmation && (phase === 'confirming' || phase === 'installing') && (
+            {confirmation && (phase === 'confirming' || phase === 'approved' || phase === 'installing') && (
               <div class="standalone-confirmation">
                 <small>CONFIRMATION NUMBER</small>
                 <b>{confirmation.slice(0, 3)} {confirmation.slice(3)}</b>
-                <em>Only continue on your phone if both numbers match.</em>
+                <em>{phase === 'confirming' ? 'Compare with your phone, then approve using the TV remote.' : 'Approved on this TV.'}</em>
+              </div>
+            )}
+            {phase === 'confirming' && (
+              <div class="standalone-confirm-actions" aria-label="Approve secure TV link">
+                <button
+                  type="button"
+                  class={confirmationFocus === 0 ? 'is-focused' : ''}
+                  data-focus-id="setting-0"
+                  onFocus={() => onConfirmationFocus(0)}
+                  onClick={onReject}
+                ><RotateCcw size={20} aria-hidden="true" /> Does not match</button>
+                <button
+                  type="button"
+                  class={confirmationFocus === 1 ? 'is-focused is-approve' : 'is-approve'}
+                  data-focus-id="setting-1"
+                  onFocus={() => onConfirmationFocus(1)}
+                  onClick={onApprove}
+                ><Check size={20} aria-hidden="true" /> Numbers match</button>
               </div>
             )}
           </div>
-          <button
-            type="button"
-            class={`standalone-link-back${backFocused ? ' is-focused' : ''}`}
-            data-focus-id="setting-0"
-            onFocus={onBackFocus}
-            onClick={onBack}
-          ><ChevronLeft size={25} aria-hidden="true" /> Back to pairing</button>
+          {phase !== 'confirming' && <button
+              type="button"
+              class={`standalone-link-back${backFocused ? ' is-focused' : ''}`}
+              data-focus-id="setting-0"
+              onFocus={onBackFocus}
+              onClick={onBack}
+            ><ChevronLeft size={25} aria-hidden="true" /> Back to pairing</button>}
         </div>
         <aside class="standalone-qr-panel">
           {qrCode

@@ -1228,10 +1228,27 @@ async function main() {
     await press('Backspace')
     await waitFor("document.querySelector('.ready-independent-option button.is-focused')")
 
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=standalone-link&scenario=tv-link-confirming` })
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.standalone-confirm-actions button').length === 2")
+    await waitFor("!document.getElementById('startup-splash')")
+    const standaloneConfirmation = await evaluate(`(() => ({
+      number: document.querySelector('.standalone-confirmation b').textContent.trim(),
+      buttons: Array.from(document.querySelectorAll('.standalone-confirm-actions button')).map((button) => button.textContent.trim()),
+      focused: document.querySelector('.standalone-confirm-actions button.is-focused').textContent.trim(),
+      body: [document.body.scrollWidth, document.body.scrollHeight]
+    }))()`)
+    assert(standaloneConfirmation.number === '418 209', `Standalone confirmation number is wrong: ${standaloneConfirmation.number}.`)
+    assert(JSON.stringify(standaloneConfirmation.buttons) === '["Does not match","Numbers match"]', `Standalone confirmation actions are wrong: ${standaloneConfirmation.buttons}.`)
+    assert(standaloneConfirmation.focused === 'Does not match', `Standalone confirmation did not default to the safe rejection action: ${standaloneConfirmation.focused}.`)
+    assert(JSON.stringify(standaloneConfirmation.body) === '[1920,1080]', `Standalone confirmation overflowed the TV viewport: ${standaloneConfirmation.body}.`)
+    await press('ArrowRight')
+    await waitFor("document.querySelector('.standalone-confirm-actions button:last-child').classList.contains('is-focused')")
+    await capture('m56-standalone-confirmation.png')
+
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, unpaired phone handoff, and no application runtime errors.\n`)
+    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, secure TV-side confirmation, unpaired phone handoff, and no application runtime errors.\n`)
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()
