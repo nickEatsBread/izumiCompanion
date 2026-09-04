@@ -235,6 +235,25 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
+  it('keeps a TMDB logo request alive beyond the paired client rating timeout', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+    const request = receiver.requestDetails(media, true)
+    const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.details')?.[1] as { requestId: string; presentationOnly: boolean }
+    expect(sent.presentationOnly).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(8_500)
+    const details = { ...media, logoImage: 'https://image.tmdb.org/t/p/w500/fight-club-logo.png' }
+    channel.emit('izumi.companion.details-result', { credential, requestId: sent.requestId, media: details })
+
+    await expect(request).resolves.toEqual(details)
+    receiver.disconnect()
+  })
+
   it('requests a token-scoped HTTP trailer bridge from the paired client', async () => {
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {

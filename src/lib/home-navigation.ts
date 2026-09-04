@@ -1,4 +1,4 @@
-import type { CompanionCatalogOption, CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia } from '../types'
+import type { CompanionCatalogOption, CompanionHomeRow, CompanionHomeSnapshot, CompanionMedia, FocusLocation } from '../types'
 
 export const MERGED_CATALOG_SCREEN = 'merged'
 
@@ -14,6 +14,57 @@ export function catalogMediaDestination(media: CompanionMedia): CatalogMediaDest
 
 function mediaKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
+}
+
+/** Return detail requests in remote-navigation priority order. Horizontal neighbours are warmed
+ * before a right/left press, while each adjacent shelf's remembered destination is warmed before
+ * an up/down press. Keeping this list small prevents metadata traffic from contending with D-pad
+ * painting on memory-constrained TVs. */
+export function homeDetailPrefetchTargets(
+  rows: CompanionHomeRow[],
+  focus: FocusLocation,
+  remembered: Record<string, number>,
+): CompanionMedia[] {
+  const targets: CompanionMedia[] = []
+  const seen = new Set<string>()
+  const add = (media?: CompanionMedia) => {
+    if (!media) return
+    const key = mediaKey(media)
+    if (seen.has(key)) return
+    seen.add(key)
+    targets.push(media)
+  }
+  const addRowDestination = (rowIndex: number) => {
+    const row = rows[rowIndex]
+    add(row?.items[rememberedHomeRowIndex(row, remembered)])
+  }
+
+  if (focus.zone === 'row') {
+    const row = rows[focus.row]
+    const length = row?.items.length ?? 0
+    if (!length) return targets
+    add(row.items[focus.index])
+    for (let offset = 1; offset <= Math.min(2, length - 1); offset += 1) {
+      add(row.items[(focus.index + offset) % length])
+    }
+    if (length > 1) add(row.items[(focus.index - 1 + length) % length])
+    addRowDestination(focus.row - 1)
+    addRowDestination(focus.row + 1)
+    return targets
+  }
+
+  // Hero/nav focus can enter the first shelf next, so prepare that tile, its next two choices,
+  // and the following shelf's independent vertical destination before the user moves.
+  const firstRow = rows[0]
+  const firstIndex = rememberedHomeRowIndex(firstRow, remembered)
+  if (firstRow?.items.length) {
+    add(firstRow.items[firstIndex])
+    for (let offset = 1; offset <= Math.min(2, firstRow.items.length - 1); offset += 1) {
+      add(firstRow.items[(firstIndex + offset) % firstRow.items.length])
+    }
+  }
+  addRowDestination(1)
+  return targets
 }
 
 function mergePresentationMedia(media: CompanionMedia, details: CompanionMedia): CompanionMedia {

@@ -18,7 +18,10 @@ const PAIRING_LIFETIME_MS = 5 * 60_000
 const LOCAL_PLAY_ACK_MS = 1_200
 const REMOTE_REQUEST_TTL_MS = 5 * 60_000
 const SNAPSHOT_STORAGE_KEY = 'izumi.companion.snapshot'
-const DETAILS_TIMEOUT_MS = 8_000
+// TMDB detail enrichment can itself wait up to eight seconds for an optional external rating.
+// Keep the TV request alive beyond that nested timeout so its logo/backdrop result is not discarded
+// at precisely the same instant the paired client finishes assembling it.
+const DETAILS_TIMEOUT_MS = 15_000
 const TRAILER_TIMEOUT_MS = 8_000
 
 export interface CompanionTrailerSource {
@@ -542,8 +545,8 @@ export class CompanionReceiver {
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
   }
 
-  async requestDetails(media: CompanionMedia): Promise<CompanionMedia | null> {
-    if (this.cloudflare && media.ref.provider === 'anilist') {
+  async requestDetails(media: CompanionMedia, presentationOnly = false): Promise<CompanionMedia | null> {
+    if (!presentationOnly && this.cloudflare && media.ref.provider === 'anilist') {
       try {
         const result = await workerRequest(
           this.cloudflare,
@@ -570,6 +573,7 @@ export class CompanionReceiver {
         pairingId: this.credential.slice(0, 16),
         requestId,
         media,
+        presentationOnly,
       }, 'broadcast')
     })
   }

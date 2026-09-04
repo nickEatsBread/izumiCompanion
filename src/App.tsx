@@ -30,6 +30,7 @@ import { browseCategoryRows } from './lib/browse'
 import { catalogCollections, episodeCountsFor } from './lib/catalog'
 import {
   catalogMediaDestination,
+  homeDetailPrefetchTargets,
   homeHeroItems,
   isMergedCatalog,
   mergeHomeMediaDetails,
@@ -173,6 +174,12 @@ function animateScroll(
     }
   }
   dpadScrollAnimations.set(element, window.requestAnimationFrame(step))
+}
+
+interface HomeDetailTask {
+  media: CompanionMedia
+  generation: number
+  preview: boolean
 }
 
 function sameMedia(left: CompanionMedia, right: CompanionMedia): boolean {
@@ -338,6 +345,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const homeTrailerPreviewRef = useRef<{ mediaKey: string; requestId?: string; url: string }>()
   const homeTrailerGenerationRef = useRef(0)
   const homeDetailRequestsRef = useRef(new Set<string>())
+  const homeDetailQueueRef = useRef<HomeDetailTask[]>([])
+  const homeDetailActiveRef = useRef(0)
+  const homeDetailGenerationRef = useRef(0)
+  const homeDetailResultsRef = useRef<CompanionMedia[]>([])
+  const homeDetailFlushFrameRef = useRef<number>()
+  const homeArtworkCacheRef = useRef(new Map<string, HTMLImageElement>())
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
@@ -1085,61 +1098,97 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     ? `${homePreviewMedia.ref.provider}:${homePreviewMedia.ref.type}:${homePreviewMedia.ref.id}`
     : ''
 
+  const warmHomeArtwork = (media: CompanionMedia) => {
+    if (typeof Image === 'undefined') return
+    const sources = [media.logoImage, media.episodeImage || media.backdrop, media.poster]
+      .filter((source): source is string => Boolean(source))
+    for (const source of sources) {
+      const cache = homeArtworkCacheRef.current
+      if (cache.has(source)) {
+        const image = cache.get(source)!
+        cache.delete(source)
+        cache.set(source, image)
+        continue
+      }
+      const image = new Image()
+      image.decoding = 'async'
+      image.src = source
+      cache.set(source, image)
+      while (cache.size > 12) cache.delete(cache.keys().next().value!)
+    }
+  }
+
+  const flushHomeDetailResults = () => {
+    if (homeDetailFlushFrameRef.current !== undefined) return
+    homeDetailFlushFrameRef.current = window.requestAnimationFrame(() => {
+      homeDetailFlushFrameRef.current = undefined
+      const details = homeDetailResultsRef.current.splice(0)
+      if (!details.length) return
+      // One frame and one Home projection update per result batch avoids repainting every rail for
+      // each independently returning metadata request while the remote is still moving.
+      setSnapshot((current) => details.reduce(mergeHomeMediaDetails, current))
+      setSelected((current) => details.find((detail) => sameMedia(detail, current)) ?? current)
+    })
+  }
+
+  const pumpHomeDetailQueue = () => {
+    while (homeDetailActiveRef.current < 2 && homeDetailQueueRef.current.length) {
+      const task = homeDetailQueueRef.current.shift()!
+      if (task.generation !== homeDetailGenerationRef.current) continue
+      homeDetailActiveRef.current += 1
+      warmHomeArtwork(task.media)
+      const receiver = receiverRef.current
+      const request = task.preview
+        ? Promise.resolve(previewDetailsFor(task.media))
+        : receiver ? receiver.requestDetails(task.media, true) : Promise.resolve(null)
+      void request.then((result) => {
+        if (task.generation !== homeDetailGenerationRef.current) return
+        const settled = result
+          ? { ...result, titleArtSettled: true }
+          : { ...task.media, titleArtSettled: true }
+        warmHomeArtwork(settled)
+        homeDetailResultsRef.current.push(settled)
+        flushHomeDetailResults()
+      }).catch(() => {
+        if (task.generation !== homeDetailGenerationRef.current) return
+        homeDetailResultsRef.current.push({ ...task.media, titleArtSettled: true })
+        flushHomeDetailResults()
+      }).finally(() => {
+        if (task.generation === homeDetailGenerationRef.current) homeDetailActiveRef.current -= 1
+        pumpHomeDetailQueue()
+      })
+    }
+  }
+
+  const queueHomeDetails = (media: CompanionMedia[]) => {
+    const generation = homeDetailGenerationRef.current
+    for (const item of media) {
+      warmHomeArtwork(item)
+      const key = `${item.ref.provider}:${item.ref.type}:${item.ref.id}`
+      if (homeDetailRequestsRef.current.has(key)) continue
+      homeDetailRequestsRef.current.add(key)
+      homeDetailQueueRef.current.push({ media: item, generation, preview: showPreviewTools })
+    }
+    pumpHomeDetailQueue()
+  }
+
   useEffect(() => {
+    homeDetailGenerationRef.current += 1
     homeDetailRequestsRef.current.clear()
+    homeDetailQueueRef.current = []
+    homeDetailActiveRef.current = 0
+    homeDetailResultsRef.current = []
+    if (homeDetailFlushFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(homeDetailFlushFrameRef.current)
+      homeDetailFlushFrameRef.current = undefined
+    }
   }, [snapshot.revision])
 
   useEffect(() => {
-    if (!cinematicScreen || !homePreviewMedia || !homePreviewMediaKey) return
-    if (homePreviewMedia.logoImage && homePreviewMedia.description && youtubeTrailerId(homePreviewMedia)) return
-    if (homeDetailRequestsRef.current.has(homePreviewMediaKey)) return
-    const media = homePreviewMedia
-    const timer = window.setTimeout(() => {
-      homeDetailRequestsRef.current.add(homePreviewMediaKey)
-      const apply = (details: CompanionMedia | null) => {
-        const settled = details ? { ...details, titleArtSettled: true } : { ...media, titleArtSettled: true }
-        setSnapshot((current) => mergeHomeMediaDetails(current, settled))
-        setSelected((current) => sameMedia(current, media) ? settled : current)
-      }
-      if (showPreviewTools) apply(previewDetailsFor(media))
-      else void receiverRef.current?.requestDetails(media).then(apply).catch(() => apply(null))
-    }, 80)
-    return () => window.clearTimeout(timer)
-  }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, homePreviewMedia?.trailer?.id, homePreviewMedia?.trailer?.site, showPreviewTools])
-
-  useEffect(() => {
-    if (!cinematicScreen || focus.zone !== 'row') return
-    const activeRow = cinematicRows[focus.row]
-    if (!activeRow?.items.length) return
-    const candidates: CompanionMedia[] = []
-    const remember = (media?: CompanionMedia) => {
-      if (!media) return
-      const key = `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
-      if (!candidates.some((candidate) => `${candidate.ref.provider}:${candidate.ref.type}:${candidate.ref.id}` === key)) candidates.push(media)
-    }
-    for (let offset = 1; offset <= Math.min(4, activeRow.items.length - 1); offset += 1) {
-      remember(activeRow.items[(focus.index + offset) % activeRow.items.length])
-    }
-    remember(activeRow.items[(focus.index - 1 + activeRow.items.length) % activeRow.items.length])
-    for (const rowIndex of [focus.row - 1, focus.row + 1]) {
-      const row = cinematicRows[rowIndex]
-      remember(row?.items[rememberedHomeRowIndex(row, homeRowIndexesRef.current)])
-    }
-    const timer = window.setTimeout(() => {
-      candidates.slice(0, 7).forEach((media) => {
-        const key = `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
-        if (homeDetailRequestsRef.current.has(key)) return
-        homeDetailRequestsRef.current.add(key)
-        const apply = (details: CompanionMedia | null) => {
-          const settled = details ? { ...details, titleArtSettled: true } : { ...media, titleArtSettled: true }
-          setSnapshot((current) => mergeHomeMediaDetails(current, settled))
-        }
-        if (showPreviewTools) apply(previewDetailsFor(media))
-        else void receiverRef.current?.requestDetails(media).then(apply).catch(() => apply(null))
-      })
-    }, 140)
-    return () => window.clearTimeout(timer)
-  }, [cinematicRows, cinematicScreen, focus, showPreviewTools])
+    if (!cinematicScreen) return
+    const targets = homeDetailPrefetchTargets(cinematicRows, focus, homeRowIndexesRef.current)
+    queueHomeDetails(homePreviewMedia ? [homePreviewMedia, ...targets] : targets)
+  }, [cinematicRows, cinematicScreen, focus, homePreviewMediaKey, showPreviewTools])
 
   useEffect(() => {
     const generation = ++homeTrailerGenerationRef.current
