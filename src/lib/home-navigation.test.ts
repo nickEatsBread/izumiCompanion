@@ -119,6 +119,25 @@ describe('TV home navigation model', () => {
     expect(merged.views?.search?.[0].genres).toEqual(['Drama'])
   })
 
+  it('preserves untouched row references while applying prefetched presentation data', () => {
+    const target = media('target')
+    const untouched = row('untouched', 'Untouched', 'catalog', [media('other')])
+    const snapshot: CompanionHomeSnapshot = {
+      app: 'izumi',
+      kind: 'companion-home',
+      version: 1,
+      revision: 'structural-sharing',
+      generatedAt: 1,
+      catalog: { screen: 'preview', label: 'Preview' },
+      rows: [row('target-row', 'Target', 'catalog', [target]), untouched],
+    }
+
+    const merged = mergeHomeMediaDetails(snapshot, { ...target, logoImage: 'https://img.example/logo.png' })
+    expect(merged.rows[0]).not.toBe(snapshot.rows[0])
+    expect(merged.rows[1]).toBe(snapshot.rows[1])
+    expect(merged.rows[0].items[0].logoImage).toBe('https://img.example/logo.png')
+  })
+
   it('wraps featured navigation in both directions', () => {
     expect(wrappedHeroIndex(0, -1, 5)).toBe(4)
     expect(wrappedHeroIndex(4, 1, 5)).toBe(0)

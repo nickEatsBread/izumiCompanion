@@ -582,14 +582,16 @@ const HomeFocusCard = memo(function HomeFocusCard({
   trailerSource?: string
   onActivate(): void
 }) {
+  const identity = mediaIdentity(item)
   const cardProgress = episodeCard ? item.episodeProgress : item.progress
   const inProgress = typeof cardProgress === 'number' && cardProgress > 0 && cardProgress < 1
   const artwork = focusArtwork(item, episodeCard)
   const artworkKey = artwork.join('|')
-  const [artworkIndex, setArtworkIndex] = useState(0)
+  const [artworkSelection, setArtworkSelection] = useState({ identity, index: 0 })
+  const artworkIndex = artworkSelection.identity === identity ? artworkSelection.index : 0
   const [trailerPlaying, setTrailerPlaying] = useState(false)
   const [logoImage, , onLogoError] = useStableTitleImage(
-    mediaIdentity(item),
+    identity,
     item.logoImage,
     true,
   )
@@ -603,8 +605,9 @@ const HomeFocusCard = memo(function HomeFocusCard({
   }] : [])
 
   useEffect(() => {
-    setArtworkIndex(0)
-  }, [artworkKey])
+    setArtworkSelection({ identity, index: 0 })
+    setTrailerPlaying(false)
+  }, [artworkKey, identity])
 
   return (
     <button
@@ -629,7 +632,9 @@ const HomeFocusCard = memo(function HomeFocusCard({
                 height={626}
                 decoding={isHomeImageReady(image, 'artwork') ? 'sync' : 'async'}
                 onError={() => {
-                  setArtworkIndex((current) => current + 1)
+                  setArtworkSelection((current) => current.identity === identity
+                    ? { ...current, index: current.index + 1 }
+                    : { identity, index: 1 })
                 }}
               />
             : <span class="home-card-placeholder">{item.title}</span>}
@@ -969,7 +974,6 @@ export function HomeScreen({
                 )}
                 {focusedItem && (
                   <HomeFocusCard
-                    key={mediaIdentity(focusedItem)}
                     item={focusedItem}
                     rowIndex={rowIndex}
                     index={horizontalCenter}

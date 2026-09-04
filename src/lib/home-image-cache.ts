@@ -15,6 +15,22 @@ const retained: Record<HomeImageKind, Map<string, HTMLImageElement>> = {
 const inflight = new Map<string, Promise<boolean>>()
 const failed = new Map<string, true>()
 
+/** `load` only guarantees that the bytes arrived. Chromium 56 can defer bitmap decode until a new
+ * DOM image is painted, producing a blank title treatment for the first navigation frame. A tiny
+ * canvas draw forces that decode on old TVs; newer engines use the native decode promise. */
+function decodeHomeImage(image: HTMLImageElement): Promise<void> {
+  if (typeof image.decode === 'function') return image.decode().catch(() => undefined)
+  if (typeof document !== 'undefined') {
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = 1
+      canvas.height = 1
+      canvas.getContext('2d')?.drawImage(image, 0, 0, 1, 1)
+    } catch { /* A loaded image remains usable when a legacy canvas implementation rejects it. */ }
+  }
+  return Promise.resolve()
+}
+
 function cacheKey(source: string, kind: HomeImageKind): string {
   return `${kind}:${source}`
 }
@@ -74,7 +90,7 @@ export function preloadHomeImage(source?: string, kind: HomeImageKind = 'title')
 
   const request = new Promise<boolean>((resolve) => {
     const image = new Image()
-    image.decoding = 'async'
+    image.decoding = kind === 'title' ? 'sync' : 'async'
     let settled = false
     const finish = (loaded: boolean, permanentFailure = false) => {
       if (settled) return
@@ -89,7 +105,7 @@ export function preloadHomeImage(source?: string, kind: HomeImageKind = 'title')
     }
     // A slow image is not a broken image. Allow a later visit to retry after the network settles.
     const timeout = setTimeout(() => finish(false), LOAD_TIMEOUT_MS)
-    image.onload = () => finish(true)
+    image.onload = () => { void decodeHomeImage(image).then(() => finish(true)) }
     image.onerror = () => finish(false, true)
     image.src = source
   })

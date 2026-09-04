@@ -43,6 +43,25 @@ describe('bounded TV home image cache', () => {
     expect(images).toHaveLength(1)
   })
 
+  it('does not expose a downloaded title image until its bitmap decode completes', async () => {
+    let releaseDecode: (() => void) | undefined
+    class DecodingImage extends TestImage {
+      decode(): Promise<void> {
+        return new Promise((resolve) => { releaseDecode = resolve })
+      }
+    }
+    vi.stubGlobal('Image', DecodingImage)
+    const cache = await import('./home-image-cache')
+    const request = cache.preloadHomeImage('decoded-logo.png', 'title')
+
+    images[0].onload?.()
+    expect(cache.isHomeImageReady('decoded-logo.png', 'title')).toBe(false)
+    releaseDecode?.()
+
+    await expect(request).resolves.toBe(true)
+    expect(cache.isHomeImageReady('decoded-logo.png', 'title')).toBe(true)
+  })
+
   it('keeps title and full-resolution artwork in separate memory budgets', async () => {
     vi.stubGlobal('Image', TestImage)
     const cache = await import('./home-image-cache')

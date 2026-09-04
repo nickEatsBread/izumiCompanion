@@ -94,26 +94,39 @@ function mergePresentationMedia(media: CompanionMedia, details: CompanionMedia):
 /** Cache presentation metadata returned for one focused title into every Home projection that
  * contains it. Progress and shelf placement remain owned by each projection. */
 export function mergeHomeMediaDetails(snapshot: CompanionHomeSnapshot, details: CompanionMedia): CompanionHomeSnapshot {
-  let changed = false
   const merge = (media: CompanionMedia): CompanionMedia => {
-    const next = mergePresentationMedia(media, details)
-    if (next !== media) changed = true
-    return next
+    return mergePresentationMedia(media, details)
   }
-  const views = snapshot.views ? {
-    search: snapshot.views.search?.map(merge),
-    trending: snapshot.views.trending?.map(merge),
-    series: snapshot.views.series?.map(merge),
-    movies: snapshot.views.movies?.map(merge),
-    myList: snapshot.views.myList?.map(merge),
-  } : undefined
-  const next = {
+  const mergeItems = (items: CompanionMedia[] | undefined): CompanionMedia[] | undefined => {
+    if (!items) return undefined
+    const next = items.map(merge)
+    return next.some((item, index) => item !== items[index]) ? next : items
+  }
+  const nextRows = snapshot.rows.map((row) => {
+    const items = mergeItems(row.items)!
+    return items === row.items ? row : { ...row, items }
+  })
+  const rows = nextRows.some((row, index) => row !== snapshot.rows[index]) ? nextRows : snapshot.rows
+  const hero = snapshot.hero ? merge(snapshot.hero) : undefined
+  let views = snapshot.views
+  if (snapshot.views) {
+    const search = mergeItems(snapshot.views.search)
+    const trending = mergeItems(snapshot.views.trending)
+    const series = mergeItems(snapshot.views.series)
+    const movies = mergeItems(snapshot.views.movies)
+    const myList = mergeItems(snapshot.views.myList)
+    if (search !== snapshot.views.search || trending !== snapshot.views.trending
+      || series !== snapshot.views.series || movies !== snapshot.views.movies || myList !== snapshot.views.myList) {
+      views = { search, trending, series, movies, myList }
+    }
+  }
+  if (hero === snapshot.hero && rows === snapshot.rows && views === snapshot.views) return snapshot
+  return {
     ...snapshot,
-    hero: snapshot.hero ? merge(snapshot.hero) : undefined,
-    rows: snapshot.rows.map((row) => ({ ...row, items: row.items.map(merge) })),
+    hero,
+    rows,
     ...(views ? { views } : {}),
   }
-  return changed ? next : snapshot
 }
 
 function rankedRow(row: CompanionHomeRow): boolean {

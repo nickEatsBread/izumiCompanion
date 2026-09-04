@@ -180,6 +180,13 @@ interface HomeDetailTask {
   preview: boolean
 }
 
+const HOME_DETAIL_CONCURRENCY = 6
+const HOME_PRESENTATION_CACHE_LIMIT = 32
+
+function homeMediaKey(media: CompanionMedia): string {
+  return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
+}
+
 function sameMedia(left: CompanionMedia, right: CompanionMedia): boolean {
   return left.ref.provider === right.ref.provider && left.ref.type === right.ref.type && left.ref.id === right.ref.id
 }
@@ -373,8 +380,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const homeDetailQueueRef = useRef<HomeDetailTask[]>([])
   const homeDetailActiveRef = useRef(0)
   const homeDetailGenerationRef = useRef(0)
-  const homeDetailResultsRef = useRef<CompanionMedia[]>([])
-  const homeDetailFlushFrameRef = useRef<number>()
+  const homePresentationCacheRef = useRef(new Map<string, CompanionMedia>())
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
@@ -1178,12 +1184,21 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const cinematicRows = cinematicSnapshot.rows
   const heroRailSnapshot = screen === 'trending' ? snapshot : cinematicSnapshot
   const homeHeroRail = useMemo(() => homeHeroItems(heroRailSnapshot), [heroRailSnapshot])
-  const focusedHomeMedia = cinematicScreen && focus.zone === 'row'
+  const focusedHomeSource = cinematicScreen && focus.zone === 'row'
     ? cinematicRows[focus.row]?.items[focus.index]
     : undefined
-  const focusedHomeMediaKey = focusedHomeMedia
-    ? `${focusedHomeMedia.ref.provider}:${focusedHomeMedia.ref.type}:${focusedHomeMedia.ref.id}`
-    : ''
+  const focusedHomeMediaKey = focusedHomeSource ? homeMediaKey(focusedHomeSource) : ''
+  const focusedHomeDetails = focusedHomeMediaKey
+    ? homePresentationCacheRef.current.get(focusedHomeMediaKey)
+    : undefined
+  // Prefetch replies stay outside the large Home snapshot. The next D-pad render reads its cached
+  // presentation synchronously, avoiding background whole-page reconciles while the viewer moves.
+  const renderedCinematicSnapshot = focusedHomeDetails
+    ? mergeHomeMediaDetails(cinematicSnapshot, focusedHomeDetails)
+    : cinematicSnapshot
+  const focusedHomeMedia = cinematicScreen && focus.zone === 'row'
+    ? renderedCinematicSnapshot.rows[focus.row]?.items[focus.index]
+    : undefined
   const homePreviewMedia = focus.zone === 'hero' ? selected : focusedHomeMedia
   const homePreviewMediaKey = homePreviewMedia
     ? `${homePreviewMedia.ref.provider}:${homePreviewMedia.ref.type}:${homePreviewMedia.ref.id}`
@@ -1199,21 +1214,20 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     preloadHomeMedia(media, media.placement?.kind === 'continue')
   }
 
-  const flushHomeDetailResults = () => {
-    if (homeDetailFlushFrameRef.current !== undefined) return
-    homeDetailFlushFrameRef.current = window.requestAnimationFrame(() => {
-      homeDetailFlushFrameRef.current = undefined
-      const details = homeDetailResultsRef.current.splice(0)
-      if (!details.length) return
-      // One frame and one Home projection update per result batch avoids repainting every rail for
-      // each independently returning metadata request while the remote is still moving.
-      setSnapshot((current) => details.reduce(mergeHomeMediaDetails, current))
-      setSelected((current) => details.find((detail) => sameMedia(detail, current)) ?? current)
-    })
+  const cacheHomePresentation = (media: CompanionMedia) => {
+    const key = homeMediaKey(media)
+    const cache = homePresentationCacheRef.current
+    cache.delete(key)
+    cache.set(key, media)
+    while (cache.size > HOME_PRESENTATION_CACHE_LIMIT) {
+      const oldest = cache.keys().next().value as string | undefined
+      if (!oldest) break
+      cache.delete(oldest)
+    }
   }
 
   const pumpHomeDetailQueue = () => {
-    while (homeDetailActiveRef.current < 4 && homeDetailQueueRef.current.length) {
+    while (homeDetailActiveRef.current < HOME_DETAIL_CONCURRENCY && homeDetailQueueRef.current.length) {
       const task = homeDetailQueueRef.current.shift()!
       if (task.generation !== homeDetailGenerationRef.current) continue
       homeDetailActiveRef.current += 1
@@ -1228,12 +1242,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           ? { ...result, titleArtSettled: true }
           : { ...task.media, titleArtSettled: true }
         warmHomeArtwork(settled)
-        homeDetailResultsRef.current.push(settled)
-        flushHomeDetailResults()
+        cacheHomePresentation(settled)
+        // The hero/carousel reads `selected`; update only that one visible title. Background rail
+        // replies remain ref-only and therefore cannot interrupt D-pad rendering.
+        setSelected((current) => sameMedia(settled, current) ? settled : current)
       }).catch(() => {
         if (task.generation !== homeDetailGenerationRef.current) return
-        homeDetailResultsRef.current.push({ ...task.media, titleArtSettled: true })
-        flushHomeDetailResults()
+        cacheHomePresentation({ ...task.media, titleArtSettled: true })
       }).finally(() => {
         if (task.generation === homeDetailGenerationRef.current) homeDetailActiveRef.current -= 1
         pumpHomeDetailQueue()
@@ -1244,17 +1259,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const queueHomeDetails = (media: CompanionMedia[]) => {
     const generation = homeDetailGenerationRef.current
     const existing = new Map(homeDetailQueueRef.current.map((task) => [
-      `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`,
+      homeMediaKey(task.media),
       task,
     ]))
     const prioritized: HomeDetailTask[] = []
     const priorityKeys = new Set<string>()
     for (const item of media) {
       warmHomeArtwork(item)
-      const key = `${item.ref.provider}:${item.ref.type}:${item.ref.id}`
+      const key = homeMediaKey(item)
       if (priorityKeys.has(key)) continue
       priorityKeys.add(key)
-      if (item.titleArtSettled) continue
+      if (item.titleArtSettled || homePresentationCacheRef.current.has(key)) continue
       const queued = existing.get(key)
       if (queued) {
         prioritized.push(queued)
@@ -1270,13 +1285,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       prioritized.push({ media: item, generation, preview: showPreviewTools })
     }
     const stale = homeDetailQueueRef.current.filter((task) => {
-      const key = `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`
+      const key = homeMediaKey(task.media)
       return !priorityKeys.has(key)
     })
     const nextQueue = [...prioritized, ...stale].slice(0, 12)
-    const kept = new Set(nextQueue.map((task) => `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`))
+    const kept = new Set(nextQueue.map((task) => homeMediaKey(task.media)))
     for (const task of homeDetailQueueRef.current) {
-      const key = `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`
+      const key = homeMediaKey(task.media)
       if (!kept.has(key)) homeDetailRequestsRef.current.delete(key)
     }
     homeDetailQueueRef.current = nextQueue
@@ -1289,11 +1304,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     homeDetailRequestOrderRef.current = []
     homeDetailQueueRef.current = []
     homeDetailActiveRef.current = 0
-    homeDetailResultsRef.current = []
-    if (homeDetailFlushFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(homeDetailFlushFrameRef.current)
-      homeDetailFlushFrameRef.current = undefined
-    }
+    homePresentationCacheRef.current.clear()
   }, [snapshot.revision])
 
   useEffect(() => {
@@ -2661,7 +2672,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     <div class={`app-shell screen-${screen}${safeArea ? ' show-safe-area' : ''}`}>
       {cinematicScreen && (
         <HomeScreen
-          snapshot={cinematicSnapshot}
+          snapshot={renderedCinematicSnapshot}
           hero={selected}
           heroIndex={heroIndex}
           heroCount={homeHeroRail.length}
