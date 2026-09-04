@@ -183,6 +183,40 @@ describe('AVPlay setup', () => {
     await expect(controller.selectTrack('AUDIO', 9)).resolves.toBe(false)
   })
 
+  it('keeps Samsung subtitle events enabled when selecting an embedded track', async () => {
+    let listener: { onsubtitlechange(duration: number, text: string): void } | undefined
+    const setSilentSubtitle = vi.fn()
+    const player = {
+      open: vi.fn(), close: vi.fn(), stop: vi.fn(), getState: vi.fn(() => 'READY'),
+      setListener: vi.fn((value) => { listener = value }), setDisplayRect: vi.fn(), setDisplayMethod: vi.fn(),
+      setBufferingParam: vi.fn(), setStreamingProperty: vi.fn(), getStreamingProperty: vi.fn(() => 'false'),
+      prepareAsync: vi.fn((success: () => void) => success()), play: vi.fn(), pause: vi.fn(),
+      seekTo: vi.fn((_position: number, success: () => void) => success()),
+      getDuration: vi.fn(() => 60_000), getCurrentTime: vi.fn(() => 0),
+      getTotalTrackInfo: vi.fn(() => [{ type: 'TEXT' as const, index: 5, extra_info: '{}' }]),
+      getCurrentStreamInfo: vi.fn(() => [{ type: 'TEXT' as const, index: 5, extra_info: '{}' }]),
+      setSelectTrack: vi.fn(), setSilentSubtitle,
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player }, setTimeout } })
+    const onSubtitle = vi.fn()
+    const controller = new AvPlayController()
+    await controller.load({
+      sessionId: 'subtitles', url: 'https://example.test/video.mp4', title: 'Subtitles',
+      positionSeconds: 0, subtitles: [], activeTrackIds: [],
+    }, {
+      onBuffering: vi.fn(), onState: vi.fn(), onTime: vi.fn(), onTracks: vi.fn(), onSubtitle,
+      onComplete: vi.fn(), onError: vi.fn(),
+    })
+
+    controller.hideSubtitles(true)
+    await expect(controller.selectTrack('TEXT', 5)).resolves.toBe(true)
+    listener?.onsubtitlechange(2_500, 'Subtitle event text')
+
+    expect(setSilentSubtitle).toHaveBeenCalledWith(true)
+    expect(setSilentSubtitle).not.toHaveBeenCalledWith(false)
+    expect(onSubtitle).toHaveBeenCalledWith('Subtitle event text', 2_500)
+  })
+
   it('returns from runtime buffering to the intended playback state', async () => {
     let listener: {
       onbufferingstart(): void

@@ -379,7 +379,6 @@ export class AvPlayController {
     const available = player.getTotalTrackInfo().some((track) => track.type === type && track.index === index)
     if (!available) return false
     player.setSelectTrack(type, index)
-    if (type === 'TEXT') player.setSilentSubtitle?.(false)
     if (!player.getCurrentStreamInfo) return true
     for (const wait of [0, 90, 180, 300]) {
       if (wait) await new Promise<void>((resolve) => window.setTimeout(resolve, wait))

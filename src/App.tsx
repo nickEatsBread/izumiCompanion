@@ -135,12 +135,6 @@ function subtitlePreferencesFor(style?: SubtitleStyle): SubtitlePreferences {
   }
 }
 
-function hasSubtitleAppearanceOverride(preferences: SubtitlePreferences): boolean {
-  return Boolean(preferences.castStyle?.enabled)
-    || preferences.size !== 'source'
-    || preferences.background !== 'source'
-}
-
 const dpadScrollAnimations = new WeakMap<HTMLElement, number>()
 
 /** Coalesce repeated D-pad presses into the newest target, keeping motion visible without building
@@ -491,7 +485,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     externalSubtitlesRef.current.clear()
     if (choice.kind === 'off') avplayRef.current.hideSubtitles(true)
     else if (choice.kind === 'embedded' && choice.index != null) {
-      avplayRef.current.hideSubtitles(hasSubtitleAppearanceOverride(subtitlePreferencesRef.current))
+      // Silent mode suppresses Samsung's native overlay while keeping subtitle events enabled.
+      // The app renders those events so embedded and external tracks share one reliable layer.
+      avplayRef.current.hideSubtitles(true)
       if (avplayRef.current.available) void avplayRef.current.selectTrack('TEXT', choice.index).then((selected) => {
         if (!selected) showNotice('The player could not switch to that subtitle track.')
       }).catch((error) => setErrorMessage(error instanceof Error ? error.message : 'This subtitle track is unavailable.'))
@@ -526,10 +522,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         : { ...current, delayMs: delays[(delays.indexOf(current.delayMs) + 1) % delays.length] }
     subtitlePreferencesRef.current = next
     setSubtitlePreferences(next)
-    if (activeSubtitleRef.current.startsWith('embedded-')) {
-      avplayRef.current.hideSubtitles(hasSubtitleAppearanceOverride(next))
-      if (!hasSubtitleAppearanceOverride(next)) setSubtitleText('')
-    }
+    if (activeSubtitleRef.current.startsWith('embedded-')) avplayRef.current.hideSubtitles(true)
     avplayRef.current.setSubtitleDelay(next.delayMs)
   }
 
@@ -690,10 +683,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         onLive: (isLive) => updatePlayer({ isLive }),
         onSubtitle: (text, durationMs) => {
           if (!activeSubtitleRef.current.startsWith('embedded-')) return
-          if (!hasSubtitleAppearanceOverride(subtitlePreferencesRef.current)) {
-            setSubtitleText('')
-            return
-          }
           setSubtitleText(text)
           if (subtitleTimerRef.current) window.clearTimeout(subtitleTimerRef.current)
           subtitleTimerRef.current = window.setTimeout(() => setSubtitleText(''), Math.max(500, durationMs || 3_000))
