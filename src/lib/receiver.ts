@@ -336,6 +336,24 @@ function trackPreference(value: unknown): CastTrackPreference | undefined {
   return language || title || codec ? { language, title, codec } : undefined
 }
 
+function trackHints(value: unknown): CastLoadRequest['trackHints'] {
+  if (!value || typeof value !== 'object') return undefined
+  const input = value as Record<string, unknown>
+  const subtitles = (Array.isArray(input.subtitles) ? input.subtitles : []).slice(0, 16).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const hint = entry as Record<string, unknown>
+    const label = typeof hint.label === 'string' ? hint.label.trim().slice(0, 160) : ''
+    if (!label) return []
+    return [{
+      label,
+      language: typeof hint.language === 'string' ? hint.language.trim().slice(0, 40) : undefined,
+      title: typeof hint.title === 'string' ? hint.title.trim().slice(0, 160) : undefined,
+      codec: typeof hint.codec === 'string' ? hint.codec.trim().slice(0, 80) : undefined,
+    }]
+  })
+  return subtitles.length ? { subtitles } : undefined
+}
+
 function normalizeLoad(value: unknown): CastLoadRequest | undefined {
   const message = parseMessage(value)
   if (!message || typeof message !== 'object') return undefined
@@ -399,6 +417,7 @@ function normalizeLoad(value: unknown): CastLoadRequest | undefined {
       audio: audioPreference,
       subtitle: subtitlePreference,
     } : undefined,
+    trackHints: trackHints(input.trackHints),
     subtitleStyle: input.subtitleStyle && typeof input.subtitleStyle === 'object' ? input.subtitleStyle : undefined,
     adaptive: rawAdaptive ? {
       minBitrateKbps: Number.isFinite(Number(rawAdaptive.minBitrateKbps)) ? Math.max(0, Number(rawAdaptive.minBitrateKbps)) : undefined,
@@ -681,7 +700,7 @@ export class CompanionReceiver {
     })
   }
 
-  requestTrailer(videoId: string, title: string, muted = false): Promise<CompanionTrailerSource> {
+  requestTrailer(videoId: string, title: string, muted = false, captions = false): Promise<CompanionTrailerSource> {
     if (!this.credential || !this.connected) return Promise.reject(new Error('Open izumi on the paired device to play this trailer.'))
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return Promise.reject(new Error('This trailer has an invalid YouTube ID.'))
     const requestId = randomHex(12)
@@ -700,6 +719,7 @@ export class CompanionReceiver {
         videoId,
         title: title.slice(0, 160),
         muted,
+        captions,
       }, 'broadcast')
     })
   }

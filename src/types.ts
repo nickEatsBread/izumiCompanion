@@ -52,7 +52,7 @@ export interface CompanionMedia {
   logoImage?: string
   /** Receiver-only marker: provider detail lookup completed, including a confirmed no-logo result. */
   titleArtSettled?: boolean
-  trailer?: { id: string; site?: string }
+  trailer?: { id: string; site?: string; language?: string }
   progress?: number
   episode?: number
   episodeTitle?: string
@@ -199,6 +199,15 @@ export interface CastTrackPreferences {
   subtitle?: CastTrackPreference
 }
 
+export interface CastTrackHints {
+  subtitles: Array<{
+    language?: string
+    title?: string
+    codec?: string
+    label: string
+  }>
+}
+
 export interface CastLoadRequest {
   sessionId: string
   url: string
@@ -212,6 +221,8 @@ export interface CastLoadRequest {
   /** Normalized segments resolved by Izumi (AniSkip, IntroDB or file chapters). */
   skipSegments?: CompanionSkipSegment[]
   trackPreferences?: CastTrackPreferences
+  /** Sender-resolved names for embedded tracks whose container labels Samsung may omit. */
+  trackHints?: CastTrackHints
   subtitleStyle?: SubtitleStyle
   adaptive?: {
     minBitrateKbps?: number

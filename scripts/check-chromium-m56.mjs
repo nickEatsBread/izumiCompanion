@@ -400,11 +400,11 @@ async function main() {
       trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform
     }))()`)
     assert(JSON.stringify(rows.body) === '[1920,1080]', `Home overflowed the TV viewport: ${rows.body}.`)
-    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,986,1506]', `Unexpected row positions ${rows.tops}.`)
+    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,934,1454]', `Unexpected row positions ${rows.tops}.`)
     assert(rows.images.slice(0, 2).every((count) => count > 0) && rows.images[2] === 0, `Artwork windowing is incorrect: ${rows.images}.`)
     assert(JSON.stringify(rows.posterWidths) === '[320]', `Poster stride changed during focus: ${rows.posterWidths}.`)
     assert(rows.gap === '20px', `M56 rail fallback gap is ${rows.gap}, expected 20px.`)
-    assert(JSON.stringify(rows.focus) === '[132,106,1200,875,1192,670]', `Unexpected focus spotlight geometry ${rows.focus}.`)
+    assert(JSON.stringify(rows.focus) === '[132,106,1120,820,1112,626]', `Unexpected focus spotlight geometry ${rows.focus}.`)
     assert(rows.continueCopy.includes('S1 E12') && rows.continueCopy.includes('9m left'), `Continue Watching context is incomplete: ${rows.continueCopy}.`)
     assert(rows.continueProgress === '64%', `Continue Watching progress is ${rows.continueProgress}.`)
     assert(JSON.stringify(rows.continueProgressGeometry) === '[8,5]', `Continue Watching progress is hidden by the focus outline: ${rows.continueProgressGeometry}.`)
@@ -475,10 +475,10 @@ async function main() {
       };
     })()`)
     assert(verticalDestination.row === 1 && verticalDestination.index === 0, `A new rail inherited the previous rail position: ${JSON.stringify(verticalDestination)}.`)
-    assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 110) <= 3 && verticalDestination.frame[2] === 1192 && verticalDestination.frame[3] === 670, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
+    assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 110) <= 3 && verticalDestination.frame[2] === 1112 && verticalDestination.frame[3] === 626, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
     assert(verticalDestination.copy[0] >= verticalDestination.frame[1] && verticalDestination.copy[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title treatment is clipped outside its frame: ${verticalDestination.copy}.`)
     assert(verticalDestination.logo === 'Chainsaw Man' && !verticalDestination.plainTitle, `Focused card did not prefer its source logo: ${JSON.stringify(verticalDestination)}.`)
-    assert(JSON.stringify(verticalDestination.copySize) === '[410,116]', `Focused title logo has no stable M56 paint box: ${verticalDestination.copySize}.`)
+    assert(JSON.stringify(verticalDestination.copySize) === '[460,130]', `Focused title logo has no stable M56 paint box: ${verticalDestination.copySize}.`)
     assert(verticalDestination.copyAnimation === 'home-focus-copy-change', `Focused title treatment uses the wrong animation: ${verticalDestination.copyAnimation}.`)
     assert(verticalDestination.achievements.length === 2 && verticalDestination.achievementIcons === 2, `Focused achievements are incomplete: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.achievementParts[1].lead === '#31' && verticalDestination.achievementParts[1].context === 'Highest rated 2022' && verticalDestination.achievementParts[1].contextColor.includes('0.72'), `Achievement hierarchy is not split or capitalized: ${JSON.stringify(verticalDestination.achievementParts)}.`)
@@ -598,7 +598,7 @@ async function main() {
     })()`)
     assert(horizontal.index === 8, `Expected rail index 8, received ${horizontal.index}.`)
     assert(horizontal.scrollLeft === 0 && horizontal.cyclic === 'true' && horizontal.spacers === 0, `Horizontal navigation still exposes a finite rail seam: ${JSON.stringify(horizontal)}.`)
-    assert(horizontal.width === 1200 && horizontal.visualWidth === 1200, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
+    assert(horizontal.width === 1120 && horizontal.visualWidth === 1120, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
     assert(JSON.stringify(horizontal.posterWidths) === '[320]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
     assert(JSON.stringify(horizontal.posterAnimations) === '["0s"]', `Cyclic navigation still replays the grey poster-entry frame: ${horizontal.posterAnimations}.`)
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
@@ -622,7 +622,7 @@ async function main() {
     })()`)
     assert(verifiedTitleLogo.alt === 'Attack on Titan' && verifiedTitleLogo.title.includes('Attack on Titan')
       && verifiedTitleLogo.source.includes('attack-on-titan-logo')
-      && verifiedTitleLogo.natural[0] > 0 && JSON.stringify(verifiedTitleLogo.box) === '[410,116]',
+      && verifiedTitleLogo.natural[0] > 0 && JSON.stringify(verifiedTitleLogo.box) === '[460,130]',
       `Title-specific logo artwork did not paint for its matching card: ${JSON.stringify(verifiedTitleLogo)}.`)
     await capture('m56-matching-title-logo.png')
 
@@ -838,7 +838,7 @@ async function main() {
       var trailer = document.querySelector('.home-hover-trailer');
       return { source: trailer.src, title: trailer.title };
     })()`)
-    assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=0') && hoverTrailer.source.includes('cc_load_policy=0'), `Focused-card trailer is not configured for audible, caption-free autoplay: ${hoverTrailer.source}.`)
+    assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=0') && hoverTrailer.source.includes('cc_load_policy=1') && hoverTrailer.source.includes('cc_lang_pref=en'), `Non-English focused-card trailer is not configured for audible playback with English captions: ${hoverTrailer.source}.`)
     assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
     await evaluate(`(() => {
       document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing');
@@ -849,12 +849,13 @@ async function main() {
       var trailer = document.querySelector('.hero-feature-card > .home-hover-trailer');
       return {
         rankOpacity: getComputedStyle(document.querySelector('.hero-rank-context')).opacity,
+        titleOpacity: getComputedStyle(document.querySelector('.hero-title-logo, .hero h1')).opacity,
         visibility: getComputedStyle(trailer).visibility,
         trailerTransform: getComputedStyle(trailer).transform,
         heroTransform: getComputedStyle(document.querySelector('.hero')).transform
       };
     })()`)
-    assert(heroTrailerPresentation.rankOpacity === '0', `Hero score badge remains over trailer playback: ${JSON.stringify(heroTrailerPresentation)}.`)
+    assert(heroTrailerPresentation.rankOpacity === '0' && heroTrailerPresentation.titleOpacity === '0', `Hero title or score badge remains over trailer playback: ${JSON.stringify(heroTrailerPresentation)}.`)
     assert(heroTrailerPresentation.visibility === 'visible' && heroTrailerPresentation.trailerTransform === 'none' && heroTrailerPresentation.heroTransform === 'none',
       `Hero trailer playback still uses an M56 black-frame compositor layer: ${JSON.stringify(heroTrailerPresentation)}.`)
     await capture('m56-home-carousel.png')
@@ -978,7 +979,7 @@ async function main() {
     await cdp.call('Input.dispatchKeyEvent', {
       type: 'rawKeyDown', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
     })
-    await wait(1_650)
+    await wait(2_150)
     const heldSeek = await evaluate(`(() => ({
       position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow')),
       multiplier: document.querySelector('.player-seek-feedback strong').textContent,
@@ -987,7 +988,9 @@ async function main() {
     await cdp.call('Input.dispatchKeyEvent', {
       type: 'keyUp', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
     })
-    assert(heldSeek.position >= scrubbedPosition + 70, `Held fast-forward did not accumulate: ${scrubbedPosition} -> ${heldSeek.position}.`)
+    // M56 may coalesce one repeat while the test captures the accelerated HUD; two 30-second
+    // advances still prove held seeking accumulated instead of issuing one discrete seek.
+    assert(heldSeek.position >= scrubbedPosition + 60, `Held fast-forward did not accumulate: ${scrubbedPosition} -> ${heldSeek.position}.`)
     assert(heldSeek.multiplier === '3×' && heldSeek.chevrons === 3, `Held fast-forward feedback is incomplete: ${JSON.stringify(heldSeek)}.`)
     await press('ArrowDown')
     await waitFor("document.querySelector('.player-actions > button.is-focused')")

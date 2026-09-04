@@ -3,6 +3,7 @@ import { memo } from 'preact/compat'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
 import anilistLogo from '../assets/anilist-logo.svg'
+import tmdbLogo from '../assets/tmdb-logo.svg'
 import { cyclicRailIndexes } from '../lib/home-navigation'
 import { tvMotionValue } from '../lib/tv-motion'
 import { linearWindow } from '../lib/windowing'
@@ -96,7 +97,7 @@ export function homeCardContext(media: CompanionMedia, continueCard: boolean): H
 }
 
 export function informativeHeroMeta(media: CompanionMedia): string {
-  return mediaFactTokens(media).join('  ·  ')
+  return mediaFactTokens(media).filter((fact) => fact !== media.contentRating).join('  ·  ')
 }
 
 export function achievementIconName(kind: NonNullable<CompanionMedia['achievements']>[number]['kind']): string {
@@ -113,8 +114,11 @@ function AchievementIcon({ kind }: { kind: NonNullable<CompanionMedia['achieveme
 }
 
 function AchievementSource({ source }: { source: string }) {
-  return source.trim().toLowerCase() === 'anilist'
+  const normalized = source.trim().toLowerCase()
+  return normalized === 'anilist'
     ? <img class="home-achievement-source-logo" src={anilistLogo} alt="AniList" width={22} height={22} />
+    : normalized === 'tmdb'
+      ? <img class="home-achievement-source-logo is-tmdb" src={tmdbLogo} alt="TMDB" width={47} height={22} />
     : <small>{source}</small>
 }
 
@@ -160,11 +164,52 @@ function RatingSourceMark({ source }: { source: string }) {
   if (normalized === 'anilist') {
     return <img class="hero-rating-source-logo" src={anilistLogo} alt="" width={26} height={26} />
   }
+  if (normalized === 'tmdb') {
+    return <img class="hero-rating-source-logo is-tmdb" src={tmdbLogo} alt="" width={54} height={24} />
+  }
   const label = normalized === 'rottentomatoes' ? 'RT'
     : normalized === 'metacritic' ? 'M'
       : normalized === 'myanimelist' ? 'MAL'
         : source
   return <span class={`hero-rating-source is-${normalized || 'source'}`}>{label}</span>
+}
+
+export interface CertificationPresentation {
+  agency: 'bbfc' | 'pegi' | 'mpa' | 'tv' | 'fsk' | 'generic'
+  label: string
+  className: string
+}
+
+/** Turn provider text into a compact, recognizable regional classification mark. Unknown schemes
+ * retain a framed neutral treatment rather than being misrepresented as another agency. */
+export function certificationPresentation(value: string): CertificationPresentation {
+  const label = value.trim().toUpperCase().replace(/\s+/g, ' ')
+  const key = label.replace(/[^A-Z0-9]/g, '').toLowerCase()
+  if (/^pegi\s*(3|7|12|16|18)$/.test(label.toLowerCase())) {
+    const age = label.match(/\d+/)?.[0] ?? label
+    return { agency: 'pegi', label: age, className: `is-pegi is-${age}` }
+  }
+  if (/^(U|PG|12|12A|15|18|R18)$/.test(label)) {
+    return { agency: 'bbfc', label, className: `is-bbfc is-${key}` }
+  }
+  if (/^FSK\s*(0|6|12|16|18)$/.test(label)) {
+    return { agency: 'fsk', label: label.replace(/\s+/g, ' '), className: 'is-fsk' }
+  }
+  if (/^TV[- ]?(Y7|Y|G|PG|14|MA)$/.test(label)) {
+    return { agency: 'tv', label: label.replace(' ', '-'), className: 'is-tv' }
+  }
+  if (/^(G|PG-13|R|NC-17)$/.test(label)) {
+    return { agency: 'mpa', label, className: 'is-mpa' }
+  }
+  return { agency: 'generic', label: label || 'NR', className: 'is-generic' }
+}
+
+function CertificationMark({ value }: { value: string }) {
+  const mark = certificationPresentation(value)
+  return <span class={`media-certification ${mark.className}`} aria-label={`${mark.agency === 'generic' ? 'Content rating' : mark.agency.toUpperCase()} ${mark.label}`}>
+    {mark.agency === 'pegi' && <small>PEGI</small>}
+    <b>{mark.label}</b>
+  </span>
 }
 
 export function homeRowVisible(rowIndex: number, activeRow: number): boolean {
@@ -177,7 +222,7 @@ export const HOME_POSTER_STRIDE = 340
 export const HOME_CAROUSEL_POSTER_WIDTH = 238
 export const HOME_CAROUSEL_POSTER_HEIGHT = 340
 export const HOME_CAROUSEL_POSTER_STRIDE = 254
-export const HOME_FOCUS_WIDTH = Math.round(HOME_POSTER_WIDTH * 3.75)
+export const HOME_FOCUS_WIDTH = Math.round(HOME_POSTER_WIDTH * 3.5)
 
 function rowSpacerDimensions(count: number, stride = HOME_POSTER_STRIDE): { width: string; minWidth: string } {
   const gap = stride === HOME_CAROUSEL_POSTER_STRIDE ? 16 : 20
@@ -190,7 +235,7 @@ export function homeRowTop(rowIndex: number, activeRow: number, browsing: boolea
   const distance = rowIndex - activeRow
   if (distance === 0) return 52
   if (distance < 0) return -900 + (distance + 1) * 420
-  return distance === 1 ? 986 : 1506 + (distance - 2) * 420
+  return distance === 1 ? 934 : 1454 + (distance - 2) * 420
 }
 
 export function homeCarouselRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
@@ -391,10 +436,21 @@ function HeroArtwork({ source }: { source?: string }) {
   )
 }
 
-function HeroTrailer({ source, title, onPlayingChange }: { source: string; title: string; onPlayingChange?(playing: boolean): void }) {
+const trailerLanguageAliases: Record<string, string> = {
+  english: 'en', eng: 'en', japanese: 'ja', jpn: 'ja', korean: 'ko', kor: 'ko',
+  chinese: 'zh', zho: 'zh', chi: 'zh', spanish: 'es', spa: 'es', french: 'fr', fra: 'fr', fre: 'fr',
+}
+
+export function trailerNeedsEnglishCaptions(language?: string): boolean {
+  const key = language?.trim().toLowerCase().replace('_', '-').split('-')[0] ?? ''
+  if (!key || /^(?:und|unknown|none|mul|zxx)$/.test(key)) return false
+  return (trailerLanguageAliases[key] ?? key) !== 'en'
+}
+
+function HeroTrailer({ source, title, captions = false, onPlayingChange }: { source: string; title: string; captions?: boolean; onPlayingChange?(playing: boolean): void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const hasPlayedRef = useRef(false)
-  const captionsSuppressedAtRef = useRef(0)
+  const captionsConfiguredAtRef = useRef(0)
   const [playing, setPlaying] = useState(false)
   const bridgeOrigin = (() => {
     try {
@@ -409,17 +465,22 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
     if (bridgeOrigin) target.postMessage({ type: 'izumi-youtube-command', payload: serialized }, bridgeOrigin)
     else target.postMessage(serialized, 'https://www.youtube-nocookie.com')
   }
-  const suppressCaptions = (force = false) => {
+  const applyCaptionPreference = (force = false) => {
     const now = Date.now()
-    if (!force && now - captionsSuppressedAtRef.current < 1_500) return
-    captionsSuppressedAtRef.current = now
-    post({ event: 'command', func: 'setOption', args: ['captions', 'track', {}] })
-    post({ event: 'command', func: 'unloadModule', args: ['captions'] })
-    post({ event: 'command', func: 'unloadModule', args: ['cc'] })
+    if (!force && now - captionsConfiguredAtRef.current < 1_500) return
+    captionsConfiguredAtRef.current = now
+    if (captions) {
+      post({ event: 'command', func: 'loadModule', args: ['captions'] })
+      post({ event: 'command', func: 'setOption', args: ['captions', 'track', { languageCode: 'en' }] })
+    } else {
+      post({ event: 'command', func: 'setOption', args: ['captions', 'track', {}] })
+      post({ event: 'command', func: 'unloadModule', args: ['captions'] })
+      post({ event: 'command', func: 'unloadModule', args: ['cc'] })
+    }
   }
   const start = () => {
     post({ event: 'listening', id: 1, channel: 'widget' })
-    suppressCaptions(true)
+    applyCaptionPreference(true)
     post({ event: 'command', func: 'setVolume', args: [100] })
     post({ event: 'command', func: 'unMute', args: [] })
     post({ event: 'command', func: 'playVideo', args: [] })
@@ -437,7 +498,7 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
       if (attempts >= 40) window.clearInterval(timer)
     }, 150)
     return () => window.clearInterval(timer)
-  }, [source])
+  }, [captions, source])
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -453,7 +514,7 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
       try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw }
       catch { return }
       const info = payload?.info
-      if (payload?.event === 'onApiChange') suppressCaptions(true)
+      if (payload?.event === 'onApiChange') applyCaptionPreference(true)
       const state = typeof info === 'object' && info ? Number((info as Record<string, unknown>).playerState) : Number(info ?? payload?.data)
       if ((payload?.event === 'onStateChange' || payload?.event === 'initialDelivery' || payload?.event === 'infoDelivery') && Number.isFinite(state)) {
         if (state === 1) hasPlayedRef.current = true
@@ -461,7 +522,7 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
         setPlaying(next)
         onPlayingChange?.(next)
         if (next) {
-          suppressCaptions()
+          applyCaptionPreference()
           post({ event: 'command', func: 'setVolume', args: [100] })
           post({ event: 'command', func: 'unMute', args: [] })
         }
@@ -469,7 +530,7 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [bridgeOrigin, source])
+  }, [bridgeOrigin, captions, source])
 
   return (
     <iframe
@@ -619,8 +680,8 @@ const HomeFocusCard = memo(function HomeFocusCard({
                 key={image}
                 src={image}
                 alt=""
-                width={1192}
-                height={670}
+                width={1112}
+                height={626}
                 decoding="async"
                 onError={() => {
                   setArtworkIndex((current) => current + 1)
@@ -628,10 +689,10 @@ const HomeFocusCard = memo(function HomeFocusCard({
               />
             : <span class="home-card-placeholder">{item.title}</span>}
         </span>
-        {trailerSource && <HeroTrailer source={trailerSource} title={item.title} onPlayingChange={setTrailerPlaying} />}
+        {trailerSource && <HeroTrailer source={trailerSource} title={item.title} captions={trailerNeedsEnglishCaptions(item.trailer?.language)} onPlayingChange={setTrailerPlaying} />}
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
-          ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={410} height={116} decoding="async" onError={onLogoError} />
+          ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={460} height={130} decoding="async" onError={onLogoError} />
           : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
           <span>{item.title}</span>
@@ -648,7 +709,9 @@ const HomeFocusCard = memo(function HomeFocusCard({
         <span class="home-focus-outline" aria-hidden="true" />
       </span>
       <span class="home-focus-context" key={`context-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
-        <strong class="home-focus-facts">{context.facts.map((fact, factIndex) => <span key={`${fact}-${factIndex}`}>{fact}</span>)}</strong>
+        <strong class="home-focus-facts">{context.facts.map((fact, factIndex) => fact === item.contentRating
+          ? <CertificationMark value={fact} key={`${fact}-${factIndex}`} />
+          : <span key={`${fact}-${factIndex}`}>{fact}</span>)}</strong>
         {context.secondary && <small class="home-focus-secondary">{context.secondary}</small>}
         {item.description && <small class="home-focus-description">{item.description}</small>}
       </span>
@@ -770,7 +833,7 @@ export function HomeScreen({
     if (!row) return
     const episodeCard = row.kind === 'continue'
     const warmed = new Set<number>()
-    for (let offset = -1; offset <= 2; offset += 1) {
+    for (let offset = -1; offset <= 5; offset += 1) {
       const index = (focus.index + offset + row.items.length) % row.items.length
       if (!warmed.has(index)) preloadFocusArtwork(row.items[index], episodeCard)
       warmed.add(index)
@@ -833,7 +896,7 @@ export function HomeScreen({
         <article class="hero-feature-card">
         <img class="hero-brand" src={wordmark} alt="izumi" />
         <HeroArtwork source={heroImage} />
-        {carouselLayout && heroTrailerSource && <HeroTrailer source={heroTrailerSource} title={hero.title} onPlayingChange={setHeroTrailerPlaying} />}
+        {carouselLayout && heroTrailerSource && <HeroTrailer source={heroTrailerSource} title={hero.title} captions={trailerNeedsEnglishCaptions(hero.trailer?.language)} onPlayingChange={setHeroTrailerPlaying} />}
         <div class="hero-shade" />
         <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
           {heroLogoImage
@@ -848,8 +911,9 @@ export function HomeScreen({
               </div>
             </div>
           )}
-          {(meta || ratings.length > 0) && <div class="hero-meta-line">
+          {(meta || hero.contentRating || ratings.length > 0) && <div class="hero-meta-line">
             {meta && <p class="hero-meta">{meta}</p>}
+            {hero.contentRating && <CertificationMark value={hero.contentRating} />}
             {ratings.length > 0 && <div class="hero-ratings" aria-label="Ratings">
               {ratings.map((rating) => <span
                 class="hero-rating"

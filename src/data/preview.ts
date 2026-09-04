@@ -130,7 +130,7 @@ const frieren = media(
     description: 'Decades after the hero party defeated the Demon King, an elven mage begins a new journey to understand the people she once travelled beside.',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/154587-ivXNJ23SM1xB.jpg',
     logoImage: previewTitleLogos.frieren,
-    trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
+    trailer: { id: 'Iwr1aLEDpe4', site: 'youtube', language: 'ja' },
     contentRating: 'TV-14',
     ratings: [
       { source: 'IMDb', score: 8.9, scale: 10, votes: 42_000 },
@@ -179,7 +179,7 @@ const popular = [
     description: 'A debt-ridden devil hunter is reborn with the power of his chainsaw-demon companion.',
     backdrop: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/127230-o8IRwCGVr9KW.jpg',
     logoImage: previewTitleLogos.chainsawMan,
-    trailer: { id: 'dFlDRhvM4L0', site: 'youtube' },
+    trailer: { id: 'dFlDRhvM4L0', site: 'youtube', language: 'ja' },
     seasonEpisodeCounts: [12],
     achievements: [{ kind: 'rating', label: '#31 highest rated 2022', source: 'AniList' }],
     placement: { label: 'Trending Now', position: 4, kind: 'ranking' },

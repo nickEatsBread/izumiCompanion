@@ -20,7 +20,7 @@ import {
   TRAILER_CONTROL_EVENT,
   type TrailerControlAction,
 } from './components/CatalogScreens'
-import { HomeScreen } from './components/HomeScreen'
+import { HomeScreen, trailerNeedsEnglishCaptions } from './components/HomeScreen'
 import { NavigationSkeleton } from './components/NavigationSkeleton'
 import { PreviewToolbar } from './components/PreviewToolbar'
 import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, type IndependentSetupPhase } from './components/StateScreens'
@@ -43,7 +43,7 @@ import {
 import { registerRemoteKeys, remoteAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
-import { preferredTrack, subtitleTrackLabel } from './lib/track-selection'
+import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { installVoiceSearch } from './lib/voice-search'
 import {
@@ -660,8 +660,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           }
         },
         onTracks: (tracks) => {
-          const audio = tracks.filter((track) => track.type === 'AUDIO')
-          const textTracks = tracks.filter((track) => track.type === 'TEXT')
+          const namedTracks = applyTrackHints(tracks, request.trackHints)
+          const audio = namedTracks.filter((track) => track.type === 'AUDIO')
+          const textTracks = namedTracks.filter((track) => track.type === 'TEXT')
           const embedded = textTracks.map((track): SubtitleChoice => ({
             id: `embedded-${track.index}`,
             label: track.label,
@@ -1185,7 +1186,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const pumpHomeDetailQueue = () => {
-    while (homeDetailActiveRef.current < 3 && homeDetailQueueRef.current.length) {
+    while (homeDetailActiveRef.current < 4 && homeDetailQueueRef.current.length) {
       const task = homeDetailQueueRef.current.shift()!
       if (task.generation !== homeDetailGenerationRef.current) continue
       homeDetailActiveRef.current += 1
@@ -1282,13 +1283,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (!playbackSettings.videoPreviewsEnabled) return
     const videoId = focusedHomeMedia ? youtubeTrailerId(focusedHomeMedia) : undefined
     if (!videoId || !focusedHomeMedia) return
+    const captions = trailerNeedsEnglishCaptions(focusedHomeMedia.trailer?.language)
 
     const timer = window.setTimeout(() => {
       if (showPreviewTools) {
         const params = new URLSearchParams({
           autoplay: '1', controls: '0', disablekb: '1', enablejsapi: '1', playsinline: '1', rel: '0',
-          mute: '0', cc_load_policy: '0', hl: 'en', iv_load_policy: '3',
+          mute: '0', cc_load_policy: captions ? '1' : '0', hl: 'en', iv_load_policy: '3',
         })
+        if (captions) params.set('cc_lang_pref', 'en')
         if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
         const source = { mediaKey: focusedHomeMediaKey, url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
         homeTrailerPreviewRef.current = source
@@ -1297,7 +1300,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       const receiver = receiverRef.current
       if (!receiver) return
-      void receiver.requestTrailer(videoId, `${focusedHomeMedia.title} home preview`, false).then((result) => {
+      void receiver.requestTrailer(videoId, `${focusedHomeMedia.title} home preview`, false, captions).then((result) => {
         if (generation !== homeTrailerGenerationRef.current) {
           receiver.releaseTrailer(result.requestId)
           return
@@ -1311,7 +1314,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }, 1_500)
 
     return () => window.clearTimeout(timer)
-  }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, playbackSettings.videoPreviewsEnabled, screen, showPreviewTools])
+  }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, focusedHomeMedia?.trailer?.language, playbackSettings.videoPreviewsEnabled, screen, showPreviewTools])
   const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
   const browseSnapshot = useMemo(() => ({ ...snapshot, rows: browseRows }), [snapshot, browseRows])
   const allMedia = collections.search

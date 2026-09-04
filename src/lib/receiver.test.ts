@@ -136,6 +136,7 @@ afterEach(() => {
 
 describe('companion play routing', () => {
   it('only sends catalogue switches while the paired client channel is connected', async () => {
+    storage.removeItem('izumi.companion.cloudflare')
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {
       msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
@@ -200,6 +201,7 @@ describe('companion play routing', () => {
       activeTrackIds: [],
       media,
       trackPreferences: { audio: { language: 'ja-JP', codec: 'aac' } },
+      trackHints: { subtitles: [{ language: 'eng', codec: 'ass', label: 'English · Signs & Songs' }] },
       skipSegments: [
         { type: 'op', startTime: 42, endTime: 132, label: 'Opening' },
         { type: 'invalid', startTime: 0, endTime: -1 },
@@ -210,12 +212,14 @@ describe('companion play routing', () => {
       sessionId: 'session-one',
       media,
       trackPreferences: { audio: { language: 'ja-JP', codec: 'aac', title: undefined }, subtitle: undefined },
+      trackHints: { subtitles: [{ language: 'eng', codec: 'ass', title: undefined, label: 'English · Signs & Songs' }] },
       skipSegments: [{ type: 'op', startTime: 42, endTime: 132, label: 'Opening' }],
     }), 'sender-one')
     receiver.disconnect()
   })
 
   it('requests and receives full episode details from the paired client', async () => {
+    storage.removeItem('izumi.companion.cloudflare')
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {
       msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
@@ -282,14 +286,15 @@ describe('companion play routing', () => {
     const receiver = new CompanionReceiver(events())
     await receiver.connect()
 
-    const pending = receiver.requestTrailer('M7lc1UVf-VE', 'Frieren trailer', true)
+    const pending = receiver.requestTrailer('M7lc1UVf-VE', 'Frieren trailer', true, true)
     const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.trailer')?.[1] as {
       requestId: string
       pairingId: string
       videoId: string
       muted: boolean
+      captions: boolean
     }
-    expect(sent).toMatchObject({ pairingId: credential.slice(0, 16), videoId: 'M7lc1UVf-VE', muted: true })
+    expect(sent).toMatchObject({ pairingId: credential.slice(0, 16), videoId: 'M7lc1UVf-VE', muted: true, captions: true })
 
     channel.emit('izumi.companion.trailer-result', {
       credential,
@@ -318,8 +323,9 @@ describe('companion play routing', () => {
     await receiver.connect()
 
     const pending = receiver.requestTrailer('M7lc1UVf-VE', 'Audible preview')
-    const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.trailer')?.[1] as { requestId: string; muted: boolean }
+    const sent = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.trailer')?.[1] as { requestId: string; muted: boolean; captions: boolean }
     expect(sent.muted).toBe(false)
+    expect(sent.captions).toBe(false)
     channel.emit('izumi.companion.trailer-result', {
       credential,
       requestId: sent.requestId,
