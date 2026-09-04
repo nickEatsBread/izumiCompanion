@@ -1062,22 +1062,28 @@ async function main() {
     await press('ArrowRight')
     const scrubbedPosition = await evaluate("Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow'))")
     assert(scrubbedPosition > bufferingPlayer.position, `Buffering timeline did not seek: ${bufferingPlayer.position} -> ${scrubbedPosition}.`)
-    await cdp.call('Input.dispatchKeyEvent', {
-      type: 'rawKeyDown', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
-    })
-    await wait(2_150)
+    // Some Samsung remotes report a held media key as repeated down/up pairs rather than one
+    // key-down with event.repeat. Keep the gaps below the release debounce to exercise that path.
+    for (let pulse = 0; pulse < 16; pulse += 1) {
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'rawKeyDown', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
+      })
+      await wait(70)
+      await cdp.call('Input.dispatchKeyEvent', {
+        type: 'keyUp', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
+      })
+      if (pulse < 15) await wait(70)
+    }
     const heldSeek = await evaluate(`(() => ({
       position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow')),
       multiplier: document.querySelector('.player-seek-feedback strong').textContent,
-      chevrons: document.querySelectorAll('.player-seek-chevrons svg').length
+      chevrons: document.querySelectorAll('.player-seek-chevrons svg').length,
+      buffering: Boolean(document.querySelector('.player-buffering-status'))
     }))()`)
-    await cdp.call('Input.dispatchKeyEvent', {
-      type: 'keyUp', key: 'MediaFastForward', code: 'MediaFastForward', windowsVirtualKeyCode: 417, nativeVirtualKeyCode: 417,
-    })
-    // M56 may coalesce one repeat while the test captures the accelerated HUD; two 30-second
-    // advances still prove held seeking accumulated instead of issuing one discrete seek.
+    // Several accelerated advances prove the paired pulses remained one hold session instead of
+    // repeatedly committing decoder seeks and restarting at 1x.
     assert(heldSeek.position >= scrubbedPosition + 60, `Held fast-forward did not accumulate: ${scrubbedPosition} -> ${heldSeek.position}.`)
-    assert(heldSeek.multiplier === '3×' && heldSeek.chevrons === 3, `Held fast-forward feedback is incomplete: ${JSON.stringify(heldSeek)}.`)
+    assert(heldSeek.multiplier === '3×' && heldSeek.chevrons === 3 && !heldSeek.buffering, `Held fast-forward feedback restarted or exposed buffering: ${JSON.stringify(heldSeek)}.`)
     await press('ArrowDown')
     await waitFor("document.querySelector('.player-actions > button.is-focused')")
     await capture('m56-player-buffering.png')

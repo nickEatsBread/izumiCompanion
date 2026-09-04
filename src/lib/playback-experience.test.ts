@@ -60,9 +60,12 @@ describe('playback experience', () => {
   })
 
   it('accelerates held seeking without leaving the playable timeline', () => {
-    expect(seekHoldMultiplier(400)).toBe(2)
-    expect(seekHoldMultiplier(1_399)).toBe(2)
-    expect(seekHoldMultiplier(1_400)).toBe(3)
+    expect(seekHoldMultiplier(400)).toBe(1)
+    expect(seekHoldMultiplier(799)).toBe(1)
+    expect(seekHoldMultiplier(800)).toBe(2)
+    expect(seekHoldMultiplier(1_799)).toBe(2)
+    expect(seekHoldMultiplier(1_800)).toBe(3)
+    expect(seekHoldMultiplier(3_200)).toBe(4)
     expect(playerSeekTarget(100, 1_000, 1, 2)).toBe(120)
     expect(playerSeekTarget(100, 1_000, -1, 3)).toBe(70)
     expect(playerSeekTarget(995, 1_000, 1, 3)).toBe(1_000)

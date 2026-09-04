@@ -21,8 +21,11 @@ export interface NextEpisode {
 
 export const PLAYER_SEEK_STEP_SECONDS = 10
 
-export function seekHoldMultiplier(elapsedMs: number): 2 | 3 {
-  return elapsedMs >= 1_400 ? 3 : 2
+export function seekHoldMultiplier(elapsedMs: number): 1 | 2 | 3 | 4 {
+  if (elapsedMs >= 3_200) return 4
+  if (elapsedMs >= 1_800) return 3
+  if (elapsedMs >= 800) return 2
+  return 1
 }
 
 export function playerSeekTarget(

@@ -230,6 +230,9 @@ const RESTORABLE_SCREENS: ScreenName[] = [
 
 const HOME_DETAIL_CONCURRENCY = 6
 const HOME_PRESENTATION_CACHE_LIMIT = 32
+const SEEK_HOLD_START_DELAY_MS = 360
+const SEEK_HOLD_PULSE_MS = 360
+const SEEK_HOLD_RELEASE_GRACE_MS = 280
 
 function homeMediaKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
@@ -403,8 +406,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const seekFeedbackTimerRef = useRef<number>()
   const seekHoldDelayRef = useRef<number>()
   const seekHoldIntervalRef = useRef<number>()
+  const seekHoldReleaseRef = useRef<number>()
   const seekHoldActionRef = useRef<'rewind' | 'fastForward'>()
-  const seekHoldDidPulseRef = useRef(false)
   const seekHoldStartedRef = useRef(0)
   const pendingSeekRef = useRef<number>()
   const seekInFlightRef = useRef(false)
@@ -1960,7 +1963,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
    * seek at a time and collapse every repeat event into the newest requested position. */
   const flushPendingSeek = (): void => {
     const target = pendingSeekRef.current
-    if (target === undefined || seekInFlightRef.current || !avplayRef.current.available) return
+    if (target === undefined || seekInFlightRef.current || seekHoldActionRef.current) return
+    if (!avplayRef.current.available) {
+      pendingSeekRef.current = undefined
+      return
+    }
     seekInFlightRef.current = true
     const finish = () => {
       if (pendingSeekRef.current === target) pendingSeekRef.current = undefined
@@ -1990,45 +1997,64 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (action && action !== active) return
     if (seekHoldDelayRef.current) window.clearTimeout(seekHoldDelayRef.current)
     if (seekHoldIntervalRef.current) window.clearInterval(seekHoldIntervalRef.current)
+    if (seekHoldReleaseRef.current) window.clearTimeout(seekHoldReleaseRef.current)
     seekHoldDelayRef.current = undefined
     seekHoldIntervalRef.current = undefined
+    seekHoldReleaseRef.current = undefined
     seekHoldActionRef.current = undefined
     if (!active) return
-    if (seekHoldDidPulseRef.current) flushPendingSeek()
-    else seekFromRemote(active === 'fastForward' ? 1 : -1)
-    seekHoldDidPulseRef.current = false
+    flushPendingSeek()
     if (seekFeedbackTimerRef.current) window.clearTimeout(seekFeedbackTimerRef.current)
     seekFeedbackTimerRef.current = window.setTimeout(() => setSeekFeedback(undefined), 900)
   }
 
-  seekHoldKeyDownRef.current = (action, repeated) => {
-    if (action !== 'rewind' && action !== 'fastForward') return false
+  const releaseSeekHold = (action: RemoteAction) => {
+    if (action !== seekHoldActionRef.current) return
+    if (seekHoldReleaseRef.current) window.clearTimeout(seekHoldReleaseRef.current)
+    // Tizen remotes can emit a key-up between repeat pulses. A short quiet period distinguishes
+    // that cadence from a genuine release and prevents one decoder seek (and buffer cycle) per
+    // pulse while preserving an immediate on-screen scrub position.
+    seekHoldReleaseRef.current = window.setTimeout(() => {
+      seekHoldReleaseRef.current = undefined
+      stopSeekHold(action)
+    }, SEEK_HOLD_RELEASE_GRACE_MS)
+  }
+
+  seekHoldKeyDownRef.current = (action, _repeated) => {
+    if (action !== 'rewind' && action !== 'fastForward') {
+      if (seekHoldActionRef.current) stopSeekHold()
+      return false
+    }
     if (screen !== 'player' || trailerOpen || stillWatching || Boolean(playerMenu)) {
       stopSeekHold()
       return false
     }
-    if (repeated && seekHoldActionRef.current === action) return true
-    if (repeated) return false
+    if (seekHoldActionRef.current === action) {
+      if (seekHoldReleaseRef.current) window.clearTimeout(seekHoldReleaseRef.current)
+      seekHoldReleaseRef.current = undefined
+      return true
+    }
     stopSeekHold()
     seekHoldActionRef.current = action
-    seekHoldDidPulseRef.current = false
     seekHoldStartedRef.current = tvNow()
+    // Move the scrubber immediately at 1x so a short press never feels delayed. AVPlay itself is
+    // left untouched until release; only the cheap player HUD updates throughout the hold.
+    seekFromRemote(action === 'fastForward' ? 1 : -1, 1, false)
     seekHoldDelayRef.current = window.setTimeout(() => {
       const pulse = () => {
         const active = seekHoldActionRef.current
         if (!active) return
-        seekHoldDidPulseRef.current = true
         const multiplier = seekHoldMultiplier(tvNow() - seekHoldStartedRef.current)
         // Scrub the UI continuously, but make one decoder seek on release. Repeated AVPlay seeks
         // cause a buffering cycle and saturate older Samsung TVs.
         seekFromRemote(active === 'fastForward' ? 1 : -1, multiplier, false)
       }
       pulse()
-      seekHoldIntervalRef.current = window.setInterval(pulse, 450)
-    }, 340)
+      seekHoldIntervalRef.current = window.setInterval(pulse, SEEK_HOLD_PULSE_MS)
+    }, SEEK_HOLD_START_DELAY_MS)
     return true
   }
-  seekHoldKeyUpRef.current = stopSeekHold
+  seekHoldKeyUpRef.current = releaseSeekHold
 
   const activatePlayerControl = (index: number) => {
     setPlayerControlFocus(index)
