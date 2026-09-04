@@ -638,8 +638,8 @@ const HomeFocusCard = memo(function HomeFocusCard({
                 }}
               />
             : <span class="home-card-placeholder">{item.title}</span>}
-          {trailerSource && <HeroTrailer source={trailerSource} title={item.title} onPlayingChange={setTrailerPlaying} />}
         </span>
+        {trailerSource && <HeroTrailer source={trailerSource} title={item.title} onPlayingChange={setTrailerPlaying} />}
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
           ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={410} height={116} decoding="async" onError={onLogoError} />
@@ -706,6 +706,7 @@ export function HomeScreen({
     : snapshot.catalog.label
   const heroImage = hero.episodeImage || hero.backdrop || hero.poster
   const heroTrailerSource = trailerPreview?.mediaKey === mediaIdentity(hero) ? trailerPreview.url : undefined
+  const [heroTrailerPlaying, setHeroTrailerPlaying] = useState(false)
   const [heroLogoImage, showHeroTextTitle, onHeroLogoError] = useStableTitleImage(mediaIdentity(hero), hero.logoImage, hero.titleArtSettled)
   const homeTrackRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<FocusLocation>(focus)
@@ -833,14 +834,14 @@ export function HomeScreen({
 
       <div class="home-motion-track" ref={homeTrackRef}>
       <section
-        class={`hero${browsingRows && !carouselLayout ? ' is-receding' : ''}${browsingRows && carouselLayout ? ' is-contextual' : ''}`}
+        class={`hero${browsingRows && !carouselLayout ? ' is-receding' : ''}${browsingRows && carouselLayout ? ' is-contextual' : ''}${carouselLayout && heroTrailerSource && heroTrailerPlaying ? ' is-trailer-playing' : ''}`}
         aria-label={`Featured: ${hero.title}`}
         aria-hidden={browsingRows && !carouselLayout}
       >
         <article class="hero-feature-card">
         <img class="hero-brand" src={wordmark} alt="izumi" />
         <HeroArtwork source={heroImage} />
-        {carouselLayout && heroTrailerSource && <HeroTrailer source={heroTrailerSource} title={hero.title} />}
+        {carouselLayout && heroTrailerSource && <HeroTrailer source={heroTrailerSource} title={hero.title} onPlayingChange={setHeroTrailerPlaying} />}
         <div class="hero-shade" />
         <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
           {heroLogoImage
@@ -936,11 +937,10 @@ export function HomeScreen({
           const rowTop = carouselLayout
             ? homeCarouselRowTop(rowIndex, activeRow, browsingRows)
             : homeRowTop(rowIndex, activeRow, browsingRows)
-          const rowTransform = `translate3d(0, ${rowTop}px, 0)`
           return (
           <section
             class={`media-row${continueRow ? ' continue-row' : ''}${topTenRow ? ' top-ten-row' : ''}${rowActive ? ' is-active' : ''}${rowIndex > activeRow ? ' is-upcoming' : ''}`}
-            style={{ transform: rowTransform, WebkitTransform: rowTransform }}
+            style={{ top: `${rowTop}px`, transform: 'none', WebkitTransform: 'none' }}
             key={row.id}
             data-home-row={rowIndex}
             aria-labelledby={`row-title-${row.id}`}

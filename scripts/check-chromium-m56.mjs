@@ -474,7 +474,10 @@ async function main() {
     assert(verticalDestination.description.includes('devil hunter') && verticalDestination.descriptionWeight === '500', `Focused synopsis is missing or over-emphasized: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.descriptionColor !== verticalDestination.factsColor && verticalDestination.descriptionBounds[1] <= verticalDestination.descriptionBounds[2], `Focused synopsis hierarchy or clipping is incorrect: ${JSON.stringify(verticalDestination)}.`)
     await waitFor("document.querySelector('.home-trailer-footer')")
-    await evaluate("document.querySelector('.home-focus-card').classList.add('is-trailer-playing')")
+    await evaluate(`(() => {
+      document.querySelector('.home-focus-card').classList.add('is-trailer-playing');
+      document.querySelector('.home-focus-card .home-hover-trailer').classList.add('is-playing');
+    })()`)
     await wait(260)
     const activeTrailerPresentation = await evaluate(`(() => {
       var card = document.querySelector('.home-focus-card');
@@ -491,7 +494,15 @@ async function main() {
         achievements: getComputedStyle(card.querySelector('.home-focus-achievements')).opacity,
         achievementWidths: Array.from(card.querySelectorAll('.home-achievement')).map(function (item) { return Math.round(item.getBoundingClientRect().width); }),
         anilistLogo: Boolean(card.querySelector('.home-achievement-source-logo[alt="AniList"]')),
-        sourceText: Array.from(card.querySelectorAll('.home-achievement small')).map(function (item) { return item.textContent.trim(); })
+        sourceText: Array.from(card.querySelectorAll('.home-achievement small')).map(function (item) { return item.textContent.trim(); }),
+        trailerParent: card.querySelector('.home-hover-trailer').parentElement.className,
+        trailerVisibility: getComputedStyle(card.querySelector('.home-hover-trailer')).visibility,
+        trailerTransform: getComputedStyle(card.querySelector('.home-hover-trailer')).transform,
+        cardTransform: getComputedStyle(card).transform,
+        mediaTransform: getComputedStyle(card.querySelector('.home-focus-media')).transform,
+        mediaWillChange: getComputedStyle(card.querySelector('.home-focus-media')).willChange,
+        rowTransform: getComputedStyle(card.closest('.media-row')).transform,
+        rowsTransform: getComputedStyle(card.closest('.catalog-rows')).transform
       };
     })()`)
     assert(activeTrailerPresentation.shade === '0' && activeTrailerPresentation.title === '0' && activeTrailerPresentation.footer === '1', `Trailer chrome does not clear the full video: ${JSON.stringify(activeTrailerPresentation)}.`)
@@ -499,6 +510,11 @@ async function main() {
     assert(Number(activeTrailerPresentation.footerTitleOpacity) < 1 && activeTrailerPresentation.footerOverflow === 'ellipsis', `Long trailer titles cannot yield space to their content label: ${JSON.stringify(activeTrailerPresentation)}.`)
     assert(activeTrailerPresentation.achievements === '0' && activeTrailerPresentation.anilistLogo && !activeTrailerPresentation.sourceText.includes('AniList'), `Trailer/source achievement treatment is incorrect: ${JSON.stringify(activeTrailerPresentation)}.`)
     assert(activeTrailerPresentation.achievementWidths.every(function (width) { return width < 430; }), `Achievement badges retain an empty black tail: ${activeTrailerPresentation.achievementWidths}.`)
+    assert(activeTrailerPresentation.trailerParent === 'home-focus-frame' && activeTrailerPresentation.trailerVisibility === 'visible', `Trailer is not revealed from the stable focus frame: ${JSON.stringify(activeTrailerPresentation)}.`)
+    assert(activeTrailerPresentation.trailerTransform === 'none' && activeTrailerPresentation.cardTransform === 'none'
+      && activeTrailerPresentation.mediaTransform === 'none' && activeTrailerPresentation.mediaWillChange === 'auto'
+      && activeTrailerPresentation.rowTransform === 'none' && activeTrailerPresentation.rowsTransform === 'none',
+      `Trailer playback still sits in an M56 compositor transform: ${JSON.stringify(activeTrailerPresentation)}.`)
     await capture('m56-trailer-playing.png')
     await evaluate(`(() => {
       var trailer = document.querySelector('.home-focus-card .home-hover-trailer');
@@ -800,10 +816,23 @@ async function main() {
     })()`)
     assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=0') && hoverTrailer.source.includes('cc_load_policy=0'), `Focused-card trailer is not configured for audible, caption-free autoplay: ${hoverTrailer.source}.`)
     assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
-    await evaluate("document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing')")
+    await evaluate(`(() => {
+      document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing');
+      document.querySelector('.hero').classList.add('is-trailer-playing');
+    })()`)
     await wait(220)
-    const hiddenHeroRank = await evaluate("getComputedStyle(document.querySelector('.hero-rank-context')).opacity")
-    assert(hiddenHeroRank === '0', `Hero score badge remains over trailer playback: ${hiddenHeroRank}.`)
+    const heroTrailerPresentation = await evaluate(`(() => {
+      var trailer = document.querySelector('.hero-feature-card > .home-hover-trailer');
+      return {
+        rankOpacity: getComputedStyle(document.querySelector('.hero-rank-context')).opacity,
+        visibility: getComputedStyle(trailer).visibility,
+        trailerTransform: getComputedStyle(trailer).transform,
+        heroTransform: getComputedStyle(document.querySelector('.hero')).transform
+      };
+    })()`)
+    assert(heroTrailerPresentation.rankOpacity === '0', `Hero score badge remains over trailer playback: ${JSON.stringify(heroTrailerPresentation)}.`)
+    assert(heroTrailerPresentation.visibility === 'visible' && heroTrailerPresentation.trailerTransform === 'none' && heroTrailerPresentation.heroTransform === 'none',
+      `Hero trailer playback still uses an M56 black-frame compositor layer: ${JSON.stringify(heroTrailerPresentation)}.`)
     await capture('m56-home-carousel.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=trending&layout=carousel` })

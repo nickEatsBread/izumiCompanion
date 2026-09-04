@@ -4077,6 +4077,14 @@ body,
   -webkit-transform: translate3d(0, -72px, 0);
 }
 
+/* Tizen's Chromium M56 can leave an iframe's video plane black when any ancestor owns a
+   transform layer. Drop that layer as soon as the trailer is ready to be revealed. */
+.hero.is-trailer-playing {
+  transform: none !important;
+  -webkit-transform: none !important;
+  will-change: auto;
+}
+
 .hero-feature-card {
   top: 0;
   right: auto;
@@ -4116,22 +4124,23 @@ body,
   height: 100%;
   border: 0;
   display: block;
-  opacity: 0;
+  visibility: hidden;
+  opacity: 1;
   pointer-events: none;
 }
 
-.home-hover-trailer.is-playing { opacity: 1; }
+.home-hover-trailer.is-playing { visibility: visible; }
 
 .hero-feature-card > .home-hover-trailer {
   z-index: 0;
-  top: 50%;
+  top: -220px;
   right: auto;
   bottom: auto;
-  left: 50%;
+  left: 0;
   width: 1920px;
   height: 1080px;
-  transform: translate3d(-50%, -50%, 0);
-  -webkit-transform: translate3d(-50%, -50%, 0);
+  transform: none;
+  -webkit-transform: none;
 }
 
 .hero-backdrop.is-incoming {
@@ -4447,6 +4456,9 @@ body,
 .catalog-rows.is-browsing {
   top: 0;
   height: 1080px;
+  transform: none;
+  -webkit-transform: none;
+  will-change: auto;
 }
 
 .media-row,
@@ -4828,6 +4840,22 @@ body,
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
   will-change: transform;
+}
+
+.home-focus-frame > .home-hover-trailer {
+  z-index: 2;
+}
+
+.home-focus-card.is-trailer-playing {
+  transform: none !important;
+  -webkit-transform: none !important;
+}
+
+.home-focus-card.is-trailer-playing .home-focus-media {
+  animation: none;
+  transform: none;
+  -webkit-transform: none;
+  will-change: auto;
 }
 
 .home-focus-outline {
