@@ -13,6 +13,13 @@ import type {
 } from '../types'
 import { isCompanionSnapshot } from '../types'
 import { cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
+import {
+  clearPlaybackProgress,
+  mergePlaybackProgress,
+  readPlaybackProgress,
+  savePlaybackProgress,
+  type StoredPlaybackProgress,
+} from './playback-progress'
 
 const CHANNEL_ID = 'com.nicho.izumi.cast'
 const PAIRING_LIFETIME_MS = 5 * 60_000
@@ -47,6 +54,8 @@ export interface ReceiverEvents {
   onPaired(paired: boolean): void
   onPairingInfo(info: PairingInfo): void
   onSnapshot(snapshot: CompanionHomeSnapshot): void
+  /** Updates catalogue data without moving the TV away from its current screen or focus. */
+  onPlaybackProgress?(snapshot: CompanionHomeSnapshot): void
   onCatalogError?(screen: string, message: string): void
   onSearchResults(query: string, items: CompanionMedia[], error?: string, person?: CompanionPersonFilter, genre?: string): void
   onLoad(request: CastLoadRequest, senderId: string): void
@@ -568,7 +577,10 @@ export class CompanionReceiver {
   private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
   private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
   private workerSetupRequestId = ''
+  private activePlayback?: { sessionId: string; media: CompanionMedia }
+  private progressSubscriberId = ''
   private cloudPlayback?: { sessionId: string; media: CompanionMedia }
+  private localProgressAt = 0
   private cloudProgressAt = 0
   private cloudProgressWriting = false
   private pendingCloudProgress?: PlaybackSnapshot
@@ -579,7 +591,7 @@ export class CompanionReceiver {
     this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
     this.events.onIndependentPlaybackReady?.(this.independentPlaybackReady)
     const snapshot = this.credential ? storedSnapshot() : null
-    if (snapshot) this.events.onSnapshot(snapshot)
+    if (snapshot) this.events.onSnapshot(mergePlaybackProgress(snapshot))
   }
 
   get pairingInfo(): PairingInfo {
@@ -661,6 +673,19 @@ export class CompanionReceiver {
       if (status === 'dismissed' || status === 'error') this.workerSetupRequestId = ''
     })
     this.channel.on('izumi.companion.snapshot', (value) => this.receiveSnapshot(value))
+    this.channel.on('izumi.companion.progress-request', (value, from) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      if (!this.credential || input.credential !== this.credential) return
+      const target = peerId(from)
+      if (!target) return
+      this.progressSubscriberId = target
+      this.publish('izumi.companion.progress-result', {
+        credential: this.credential,
+        records: readPlaybackProgress(),
+      }, target)
+    })
     this.channel.on('izumi.companion.catalog-result', (value) => {
       const message = parseMessage(value)
       if (!message || typeof message !== 'object') return
@@ -804,31 +829,15 @@ export class CompanionReceiver {
 
   private async withCloudProgress(snapshot: CompanionHomeSnapshot): Promise<CompanionHomeSnapshot> {
     const records = await this.cloudProgressRecords().catch(() => [])
-    if (!records.length) return snapshot
-    const latest = new Map<string, typeof records[number]>()
-    for (const record of records) {
-      const key = `${record.media.ref.provider}:${record.media.ref.type}:${record.media.ref.id}`
-      if (!latest.has(key) || latest.get(key)!.updatedAt < record.updatedAt) latest.set(key, record)
-    }
-    const merge = (media: CompanionMedia): CompanionMedia => {
-      const record = latest.get(`${media.ref.provider}:${media.ref.type}:${media.ref.id}`)
-      if (!record) return media
-      const fraction = record.completed ? 1 : record.durationSeconds > 0
-        ? Math.max(0, Math.min(1, record.positionSeconds / record.durationSeconds)) : media.episodeProgress
-      return {
-        ...media,
-        episode: record.media.episode ?? media.episode,
-        season: record.media.season ?? media.season,
-        episodeProgress: fraction,
-      }
-    }
-    return {
-      ...snapshot,
-      hero: snapshot.hero ? merge(snapshot.hero) : undefined,
-      rows: snapshot.rows.map((row) => ({ ...row, items: row.items.map(merge) })),
-      history: snapshot.history?.map(merge),
-      views: snapshot.views ? Object.fromEntries(Object.entries(snapshot.views).map(([key, values]) => [key, values?.map(merge)])) as CompanionHomeSnapshot['views'] : undefined,
-    }
+    const cloudRecords: StoredPlaybackProgress[] = records.map((record) => ({
+      ...record,
+      recordKey: [
+        `${record.media.ref.provider}:${record.media.ref.type}:${record.media.ref.id}`,
+        record.media.season ?? '',
+        record.media.episode ?? '',
+      ].join(':'),
+    }))
+    return mergePlaybackProgress(snapshot, [...cloudRecords, ...readPlaybackProgress()])
   }
 
   private async refreshCloudSnapshot(screen?: string): Promise<boolean> {
@@ -1079,6 +1088,7 @@ export class CompanionReceiver {
       season: media.season,
       resolver: media.resolver,
       playback: media.playback,
+      resumePositionSeconds: media.resumePositionSeconds,
       pairingId,
       requestId,
     }, 'broadcast')
@@ -1180,6 +1190,8 @@ export class CompanionReceiver {
   }
 
   beginPlayback(request: CastLoadRequest): void {
+    this.activePlayback = request.media ? { sessionId: request.sessionId, media: request.media } : undefined
+    this.localProgressAt = 0
     if (request.sessionId.startsWith('cloud-') && request.media && this.cloudflare) {
       this.cloudPlayback = { sessionId: request.sessionId, media: request.media }
       this.activeSessionId = request.sessionId
@@ -1215,11 +1227,30 @@ export class CompanionReceiver {
   }
 
   publishStatus(snapshot: PlaybackSnapshot): void {
+    const now = Date.now()
+    const finalState = snapshot.state === 'paused' || snapshot.state === 'idle' || Boolean(snapshot.error)
+    if (this.activePlayback?.sessionId === snapshot.sessionId
+      && (this.localProgressAt === 0 || now - this.localProgressAt >= 5_000
+        || finalState && now - this.localProgressAt >= 1_000)) {
+      this.localProgressAt = now
+      const record = savePlaybackProgress(this.activePlayback.media, snapshot, now)
+      if (this.progressSubscriberId) {
+        this.publish('izumi.companion.progress-result', {
+          credential: this.credential,
+          records: [record],
+        }, this.progressSubscriberId)
+      }
+      const stored = storedSnapshot()
+      if (stored) {
+        const merged = mergePlaybackProgress(stored)
+        storeSnapshot(merged)
+        this.events.onPlaybackProgress?.(merged)
+      }
+    }
     if (this.activeSenderId && snapshot.sessionId === this.activeSessionId) {
       this.publish('izumi.status', snapshot, this.activeSenderId)
     }
     if (!this.cloudPlayback || snapshot.sessionId !== this.cloudPlayback.sessionId) return
-    const now = Date.now()
     if (!snapshot.forced && now - this.cloudProgressAt < 15_000) {
       this.pendingCloudProgress = snapshot
       return
@@ -1241,6 +1272,7 @@ export class CompanionReceiver {
   clearPlayback(): void {
     this.activeSenderId = ''
     this.activeSessionId = ''
+    this.activePlayback = undefined
     this.cloudPlayback = undefined
     this.pendingCloudProgress = undefined
   }
@@ -1250,7 +1282,9 @@ export class CompanionReceiver {
     localStorage.removeItem('izumi.companion.credential')
     localStorage.removeItem('izumi.companion.cloudflare')
     localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
+    clearPlaybackProgress()
     this.credential = ''
+    this.progressSubscriberId = ''
     this.deviceSourceRequests.clear()
     this.clearTrailerRequests()
     this.cloudflare = null
@@ -1332,6 +1366,7 @@ export class CompanionReceiver {
     // Re-pairing replaces and revokes the previous private route; a TV never fans out through an
     // old Worker after its owner has linked a different Android device.
     if (this.cloudflare) void this.revokeCloudflarePairing()
+    if (this.credential && this.credential !== input.credential) clearPlaybackProgress()
     this.credential = String(input.credential)
     localStorage.setItem('izumi.companion.credential', this.credential)
     const transport = input.transport && typeof input.transport === 'object'
@@ -1344,8 +1379,9 @@ export class CompanionReceiver {
     this.events.onPaired(true)
     const snapshot = input.snapshot
     if (isCompanionSnapshot(snapshot)) {
-      storeSnapshot(snapshot)
-      this.events.onSnapshot(snapshot)
+      const merged = mergePlaybackProgress(snapshot)
+      storeSnapshot(merged)
+      this.events.onSnapshot(merged)
     } else localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
     this.publish('izumi.companion.paired', { ok: true, deviceId: this.pairing.deviceId }, senderId)
   }
@@ -1356,8 +1392,9 @@ export class CompanionReceiver {
     const input = message as { credential?: unknown; snapshot?: unknown }
     if (!this.credential || input.credential !== this.credential || !isCompanionSnapshot(input.snapshot)) return
     this.events.onPaired(true)
-    storeSnapshot(input.snapshot)
-    this.events.onSnapshot(input.snapshot)
+    const snapshot = mergePlaybackProgress(input.snapshot)
+    storeSnapshot(snapshot)
+    this.events.onSnapshot(snapshot)
   }
 
   private publish(event: string, data: unknown, target: string): void {

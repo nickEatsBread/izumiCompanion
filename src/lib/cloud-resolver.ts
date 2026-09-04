@@ -107,6 +107,8 @@ export interface CloudResolveSelection {
 }
 
 function resumePosition(media: CompanionMedia): number {
+  const exact = Number(media.resumePositionSeconds)
+  if (Number.isFinite(exact) && exact > 0) return Math.min(604_800, exact)
   const progress = Number(media.episodeProgress)
   const runtime = Number(media.episodeRuntimeMinutes)
   if (!Number.isFinite(progress) || !Number.isFinite(runtime) || progress <= 0 || runtime <= 0) return 0

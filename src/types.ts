@@ -63,6 +63,8 @@ export interface CompanionMedia {
   episodeImage?: string
   season?: number
   episodeProgress?: number
+  /** Exact crash-safe TV checkpoint, separate from manual source-selection intent. */
+  resumePositionSeconds?: number
   episodeRuntimeMinutes?: number
   /** True only when the paired catalogue reports this title in the user's library. */
   inMyList?: boolean

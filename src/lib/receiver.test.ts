@@ -687,4 +687,67 @@ describe('companion play routing', () => {
     expect(storage.getItem('izumi.companion.snapshot')).toBeNull()
     expect(receiverEvents.onSnapshot).not.toHaveBeenCalled()
   })
+
+  it('checkpoints live playback locally and updates cached Continue Watching data', () => {
+    vi.setSystemTime(10_000)
+    storage.setItem('izumi.companion.snapshot', JSON.stringify({
+      app: 'izumi', kind: 'companion-home', version: 1, revision: 'one', generatedAt: 1,
+      catalog: { screen: 'merged', label: 'Browse' }, rows: [], history: [],
+    }))
+    const receiverEvents = { ...events(), onPlaybackProgress: vi.fn() }
+    const receiver = new CompanionReceiver(receiverEvents)
+    receiver.beginPlayback({
+      sessionId: 'device-session', url: 'https://video.example/movie.mp4', title: media.title,
+      positionSeconds: 0, subtitles: [], activeTrackIds: [], media,
+    })
+
+    receiver.publishStatus({
+      sessionId: 'device-session', state: 'playing', positionSeconds: 321, durationSeconds: 1_000,
+    })
+
+    expect(JSON.parse(storage.getItem('izumi.companion.playback-progress') || '[]')[0]).toMatchObject({
+      positionSeconds: 321, durationSeconds: 1_000, completed: false,
+    })
+    expect(receiverEvents.onPlaybackProgress).toHaveBeenCalledWith(expect.objectContaining({
+      rows: [expect.objectContaining({
+        kind: 'continue',
+        items: [expect.objectContaining({ title: 'Fight Club', resumePositionSeconds: 321 })],
+      })],
+    }))
+  })
+
+  it('replays crash-safe TV checkpoints to an authenticated linked client', async () => {
+    vi.setSystemTime(10_000)
+    storage.setItem('izumi.companion.playback-progress', JSON.stringify([{
+      recordKey: 'tmdb:movie:550:0:', media, positionSeconds: 321, durationSeconds: 1_000,
+      completed: false, updatedAt: 9_000,
+    }]))
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+
+    channel.emit('izumi.companion.progress-request', { credential }, { id: 'linked-client' })
+
+    expect(channel.publish).toHaveBeenCalledWith('izumi.companion.progress-result', {
+      credential,
+      records: [expect.objectContaining({ recordKey: 'tmdb:movie:550:0:', positionSeconds: 321 })],
+    }, 'linked-client')
+
+    receiver.beginPlayback({
+      sessionId: 'device-session', url: 'https://video.example/movie.mp4', title: media.title,
+      positionSeconds: 321, subtitles: [], activeTrackIds: [], media,
+    })
+    vi.setSystemTime(15_000)
+    receiver.publishStatus({
+      sessionId: 'device-session', state: 'playing', positionSeconds: 456, durationSeconds: 1_000,
+    })
+    expect(channel.publish).toHaveBeenLastCalledWith('izumi.companion.progress-result', {
+      credential,
+      records: [expect.objectContaining({ positionSeconds: 456, updatedAt: 15_000 })],
+    }, 'linked-client')
+    receiver.disconnect()
+  })
 })

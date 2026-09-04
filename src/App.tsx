@@ -955,6 +955,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if (completedCatalogRequest) finishNavigationTransition()
         settleStartupAfterPaint()
       },
+      onPlaybackProgress: setSnapshot,
       onCatalogError: (catalogScreen, message) => {
         const pendingCatalog = catalogRequestRef.current
         if (!pendingCatalog || pendingCatalog.screen !== catalogScreen) return
@@ -1035,8 +1036,18 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       publishStatus()
     }, 1_000)
+    const flushPlaybackStatus = () => publishStatus(true)
+    const flushHiddenPlaybackStatus = () => {
+      if (document.visibilityState === 'hidden') flushPlaybackStatus()
+    }
+    window.addEventListener('pagehide', flushPlaybackStatus)
+    window.addEventListener('beforeunload', flushPlaybackStatus)
+    document.addEventListener('visibilitychange', flushHiddenPlaybackStatus)
     return () => {
       window.clearInterval(statusTimer)
+      window.removeEventListener('pagehide', flushPlaybackStatus)
+      window.removeEventListener('beforeunload', flushPlaybackStatus)
+      document.removeEventListener('visibilitychange', flushHiddenPlaybackStatus)
       if (subtitleTimerRef.current) window.clearTimeout(subtitleTimerRef.current)
       if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
       if (navigationTimerRef.current) window.clearTimeout(navigationTimerRef.current)

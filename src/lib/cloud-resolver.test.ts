@@ -93,6 +93,15 @@ describe('private Worker source resolution', () => {
     }, media, 'fallback')?.url).toBe('https://video.example/movie.mp4')
   })
 
+  it('prefers an exact TV recovery checkpoint over percentage-derived time', () => {
+    const load = cloudResolveLoad({
+      ok: true,
+      candidates: [{ id: 'source', url: 'https://video.example/episode.mp4' }],
+    }, { ...media, resumePositionSeconds: 731 }, 'resume')
+
+    expect(load?.positionSeconds).toBe(731)
+  })
+
   it('accepts Worker-marked LAN sources and carries cloud skip timings to every source', () => {
     const selection = cloudResolveSelection({
       ok: true,
