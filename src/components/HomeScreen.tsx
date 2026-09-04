@@ -307,6 +307,10 @@ function initialTitleSelection(identity: string, source?: string, settled = fals
 function useStableTitleImage(identity: string, source?: string, settled = false): [string, boolean, () => void] {
   const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source, settled))
   const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source, settled)
+  // The physical M56 runtime can paint the new card before it runs the passive effect below.
+  // Derive a confirmed no-logo fallback from props in the render itself, so a completed metadata
+  // response can never leave the focused card's title slot blank for an extra compositor cycle.
+  const showText = visible.showText || (settled && !source && !visible.logo)
   useEffect(() => {
     setSelection(initialTitleSelection(identity, source, settled))
   }, [identity])
@@ -333,7 +337,7 @@ function useStableTitleImage(identity: string, source?: string, settled = false)
     })
     return () => { active = false }
   }, [identity, source])
-  return [visible.logo, visible.showText, () => {
+  return [visible.logo, showText, () => {
     if (visible.logo) failedTitleImages[visible.logo] = true
     setSelection((current) => current.identity === identity ? { ...current, logo: '', showText: true } : current)
   }]
