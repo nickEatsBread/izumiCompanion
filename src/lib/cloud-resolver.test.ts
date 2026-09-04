@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionMedia } from '../types'
-import { cloudResolveLoad, cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
+import { cloudResolveLoad, cloudResolveRequest, cloudResolveSelection, tvPlaybackCapabilities } from './cloud-resolver'
 
 const media: CompanionMedia = {
   ref: { provider: 'anilist', type: 'anime', id: '21' },
@@ -15,11 +15,20 @@ const media: CompanionMedia = {
 
 describe('private Worker source resolution', () => {
   it('sends only the media identity and non-secret resolver hint', () => {
-    expect(cloudResolveRequest(media)).toEqual({
+    expect(cloudResolveRequest(media)).toMatchObject({
       ref: media.ref,
       episode: 12,
       season: 1,
       streamType: 'series',
+      capabilities: { hls: true, dash: true },
+    })
+  })
+
+  it('reports the TV generation and browser capabilities without exposing device identity', () => {
+    expect(tvPlaybackCapabilities('Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.5)')).toMatchObject({
+      platformVersion: '5.5',
+      hls: true,
+      dash: true,
     })
   })
 

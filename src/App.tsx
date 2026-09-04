@@ -1556,7 +1556,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setErrorMessage('Your private izumi Worker could not be reached. Check its deployment and try again.')
       setScreen('error')
     } else if (result === 'no-source') {
-      setErrorMessage('Your private Worker found no TV-playable source. In izumi, enable “Cloudflare + connected izumi device” to allow debrid, P2P, or device-only sources.')
+      setErrorMessage('Your private Worker found no TV-playable source. In izumi, enable Real-Debrid for torrent sources or turn on the optional connected-device fallback.')
       setScreen('error')
     } else if (result === 'notified') {
       simulationTimerRef.current = window.setTimeout(() => {

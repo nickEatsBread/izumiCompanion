@@ -5,6 +5,13 @@ export interface CloudResolveRequest {
   episode?: number
   season?: number
   streamType: 'movie' | 'series'
+  capabilities: {
+    platformVersion: string
+    hls: true
+    dash: true
+    webAssembly: boolean
+    webRtc: boolean
+  }
 }
 
 interface DirectSourceCandidate {
@@ -18,6 +25,7 @@ interface DirectSourceCandidate {
   subtitles: CastSubtitleTrack[]
   cookies?: string
   userAgent?: string
+  delivery?: 'direct' | 'debrid' | 'debrid-transcode'
 }
 
 function publicHttpUrl(value: unknown, maximum = 4096): string | undefined {
@@ -98,6 +106,9 @@ function normalizeCandidate(value: unknown): DirectSourceCandidate | null {
     subtitles,
     cookies: headerValue(input.cookies, 4096),
     userAgent: headerValue(input.userAgent, 512),
+    delivery: input.delivery === 'direct' || input.delivery === 'debrid' || input.delivery === 'debrid-transcode'
+      ? input.delivery
+      : undefined,
   }
 }
 
@@ -114,6 +125,17 @@ function resumePosition(media: CompanionMedia): number {
   return Math.min(604_800, Math.min(1, Math.max(0, progress)) * Math.min(10_080, runtime) * 60)
 }
 
+export function tvPlaybackCapabilities(userAgent = typeof navigator === 'object' ? navigator.userAgent : ''): CloudResolveRequest['capabilities'] {
+  const platformVersion = userAgent.match(/Tizen[\s/](\d{1,2}(?:\.\d{1,2})?)/i)?.[1] ?? ''
+  return {
+    platformVersion,
+    hls: true,
+    dash: true,
+    webAssembly: typeof WebAssembly === 'object',
+    webRtc: typeof globalThis === 'object' && typeof (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection === 'function',
+  }
+}
+
 export function cloudResolveRequest(media: CompanionMedia): CloudResolveRequest {
   return {
     ref: media.ref,
@@ -122,6 +144,7 @@ export function cloudResolveRequest(media: CompanionMedia): CloudResolveRequest 
     streamType: media.resolver?.streamType === 'movie' || media.resolver?.streamType === 'series'
       ? media.resolver.streamType
       : media.ref.type === 'movie' ? 'movie' : 'series',
+    capabilities: tvPlaybackCapabilities(),
   }
 }
 
