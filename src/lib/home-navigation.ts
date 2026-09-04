@@ -18,7 +18,8 @@ function mediaKey(media: CompanionMedia): string {
 
 /** Return detail requests in remote-navigation priority order. Ten nearby destinations cover four
  * horizontal moves plus both vertical landing areas without retaining an entire catalogue on a
- * memory-constrained TV. */
+ * memory-constrained TV. Horizontal look-ahead comes first because it is the most frequent and
+ * latency-sensitive remote action. */
 export function homeDetailPrefetchTargets(
   rows: CompanionHomeRow[],
   focus: FocusLocation,
@@ -46,9 +47,10 @@ export function homeDetailPrefetchTargets(
     if (!length) return targets
     add(row.items[focus.index])
     if (length > 1) add(row.items[(focus.index + 1) % length])
+    for (let offset = 2; offset <= Math.min(3, length - 1); offset += 1) add(row.items[(focus.index + offset) % length])
     addRowDestination(focus.row + 1, true)
     addRowDestination(focus.row - 1, true)
-    for (let offset = 2; offset <= Math.min(4, length - 1); offset += 1) add(row.items[(focus.index + offset) % length])
+    if (length > 4) add(row.items[(focus.index + 4) % length])
     if (length > 1) add(row.items[(focus.index - 1 + length) % length])
     return targets.slice(0, 10)
   }
@@ -60,12 +62,14 @@ export function homeDetailPrefetchTargets(
   if (firstRow?.items.length) {
     add(firstRow.items[firstIndex])
     if (firstRow.items.length > 1) add(firstRow.items[(firstIndex + 1) % firstRow.items.length])
+    for (let offset = 2; offset <= Math.min(3, firstRow.items.length - 1); offset += 1) {
+      add(firstRow.items[(firstIndex + offset) % firstRow.items.length])
+    }
   }
   addRowDestination(1, true)
   addRowDestination(2, true)
-  for (let offset = 2; offset <= Math.min(5, (firstRow?.items.length ?? 0) - 1); offset += 1) {
-    add(firstRow?.items[(firstIndex + offset) % firstRow.items.length])
-  }
+  if ((firstRow?.items.length ?? 0) > 4) add(firstRow?.items[(firstIndex + 4) % firstRow.items.length])
+  if ((firstRow?.items.length ?? 0) > 1) add(firstRow?.items[(firstIndex - 1 + firstRow.items.length) % firstRow.items.length])
   return targets.slice(0, 10)
 }
 

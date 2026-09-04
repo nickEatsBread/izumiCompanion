@@ -114,7 +114,7 @@ function AchievementIcon({ kind }: { kind: NonNullable<CompanionMedia['achieveme
 
 function AchievementSource({ source }: { source: string }) {
   return source.trim().toLowerCase() === 'anilist'
-    ? <img class="home-achievement-source-logo" src={anilistLogo} alt="AniList" width={28} height={28} />
+    ? <img class="home-achievement-source-logo" src={anilistLogo} alt="AniList" width={22} height={22} />
     : <small>{source}</small>
 }
 
@@ -177,7 +177,7 @@ export const HOME_POSTER_STRIDE = 340
 export const HOME_CAROUSEL_POSTER_WIDTH = 238
 export const HOME_CAROUSEL_POSTER_HEIGHT = 340
 export const HOME_CAROUSEL_POSTER_STRIDE = 254
-export const HOME_FOCUS_WIDTH = HOME_POSTER_WIDTH * 3
+export const HOME_FOCUS_WIDTH = Math.round(HOME_POSTER_WIDTH * 3.75)
 
 function rowSpacerDimensions(count: number, stride = HOME_POSTER_STRIDE): { width: string; minWidth: string } {
   const gap = stride === HOME_CAROUSEL_POSTER_STRIDE ? 16 : 20
@@ -188,8 +188,9 @@ function rowSpacerDimensions(count: number, stride = HOME_POSTER_STRIDE): { widt
 export function homeRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
   if (!browsing) return 24 + rowIndex * 420
   const distance = rowIndex - activeRow
-  if (distance <= 0) return 52 + distance * 580
-  return distance === 1 ? 824 : 1340 + (distance - 2) * 420
+  if (distance === 0) return 52
+  if (distance < 0) return -900 + (distance + 1) * 420
+  return distance === 1 ? 986 : 1506 + (distance - 2) * 420
 }
 
 export function homeCarouselRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
@@ -618,8 +619,8 @@ const HomeFocusCard = memo(function HomeFocusCard({
                 key={image}
                 src={image}
                 alt=""
-                width={812}
-                height={457}
+                width={1192}
+                height={670}
                 decoding="async"
                 onError={() => {
                   setArtworkIndex((current) => current + 1)
@@ -928,7 +929,7 @@ export function HomeScreen({
             : homeRowTop(rowIndex, activeRow, browsingRows)
           return (
           <section
-            class={`media-row${continueRow ? ' continue-row' : ''}${topTenRow ? ' top-ten-row' : ''}${rowActive ? ' is-active' : ''}${rowIndex > activeRow ? ' is-upcoming' : ''}`}
+            class={`media-row${continueRow ? ' continue-row' : ''}${topTenRow ? ' top-ten-row' : ''}${rowActive ? ' is-active' : ''}${rowIndex > activeRow ? ' is-upcoming' : ''}${rowIndex < activeRow ? ' is-past' : ''}`}
             style={{ top: `${rowTop}px`, transform: 'none', WebkitTransform: 'none' }}
             key={row.id}
             data-home-row={rowIndex}

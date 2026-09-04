@@ -119,7 +119,7 @@ describe('TV home navigation model', () => {
     ]
 
     expect(homeDetailPrefetchTargets(rows, { zone: 'row', row: 1, index: 1 }, { first: 3, third: 1 })
-      .map(({ ref }) => ref.id)).toEqual(['f', 'g', 'i', 'q', 'd', 'j', 'l', 'm', 'n', 'e'])
+      .map(({ ref }) => ref.id)).toEqual(['f', 'g', 'l', 'm', 'i', 'q', 'd', 'j', 'n', 'e'])
   })
 
   it('warms the first shelf before leaving the hero', () => {
@@ -129,7 +129,7 @@ describe('TV home navigation model', () => {
       row('third', 'Third', 'catalog', [media('j'), media('k')]),
     ]
     expect(homeDetailPrefetchTargets(rows, { zone: 'hero', index: 0 }, { first: 1, second: 1, third: 1 })
-      .map(({ ref }) => ref.id)).toEqual(['b', 'c', 'f', 'i', 'k', 'j', 'd', 'g', 'h', 'a'])
+      .map(({ ref }) => ref.id)).toEqual(['b', 'c', 'd', 'g', 'f', 'i', 'k', 'j', 'h', 'a'])
   })
 
   it('resolves Browse to the linked client merged catalogue', () => {

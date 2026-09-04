@@ -357,6 +357,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const homeTrailerPreviewRef = useRef<{ mediaKey: string; requestId?: string; url: string }>()
   const homeTrailerGenerationRef = useRef(0)
   const homeDetailRequestsRef = useRef(new Set<string>())
+  const homeDetailRequestOrderRef = useRef<string[]>([])
   const homeDetailQueueRef = useRef<HomeDetailTask[]>([])
   const homeDetailActiveRef = useRef(0)
   const homeDetailGenerationRef = useRef(0)
@@ -1150,7 +1151,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const warmHomeArtwork = (media: CompanionMedia) => {
     if (typeof Image === 'undefined') return
-    const sources = [media.logoImage, media.episodeImage || media.backdrop, media.poster]
+    const sources = [media.logoImage, media.episodeImage || media.backdrop || media.poster]
       .filter((source): source is string => Boolean(source))
     for (const source of sources) {
       const cache = homeArtworkCacheRef.current
@@ -1164,9 +1165,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       image.decoding = 'async'
       image.src = source
       cache.set(source, image)
-      // Twenty-four mixed artwork objects complement the dedicated 32-logo cache while keeping
-      // decoded-image retention bounded for older TVs.
-      while (cache.size > 24) cache.delete(cache.keys().next().value!)
+      // Fourteen decoded images cover the ten-item navigation window plus the current transition.
+      // The dedicated title-art cache retains its own bounded set, so posters are not duplicated.
+      while (cache.size > 14) cache.delete(cache.keys().next().value!)
     }
   }
 
@@ -1184,7 +1185,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const pumpHomeDetailQueue = () => {
-    while (homeDetailActiveRef.current < 2 && homeDetailQueueRef.current.length) {
+    while (homeDetailActiveRef.current < 3 && homeDetailQueueRef.current.length) {
       const task = homeDetailQueueRef.current.shift()!
       if (task.generation !== homeDetailGenerationRef.current) continue
       homeDetailActiveRef.current += 1
@@ -1225,6 +1226,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       const key = `${item.ref.provider}:${item.ref.type}:${item.ref.id}`
       if (priorityKeys.has(key)) continue
       priorityKeys.add(key)
+      if (item.titleArtSettled) continue
       const queued = existing.get(key)
       if (queued) {
         prioritized.push(queued)
@@ -1232,13 +1234,18 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       if (homeDetailRequestsRef.current.has(key)) continue
       homeDetailRequestsRef.current.add(key)
+      homeDetailRequestOrderRef.current.push(key)
+      while (homeDetailRequestOrderRef.current.length > 64) {
+        const expired = homeDetailRequestOrderRef.current.shift()
+        if (expired) homeDetailRequestsRef.current.delete(expired)
+      }
       prioritized.push({ media: item, generation, preview: showPreviewTools })
     }
     const stale = homeDetailQueueRef.current.filter((task) => {
       const key = `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`
       return !priorityKeys.has(key)
     })
-    const nextQueue = [...prioritized, ...stale].slice(0, 14)
+    const nextQueue = [...prioritized, ...stale].slice(0, 12)
     const kept = new Set(nextQueue.map((task) => `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`))
     for (const task of homeDetailQueueRef.current) {
       const key = `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`
@@ -1251,6 +1258,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   useEffect(() => {
     homeDetailGenerationRef.current += 1
     homeDetailRequestsRef.current.clear()
+    homeDetailRequestOrderRef.current = []
     homeDetailQueueRef.current = []
     homeDetailActiveRef.current = 0
     homeDetailResultsRef.current = []
@@ -2652,7 +2660,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           trailerOpen={trailerOpen}
           trailerSource={trailerSource?.url}
           trailerError={trailerError}
-          onTrailerClose={closeTrailer}
           onPersonFocus={(index) => changeFocus({ zone: 'person', index })}
           onPersonSelect={openPersonSearch}
         />
@@ -2713,7 +2720,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           trailerOpen={trailerOpen}
           trailerSource={trailerSource?.url}
           trailerError={trailerError}
-          onTrailerClose={closeTrailer}
         />
       )}
       {(['movies', 'my-list'] as const).map((name) => screen === name && (

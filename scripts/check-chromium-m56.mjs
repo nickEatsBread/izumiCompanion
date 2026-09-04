@@ -400,11 +400,11 @@ async function main() {
       trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform
     }))()`)
     assert(JSON.stringify(rows.body) === '[1920,1080]', `Home overflowed the TV viewport: ${rows.body}.`)
-    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,824,1340]', `Unexpected row positions ${rows.tops}.`)
+    assert(JSON.stringify(rows.tops.slice(0, 3)) === '[52,986,1506]', `Unexpected row positions ${rows.tops}.`)
     assert(rows.images.slice(0, 2).every((count) => count > 0) && rows.images[2] === 0, `Artwork windowing is incorrect: ${rows.images}.`)
     assert(JSON.stringify(rows.posterWidths) === '[320]', `Poster stride changed during focus: ${rows.posterWidths}.`)
     assert(rows.gap === '20px', `M56 rail fallback gap is ${rows.gap}, expected 20px.`)
-    assert(JSON.stringify(rows.focus) === '[132,106,960,700,952,536]', `Unexpected focus spotlight geometry ${rows.focus}.`)
+    assert(JSON.stringify(rows.focus) === '[132,106,1200,875,1192,670]', `Unexpected focus spotlight geometry ${rows.focus}.`)
     assert(rows.continueCopy.includes('S1 E12') && rows.continueCopy.includes('9m left'), `Continue Watching context is incomplete: ${rows.continueCopy}.`)
     assert(rows.continueProgress === '64%', `Continue Watching progress is ${rows.continueProgress}.`)
     assert(JSON.stringify(rows.continueProgressGeometry) === '[8,5]', `Continue Watching progress is hidden by the focus outline: ${rows.continueProgressGeometry}.`)
@@ -461,11 +461,21 @@ async function main() {
         description: description.textContent.trim(),
         descriptionColor: getComputedStyle(description).color,
         descriptionWeight: getComputedStyle(description).fontWeight,
-        descriptionBounds: [Math.round(descriptionBounds.top), Math.round(descriptionBounds.bottom), Math.round(cardBounds.bottom)]
+        descriptionBounds: [Math.round(descriptionBounds.top), Math.round(descriptionBounds.bottom), Math.round(cardBounds.bottom)],
+        previousRowVisibility: getComputedStyle(document.querySelector('.media-row[data-home-row="0"]')).visibility,
+        previousRowTop: Math.round(document.querySelector('.media-row[data-home-row="0"]').getBoundingClientRect().top),
+        nextRowOpacity: getComputedStyle(document.querySelector('.media-row[data-home-row="2"]')).opacity,
+        sourceLogoAlignment: (() => {
+          var image = focused.querySelector('.home-achievement-source-logo');
+          var badge = image.closest('.home-achievement');
+          var imageBounds = image.getBoundingClientRect();
+          var badgeBounds = badge.getBoundingClientRect();
+          return [Math.round(imageBounds.height), Math.round((imageBounds.top + imageBounds.bottom) / 2 - (badgeBounds.top + badgeBounds.bottom) / 2)];
+        })()
       };
     })()`)
     assert(verticalDestination.row === 1 && verticalDestination.index === 0, `A new rail inherited the previous rail position: ${JSON.stringify(verticalDestination)}.`)
-    assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 110) <= 3 && verticalDestination.frame[2] === 952 && verticalDestination.frame[3] === 536, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
+    assert(verticalDestination.frame[0] === 136 && Math.abs(verticalDestination.frame[1] - 110) <= 3 && verticalDestination.frame[2] === 1192 && verticalDestination.frame[3] === 670, `Vertical navigation moved the focus outline: ${verticalDestination.frame}.`)
     assert(verticalDestination.copy[0] >= verticalDestination.frame[1] && verticalDestination.copy[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title treatment is clipped outside its frame: ${verticalDestination.copy}.`)
     assert(verticalDestination.logo === 'Chainsaw Man' && !verticalDestination.plainTitle, `Focused card did not prefer its source logo: ${JSON.stringify(verticalDestination)}.`)
     assert(JSON.stringify(verticalDestination.copySize) === '[410,116]', `Focused title logo has no stable M56 paint box: ${verticalDestination.copySize}.`)
@@ -476,6 +486,11 @@ async function main() {
     assert(verticalDestination.factsColor === 'rgb(255, 255, 255)', `Focused metadata is not white: ${verticalDestination.factsColor}.`)
     assert(verticalDestination.description.includes('devil hunter') && verticalDestination.descriptionWeight === '500', `Focused synopsis is missing or over-emphasized: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.descriptionColor !== verticalDestination.factsColor && verticalDestination.descriptionBounds[1] <= verticalDestination.descriptionBounds[2], `Focused synopsis hierarchy or clipping is incorrect: ${JSON.stringify(verticalDestination)}.`)
+    assert(verticalDestination.previousRowVisibility === 'hidden' && verticalDestination.previousRowTop === -900,
+      `The previous rail remains visible above the active rail: ${JSON.stringify(verticalDestination)}.`)
+    assert(Number(verticalDestination.nextRowOpacity) > 0.45 && Number(verticalDestination.nextRowOpacity) < 0.65,
+      `The next rail does not recede behind the active rail: ${verticalDestination.nextRowOpacity}.`)
+    assert(JSON.stringify(verticalDestination.sourceLogoAlignment) === '[22,0]', `The AniList mark is not inline with its achievement: ${verticalDestination.sourceLogoAlignment}.`)
     await waitFor("document.querySelector('.home-trailer-footer')")
     await evaluate(`(() => {
       document.querySelector('.home-focus-card').classList.add('is-trailer-playing');
@@ -583,7 +598,7 @@ async function main() {
     })()`)
     assert(horizontal.index === 8, `Expected rail index 8, received ${horizontal.index}.`)
     assert(horizontal.scrollLeft === 0 && horizontal.cyclic === 'true' && horizontal.spacers === 0, `Horizontal navigation still exposes a finite rail seam: ${JSON.stringify(horizontal)}.`)
-    assert(horizontal.width === 960 && horizontal.visualWidth === 960, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
+    assert(horizontal.width === 1200 && horizontal.visualWidth === 1200, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
     assert(JSON.stringify(horizontal.posterWidths) === '[320]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
     assert(JSON.stringify(horizontal.posterAnimations) === '["0s"]', `Cyclic navigation still replays the grey poster-entry frame: ${horizontal.posterAnimations}.`)
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
@@ -702,9 +717,13 @@ async function main() {
     await waitFor("!document.getElementById('startup-splash')")
     const detailPage = await evaluate(`(() => ({
       descriptionSize: parseFloat(getComputedStyle(document.querySelector('.detail-description')).fontSize),
-      actions: Array.from(document.querySelectorAll('.detail-actions button')).map(function (button) { return button.textContent.trim(); })
+      actions: Array.from(document.querySelectorAll('.detail-actions button')).map(function (button) { return button.textContent.trim(); }),
+      actionLabelSpacing: Array.from(document.querySelectorAll('.detail-actions button')).map(function (button) {
+        return parseFloat(getComputedStyle(button.querySelector('span')).marginLeft || '0');
+      })
     }))()`)
     assert(detailPage.descriptionSize >= 28 && detailPage.actions.some(function (label) { return label.includes('Play Trailer'); }), `Film detail presentation is incomplete: ${JSON.stringify(detailPage)}.`)
+    assert(detailPage.actionLabelSpacing.every(function (spacing) { return spacing >= 25; }), `Film detail action icons still crowd their labels: ${JSON.stringify(detailPage)}.`)
     await evaluate("Array.from(document.querySelectorAll('.detail-actions button')).find(function (button) { return button.textContent.includes('Play Trailer'); }).click()")
     await waitFor("document.querySelector('.series-trailer-overlay iframe')")
     const trailerWithoutCaptions = await evaluate(`(() => {
@@ -715,6 +734,7 @@ async function main() {
         captionHud: Boolean(document.querySelector('.series-trailer-caption')),
         overlay: [Math.round(bounds.left), Math.round(bounds.top), Math.round(bounds.width), Math.round(bounds.height)],
         layer: Number(getComputedStyle(overlay).zIndex),
+        closeControls: overlay.querySelectorAll('.series-trailer-close').length,
         pageClass: document.querySelector('.detail-screen').className,
         hiddenPageLayers: Array.from(document.querySelectorAll('.detail-screen > .detail-art, .detail-screen > .detail-copy, .detail-screen > .detail-poster')).every(function (element) {
           return getComputedStyle(element).visibility === 'hidden';
@@ -724,7 +744,7 @@ async function main() {
     assert(trailerWithoutCaptions.source.includes('cc_load_policy=0') && !trailerWithoutCaptions.source.includes('cc_lang_pref') && !trailerWithoutCaptions.captionHud,
       `Trailer captions are still forced on: ${JSON.stringify(trailerWithoutCaptions)}.`)
     assert(JSON.stringify(trailerWithoutCaptions.overlay) === '[0,0,1920,1080]' && trailerWithoutCaptions.layer === 100
-      && trailerWithoutCaptions.pageClass.includes('has-trailer-open') && trailerWithoutCaptions.hiddenPageLayers,
+      && trailerWithoutCaptions.closeControls === 0 && trailerWithoutCaptions.pageClass.includes('has-trailer-open') && trailerWithoutCaptions.hiddenPageLayers,
       `Title-page layers can still composite over the trailer: ${JSON.stringify(trailerWithoutCaptions)}.`)
     await evaluate(`(() => {
       var iframe = document.querySelector('.series-trailer-overlay iframe');

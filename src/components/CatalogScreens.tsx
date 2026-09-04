@@ -58,13 +58,11 @@ function TrailerPlayer({
   source,
   title,
   backdrop,
-  onClose,
 }: {
   videoId: string
   source: string
   title: string
   backdrop?: string
-  onClose(): void
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const hitAreaRef = useRef<HTMLButtonElement>(null)
@@ -283,9 +281,6 @@ function TrailerPlayer({
         <div class="series-trailer-progress"><i style={{ width: `${progress}%` }} /></div>
         <div class="series-trailer-times"><span>{trailerTime(position)}</span><span>{duration ? trailerTime(duration) : '--:--'}</span></div>
       </div>
-      <button class="series-trailer-close" type="button" onClick={onClose} aria-label="Back to series">
-        <X size={22} /> Back to series
-      </button>
     </section>
   )
 }
@@ -608,7 +603,6 @@ export function SeriesScreen({
   trailerOpen,
   trailerSource,
   trailerError,
-  onTrailerClose,
 }: {
   selected: CompanionMedia
   hideSpoilers: boolean
@@ -627,7 +621,6 @@ export function SeriesScreen({
   trailerOpen: boolean
   trailerSource?: string
   trailerError?: string
-  onTrailerClose(): void
 }) {
   const seasonCounts = useMemo(() => episodeCountsFor(selected), [selected])
   const hasEpisodeMetadata = seasonCounts.length > 0
@@ -813,13 +806,12 @@ export function SeriesScreen({
       <div class="series-back-hint" aria-hidden="true"><i /> <span>Back</span></div>
       {trailerOpen && trailerId && (
         trailerSource
-          ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={selected.title} backdrop={selected.backdrop || selected.poster} onClose={onTrailerClose} />
+          ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={selected.title} backdrop={selected.backdrop || selected.poster} />
           : <section class="series-trailer-overlay" role="dialog" aria-modal="true" aria-label={`${selected.title} trailer`}>
               <div class="series-trailer-native-cover is-visible" style={(selected.backdrop || selected.poster) ? { backgroundImage: `url("${(selected.backdrop || selected.poster)!.replace(/"/g, '%22')}")` } : undefined}>
                 <span>{trailerError ? <X size={32} /> : <Film size={32} />}</span>
               </div>
               <div class="series-trailer-hud is-visible"><header><div><p>{trailerError ? 'Trailer unavailable' : 'Preparing trailer'}</p><h2>{trailerError || selected.title}</h2></div></header></div>
-              <button class="series-trailer-close" type="button" onClick={onTrailerClose} aria-label="Back to series"><X size={22} /> Back to series</button>
             </section>
       )}
     </main>
@@ -1005,7 +997,6 @@ export function DetailScreen({
   trailerOpen,
   trailerSource,
   trailerError,
-  onTrailerClose,
   onPersonFocus,
   onPersonSelect,
 }: {
@@ -1018,7 +1009,6 @@ export function DetailScreen({
   trailerOpen: boolean
   trailerSource?: string
   trailerError?: string
-  onTrailerClose(): void
   onPersonFocus(index: number): void
   onPersonSelect(person: CompanionPerson): void
 }) {
@@ -1053,10 +1043,10 @@ export function DetailScreen({
               key={action}
             >
               {action === 'play'
-                ? <><Play size={25} fill="currentColor" /> {media.progress ? 'Resume' : 'Play'}</>
+                ? <><Play size={25} fill="currentColor" /><span>{media.progress ? 'Resume' : 'Play'}</span></>
                 : action === 'trailer'
-                  ? <><Film size={25} /> Play Trailer</>
-                  : <><X size={25} /> Back to browse</>}
+                  ? <><Film size={25} /><span>Play Trailer</span></>
+                  : <><X size={25} /><span>Back to browse</span></>}
             </button>
           ))}
         </div>
@@ -1071,13 +1061,12 @@ export function DetailScreen({
       />}
       {trailerOpen && trailerId && (
         trailerSource
-          ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={media.title} backdrop={media.backdrop || media.poster} onClose={onTrailerClose} />
+          ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={media.title} backdrop={media.backdrop || media.poster} />
           : <section class="series-trailer-overlay" role="dialog" aria-modal="true" aria-label={`${media.title} trailer`}>
               <div class="series-trailer-native-cover is-visible" style={(media.backdrop || media.poster) ? { backgroundImage: `url("${(media.backdrop || media.poster)!.replace(/"/g, '%22')}")` } : undefined}>
                 <span>{trailerError ? <X size={32} /> : <Film size={32} />}</span>
               </div>
               <div class="series-trailer-hud is-visible"><header><div><p>{trailerError ? 'Trailer unavailable' : 'Preparing trailer'}</p><h2>{trailerError || media.title}</h2></div></header></div>
-              <button class="series-trailer-close" type="button" onClick={onTrailerClose} aria-label="Back to title"><X size={22} /> Back to title</button>
             </section>
       )}
     </main>

@@ -1401,12 +1401,12 @@ body.avplay-visible #av-player {
 
 .detail-actions button {
   min-height: 58px;
-  padding: .8vw 1.35vw;
+  padding: .8vw 1.5vw;
   border: 0;
   border-radius: 3px;
   display: flex;
   align-items: center;
-  gap: 1vw;
+  gap: 1.35vw;
   color: #fff;
   background: rgba(60, 60, 60, .86);
   font-size: 1.02vw;
@@ -2067,33 +2067,6 @@ body.avplay-visible #av-player {
   font-size: .72vw;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-}
-
-.series-trailer-close {
-  position: absolute;
-  z-index: 5;
-  top: 5vh;
-  right: 4.8vw;
-  min-height: 44px;
-  padding: .6vw .95vw;
-  border: 1px solid rgba(255, 255, 255, .5);
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  gap: .45vw;
-  color: #fff;
-  background: rgba(12, 12, 12, .78);
-  font-size: .82vw;
-  font-weight: 800;
-  cursor: pointer;
-  transition: color 150ms ease, background 150ms ease, transform 150ms ease;
-}
-
-.series-trailer-close:focus,
-.series-trailer-close:hover {
-  color: #050505;
-  background: #fff;
-  transform: scale(1.025);
 }
 
 @keyframes trailer-overlay-enter {
@@ -4656,12 +4629,27 @@ body,
   top: 0;
   left: 132px;
   width: 1788px;
-  height: 720px;
+  height: 900px;
   margin: 0;
   overflow: visible;
   opacity: 1;
   filter: none;
   transition: none;
+}
+
+.media-row.is-active {
+  z-index: 2;
+}
+
+.media-row.is-upcoming {
+  z-index: 1;
+  opacity: .52;
+}
+
+.media-row.is-past {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .media-row h2 {
@@ -4869,18 +4857,18 @@ body,
 .home-row-stage {
   position: relative;
   width: 1788px;
-  height: 700px;
+  height: 875px;
   overflow: hidden;
 }
 
 .home-screen.mode-spotlight .home-row-stage.is-active .media-strip-viewport {
-  left: 984px;
-  width: 804px;
+  left: 1216px;
+  width: 572px;
 }
 
 .home-focus-card.has-previous ~ .media-strip-viewport {
-  left: 984px;
-  width: 804px;
+  left: 1216px;
+  width: 572px;
   transform: none;
   -webkit-transform: none;
 }
@@ -4965,10 +4953,10 @@ body,
   z-index: 5;
   top: 0;
   left: 0;
-  width: 960px;
-  min-width: 960px;
-  height: 700px;
-  min-height: 700px;
+  width: 1200px;
+  min-width: 1200px;
+  height: 875px;
+  min-height: 875px;
   padding: 4px;
   overflow: hidden;
   border: 0;
@@ -5008,8 +4996,8 @@ body,
 
 .home-focus-frame {
   position: relative;
-  width: 952px;
-  height: 536px;
+  width: 1192px;
+  height: 670px;
   display: block;
   overflow: hidden;
   border: 0;
@@ -5205,7 +5193,7 @@ body,
 .home-achievement > span {
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   overflow: hidden;
 }
 
@@ -5241,12 +5229,14 @@ body,
 }
 
 .home-achievement-source-logo {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  margin-left: 9px;
-  display: block;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  margin-left: 10px;
+  display: inline-block;
+  flex: 0 0 22px;
   object-fit: contain;
+  vertical-align: middle;
 }
 
 .home-focus-rank {
@@ -5268,8 +5258,8 @@ body,
 }
 
 .home-focus-context {
-  width: 952px;
-  height: 156px;
+  width: 1192px;
+  height: 197px;
   padding: 18px 8px 0;
   display: block;
   overflow: hidden;
@@ -5279,7 +5269,7 @@ body,
 .home-focus-context > strong,
 .home-focus-context > small {
   display: block;
-  width: 936px;
+  width: 1176px;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5320,11 +5310,11 @@ body,
 
 .home-focus-context > .home-focus-description {
   margin-top: 7px;
-  max-height: 64px;
+  max-height: 68px;
   color: #b7b7b7;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
-  line-height: 30px;
+  line-height: 32px;
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -5510,13 +5500,12 @@ body,
 .series-eyebrow > * + *,
 .series-meta > * + * { margin-left: .55vw; }
 .hero-actions > * + * { margin-left: .75vw; }
-.episode-card-meta > * + *,
-.series-trailer-close > * + * { margin-left: .45vw; }
+.episode-card-meta > * + * { margin-left: .45vw; }
 .detail-actions > * + *,
 .series-trailer-hud header > * + * { margin-left: .8vw; }
 .detail-actions button > * + *,
 .series-trailer-action > * + * { margin-left: .65vw; }
-.detail-actions button > * + * { margin-left: 1vw; }
+.detail-actions button > * + * { margin-left: 1.35vw; }
 .contributor-strip > button + button { margin-left: .78vw; }
 .contributor-hint > * + * { margin-left: .5vw; }
 .contributor-entry-hint > * + * { margin-left: .5vw; }
@@ -5614,7 +5603,6 @@ body,
   .series-meta > * + *,
   .hero-actions > * + *,
   .episode-card-meta > * + *,
-  .series-trailer-close > * + *,
   .detail-actions > * + *,
   .series-trailer-hud header > * + *,
   .detail-actions button > * + *,

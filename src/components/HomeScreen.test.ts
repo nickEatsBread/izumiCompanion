@@ -33,7 +33,7 @@ const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
 describe('TV home presentation', () => {
   it('uses living-room scale cards with a fixed, non-reflowing stride', () => {
     expect([HOME_POSTER_WIDTH, HOME_POSTER_HEIGHT, HOME_POSTER_STRIDE]).toEqual([320, 480, 340])
-    expect(HOME_FOCUS_WIDTH).toBe(HOME_POSTER_WIDTH * 3)
+    expect(HOME_FOCUS_WIDTH).toBe(1200)
     expect([HOME_CAROUSEL_POSTER_WIDTH, HOME_CAROUSEL_POSTER_HEIGHT, HOME_CAROUSEL_POSTER_STRIDE]).toEqual([238, 340, 254])
   })
 
@@ -47,8 +47,9 @@ describe('TV home presentation', () => {
 
   it('pins the focused row high and leaves the next rail visible at TV scale', () => {
     expect(homeRowTop(2, 2, true)).toBe(52)
-    expect(homeRowTop(3, 2, true)).toBe(824)
-    expect(homeRowTop(4, 2, true)).toBe(1340)
+    expect(homeRowTop(1, 2, true)).toBe(-900)
+    expect(homeRowTop(3, 2, true)).toBe(986)
+    expect(homeRowTop(4, 2, true)).toBe(1506)
     expect(homeRowTop(0, 0, false)).toBe(24)
     expect(homeCarouselRowTop(2, 2, true)).toBe(24)
     expect(homeCarouselRowTop(3, 2, true)).toBe(444)
