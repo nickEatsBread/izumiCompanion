@@ -8,11 +8,14 @@ import {
   LogOut,
   House,
   MonitorUp,
+  Maximize2,
   Pause,
   Play,
   RefreshCcw,
   RotateCcw,
   SlidersHorizontal,
+  ThumbsDown,
+  ThumbsUp,
   Volume2,
 } from 'lucide-preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -29,6 +32,7 @@ import type {
   SubtitleChoice,
   SubtitlePreferences,
 } from '../types'
+import type { MediaRating } from '../lib/media-rating'
 
 export type IndependentSetupPhase = 'intro' | 'waiting' | 'ready' | 'error'
 
@@ -652,7 +656,14 @@ export function PostPlayScreen({
   recommendations,
   authored,
   focus,
+  stage,
+  rating,
+  ratingTransitioning,
+  miniPlayerEnabled,
+  nativeVideoAvailable,
   onFocus,
+  onRate,
+  onReturnToPlayer,
   onReplay,
   onHome,
   onRecommendation,
@@ -661,44 +672,78 @@ export function PostPlayScreen({
   recommendations: CompanionMedia[]
   authored: boolean
   focus: number
+  stage: 'rating' | 'recommendations'
+  rating?: MediaRating
+  ratingTransitioning: boolean
+  miniPlayerEnabled: boolean
+  nativeVideoAvailable: boolean
   onFocus(index: number): void
+  onRate(value: MediaRating): void
+  onReturnToPlayer(): void
   onReplay(): void
   onHome(): void
   onRecommendation(media: CompanionMedia): void
 }) {
   return (
-    <main class="post-play-screen">
-      {media.backdrop && <img class="post-play-backdrop" src={media.backdrop} alt="" />}
+    <main class={`post-play-screen is-${stage}${miniPlayerEnabled ? ' has-mini-player' : ' without-mini-player'}${ratingTransitioning ? ' is-transitioning' : ''}`}>
+      {!nativeVideoAvailable && media.backdrop && <img class="post-play-backdrop" src={media.backdrop} alt="" />}
       <div class="post-play-shade" />
-      <section class="post-play-content">
+      {miniPlayerEnabled && <button
+        type="button"
+        class={`post-play-mini-player${focus === 0 ? ' is-focused' : ''}${nativeVideoAvailable ? ' has-native-video' : ''}`}
+        aria-label={`Return to ${media.title}`}
+        onFocus={() => onFocus(0)}
+        onClick={onReturnToPlayer}
+      >
+        {!nativeVideoAvailable && media.backdrop && <img src={media.backdrop} alt="" />}
+        <span class="post-play-mini-vignette" />
+        <span class="post-play-mini-label"><Maximize2 size={24} /><span><strong>{media.title}</strong><small>Press OK to return to the player</small></span></span>
+      </button>}
+      {stage === 'rating' ? <section class="post-play-rating-panel">
         <p class="state-kicker">FINISHED WATCHING</p>
-        <h1>{media.title}</h1>
-        <p>Your progress is saved. Pick something related or head back to your home screen.</p>
-        <div class="post-play-actions">
-          <button type="button" class={focus === 0 ? 'is-focused' : ''} onFocus={() => onFocus(0)} onClick={onReplay}><RotateCcw size={21} /><span>Replay</span></button>
-          <button type="button" class={focus === 1 ? 'is-focused' : ''} onFocus={() => onFocus(1)} onClick={onHome}><House size={21} /><span>Back home</span></button>
+        <h1>Did you like it?</h1>
+        <p>Your answer helps izumi shape what appears next.</p>
+        <div class="post-play-rating-actions">
+          <button
+            type="button"
+            class={`${focus === 1 ? 'is-focused' : ''}${rating === 'up' ? ' is-selected' : ''}`}
+            aria-pressed={rating === 'up'}
+            onFocus={() => onFocus(1)}
+            onClick={() => onRate('up')}
+          ><ThumbsUp size={38} fill={rating === 'up' ? 'currentColor' : 'none'} /><span>Yes</span></button>
+          <button
+            type="button"
+            class={`${focus === 2 ? 'is-focused' : ''}${rating === 'down' ? ' is-selected' : ''}`}
+            aria-pressed={rating === 'down'}
+            onFocus={() => onFocus(2)}
+            onClick={() => onRate('down')}
+          ><ThumbsDown size={38} fill={rating === 'down' ? 'currentColor' : 'none'} /><span>No</span></button>
         </div>
-        {recommendations.length > 0 && (
-          <section class="post-play-recommendations">
-            <header><p>{authored ? 'More like this' : 'More from your catalogue'}</p><span>{recommendations.length} picks</span></header>
-            <div>
-              {recommendations.map((item, index) => (
-                <button
-                  type="button"
-                  class={focus === index + 2 ? 'is-focused' : ''}
-                  onFocus={() => onFocus(index + 2)}
-                  onClick={() => onRecommendation(item)}
-                  key={`${item.ref.provider}-${item.ref.type}-${item.ref.id}`}
-                >
-                  {item.poster ? <img src={item.poster} alt="" /> : <span class="post-play-poster-fallback"><Play size={25} /></span>}
-                  <strong>{item.title}</strong>
-                  <small>{item.subtitle || 'Open details'}</small>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-      </section>
+        <small>Back returns to the player</small>
+      </section> : <section class="post-play-recommendation-panel">
+        <header>
+          <div><p class="state-kicker">BECAUSE YOU WATCHED</p><h1>{media.title}</h1></div>
+          <span>{authored ? 'You might like' : 'More from your catalogue'}</span>
+        </header>
+        <div class="post-play-actions">
+          <button type="button" class={focus === 1 ? 'is-focused' : ''} onFocus={() => onFocus(1)} onClick={onReplay}><RotateCcw size={21} /><span>Replay</span></button>
+          <button type="button" class={focus === 2 ? 'is-focused' : ''} onFocus={() => onFocus(2)} onClick={onHome}><House size={21} /><span>Back home</span></button>
+        </div>
+        {recommendations.length > 0 ? <div class="post-play-recommendations">
+          {recommendations.map((item, index) => (
+            <button
+              type="button"
+              class={focus === index + 3 ? 'is-focused' : ''}
+              onFocus={() => onFocus(index + 3)}
+              onClick={() => onRecommendation(item)}
+              key={`${item.ref.provider}-${item.ref.type}-${item.ref.id}`}
+            >
+              {item.poster ? <img src={item.poster} alt="" /> : <span class="post-play-poster-fallback"><Play size={25} /></span>}
+              <strong>{item.title}</strong>
+            </button>
+          ))}
+        </div> : <p class="post-play-empty">Your progress is saved. More recommendations will appear after izumi refreshes this catalogue.</p>}
+      </section>}
     </main>
   )
 }

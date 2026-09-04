@@ -392,6 +392,19 @@ export class AvPlayController {
     try { window.webapis?.avplay?.setSilentSubtitle?.(hidden) } catch { /* unsupported stream */ }
   }
 
+  setDisplayRect(x: number, y: number, width: number, height: number): void {
+    const player = window.webapis?.avplay
+    if (!player) return
+    try {
+      player.setDisplayRect(
+        Math.max(0, Math.round(x)),
+        Math.max(0, Math.round(y)),
+        Math.max(1, Math.round(width)),
+        Math.max(1, Math.round(height)),
+      )
+    } catch { /* The native video plane may already be closing. */ }
+  }
+
   setSubtitleDelay(milliseconds: number): void {
     try { window.webapis?.avplay?.setSubtitlePosition?.(milliseconds) } catch { /* unsupported stream */ }
   }

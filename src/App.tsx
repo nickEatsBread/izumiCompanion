@@ -50,6 +50,7 @@ import { ExternalSubtitleController } from './lib/subtitles'
 import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { installVoiceSearch } from './lib/voice-search'
+import { mediaRatingKey, readMediaRatings, writeMediaRating, type MediaRating } from './lib/media-rating'
 import {
   activeSkipSegment,
   nextEpisodeFor,
@@ -333,7 +334,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [nextSourceReady, setNextSourceReady] = useState(false)
   const [playerPromptFocus, setPlayerPromptFocus] = useState<'transport' | 'timeline' | 'skip' | 'next'>('transport')
   const [postPlayMedia, setPostPlayMedia] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
-  const [postPlayFocus, setPostPlayFocus] = useState(0)
+  const [postPlayFocus, setPostPlayFocus] = useState(previewParameters.get('scenario') === 'recommendations' ? 3 : 0)
+  const [postPlayStage, setPostPlayStage] = useState<'rating' | 'recommendations'>(previewParameters.get('scenario') === 'recommendations' ? 'recommendations' : 'rating')
+  const [postPlayRatingTransitioning, setPostPlayRatingTransitioning] = useState(false)
+  const [mediaRatings, setMediaRatings] = useState(() => readMediaRatings())
   const [stillWatching, setStillWatching] = useState(false)
   const [stillWatchingFocus, setStillWatchingFocus] = useState(0)
   const [playbackSettings, setPlaybackSettings] = useState<PlaybackExperienceSettings>(() => {
@@ -454,6 +458,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const prefetchedNextRef = useRef('')
   const autoplayCountRef = useRef(0)
   const currentSourceLabelRef = useRef('')
+  const postPlayPresentedRef = useRef(false)
+  const playbackEndedRef = useRef(false)
+  const postPlayTransitionTimerRef = useRef<number>()
 
   screenRef.current = screen
   searchPersonRef.current = searchPerson
@@ -801,7 +808,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         },
         onState: (state) => {
           updatePlayer({ state })
-          if (state === 'playing' || state === 'paused') setScreen('player')
+          if ((state === 'playing' || state === 'paused') && screenRef.current !== 'postplay') setScreen('player')
           publishStatus(true)
         },
         onTime: (position, duration) => {
@@ -1053,6 +1060,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (navigationTimerRef.current) window.clearTimeout(navigationTimerRef.current)
       if (navigationExitTimerRef.current) window.clearTimeout(navigationExitTimerRef.current)
       if (playerControlsTimerRef.current) window.clearTimeout(playerControlsTimerRef.current)
+      if (postPlayTransitionTimerRef.current) window.clearTimeout(postPlayTransitionTimerRef.current)
       if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current)
       if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
@@ -1076,8 +1084,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }, [pairing?.link])
 
   useEffect(() => {
-    document.body.classList.toggle('avplay-visible', screen === 'player' && avplayRef.current.available)
-  }, [screen])
+    const nativeVideo = avplayRef.current.available
+    const miniPlayer = screen === 'postplay' && playbackSettings.postPlayExperienceEnabled && nativeVideo && Boolean(activeLoadRef.current)
+    document.body.classList.toggle('avplay-visible', screen === 'player' && nativeVideo)
+    document.body.classList.toggle('avplay-mini', miniPlayer)
+    if (nativeVideo) {
+      if (miniPlayer) avplayRef.current.setDisplayRect(76, 86, 920, 518)
+      else avplayRef.current.setDisplayRect(0, 0, 1920, 1080)
+    }
+  }, [screen, playbackSettings.postPlayExperienceEnabled])
 
   useEffect(() => {
     if (screen !== 'player') {
@@ -1517,6 +1532,46 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, focusedHomeMedia?.trailer?.language, playbackSettings.videoPreviewsEnabled, screen, showPreviewTools])
   const allMedia = collections.search
   const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
+  const ratingFor = (media: CompanionMedia): MediaRating | undefined => mediaRatings[mediaRatingKey(media)]?.value
+  const rateMedia = (media: CompanionMedia, value: MediaRating, toggle = true) => {
+    setMediaRatings((current) => {
+      if (!toggle && current[mediaRatingKey(media)]?.value === value) return current
+      return writeMediaRating(current, media, value)
+    })
+  }
+  const enterPostPlay = (media: CompanionMedia) => {
+    if (postPlayPresentedRef.current) return
+    postPlayPresentedRef.current = true
+    setPostPlayMedia(media)
+    setPostPlayStage('rating')
+    setPostPlayRatingTransitioning(false)
+    setPostPlayFocus(1)
+    setScreen('postplay')
+  }
+  const answerPostPlayRating = (value: MediaRating) => {
+    if (postPlayRatingTransitioning) return
+    rateMedia(postPlayMedia, value, false)
+    setPostPlayRatingTransitioning(true)
+    if (postPlayTransitionTimerRef.current) window.clearTimeout(postPlayTransitionTimerRef.current)
+    postPlayTransitionTimerRef.current = window.setTimeout(() => {
+      setPostPlayRatingTransitioning(false)
+      setPostPlayStage('recommendations')
+      setPostPlayFocus(postPlayItems.length ? 3 : 1)
+    }, 440)
+  }
+  const returnToPostPlayPlayer = () => {
+    if (postPlayTransitionTimerRef.current) window.clearTimeout(postPlayTransitionTimerRef.current)
+    setPostPlayRatingTransitioning(false)
+    avplayRef.current.setDisplayRect(0, 0, 1920, 1080)
+    if (playbackEndedRef.current && activeLoadRef.current) {
+      const replayFrom = Math.max(0, playerRef.current.duration - 45)
+      playbackEndedRef.current = false
+      void startAvPlay({ ...activeLoadRef.current, positionSeconds: replayFrom })
+      return
+    }
+    setPlayerControlsVisible(true)
+    setScreen('player')
+  }
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
   const localSearchResults = useMemo(() => allMedia.filter((item) => {
     if (searchGenre) return (item.genres ?? []).some((genre) => genre.toLowerCase() === searchGenre.toLowerCase())
@@ -1739,12 +1794,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     failedCloudSourcesRef.current.clear()
     setDeviceSourceOptions(undefined)
     setActiveSourceId(undefined)
+    playbackEndedRef.current = false
   }
 
   const playMedia = async (media: CompanionMedia, autoplay = false) => {
     const generation = ++playRequestGenerationRef.current
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     if (activeLoadRef.current) finishActivePlayback()
+    postPlayPresentedRef.current = false
+    playbackEndedRef.current = false
+    setPostPlayStage('rating')
+    setPostPlayRatingTransitioning(false)
     pushCurrentNavigation()
     setSelected(media)
     setPlaybackMedia(media)
@@ -2117,6 +2177,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const togglePlayback = () => {
+    if (playbackEndedRef.current && activeLoadRef.current) {
+      playbackEndedRef.current = false
+      postPlayPresentedRef.current = false
+      void startAvPlay({ ...activeLoadRef.current, positionSeconds: 0 })
+      return
+    }
     if (playerRef.current.state === 'playing' || playerRef.current.state === 'buffering') {
       avplayRef.current.pause()
       updatePlayer({ state: 'paused' })
@@ -2203,7 +2269,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
     } else if (visibleSkipSegment) setVisibleSkipSegment(undefined)
 
-    if (!upcomingEpisode || nextEpisodeDismissed || !shouldOfferNextEpisode(position, duration, skipSegments)) return
+    if (!upcomingEpisode) {
+      if (playbackSettings.postPlayExperienceEnabled && !postPlayPresentedRef.current && shouldOfferNextEpisode(position, duration, skipSegments)) enterPostPlay(playbackMedia)
+      return
+    }
+    if (nextEpisodeDismissed || !shouldOfferNextEpisode(position, duration, skipSegments)) return
     if (!nextEpisodeVisible) {
       setNextEpisodeVisible(true)
       setPlayerPromptFocus('next')
@@ -2222,10 +2292,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   completedPlaybackRef.current = () => {
-    updatePlayer({ position: playerRef.current.duration, state: 'idle' })
+    playbackEndedRef.current = true
+    updatePlayer({ position: playerRef.current.duration, state: 'paused' })
     publishStatus(true)
-    finishActivePlayback()
     if (upcomingEpisode) {
+      finishActivePlayback()
       updatePlayer({ state: 'paused' })
       setNextEpisodeVisible(true)
       setPlayerPromptFocus('next')
@@ -2236,9 +2307,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setScreen('player')
       return
     }
-    setPostPlayMedia(playbackMedia)
-    setPostPlayFocus(0)
-    setScreen('postplay')
+    if (playbackSettings.postPlayExperienceEnabled) enterPostPlay(playbackMedia)
+    else setScreen('player')
   }
 
   const answerStillWatching = (continueWatching: boolean) => {
@@ -2275,6 +2345,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (action === 'trailer') {
       openTrailer(selected)
+      return
+    }
+    if (action === 'like' || action === 'dislike') {
+      rateMedia(selected, action === 'like' ? 'up' : 'down')
+      showNotice(action === 'like' ? 'Rating updated' : 'Recommendations adjusted')
       return
     }
     if (action === 'relations' && relatedTitlesFor(selected).length) changeFocus({ zone: 'relation', index: 0 })
@@ -2460,7 +2535,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const closeIndependentSetup = () => {
     setScreen('settings')
     setActiveNav(navIndexFor('settings'))
-    changeFocus({ zone: 'setting', index: 6 })
+    changeFocus({ zone: 'setting', index: 7 })
   }
 
   const startIndependentSetup = () => {
@@ -2477,20 +2552,20 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const runSettingsAction = (index: number) => {
     if (!settingsConfirmation) {
-      if (index < 6) {
-        const key = (['homeCarouselLayout', 'videoPreviewsEnabled', 'autoplayNextEpisode', 'autoSkipSegments', 'stillWatchingEnabled', 'preferBingeSource'] as const)[index]
+      if (index < 7) {
+        const key = (['homeCarouselLayout', 'videoPreviewsEnabled', 'postPlayExperienceEnabled', 'autoplayNextEpisode', 'autoSkipSegments', 'stillWatchingEnabled', 'preferBingeSource'] as const)[index]
         setPlaybackSettings((current) => ({ ...current, [key]: !current[key] }))
-        showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Video previews' : index === 2 ? 'Autoplay' : index === 3 ? 'Automatic skipping' : index === 4 ? 'Still watching check' : 'Source continuity'} updated`)
+        showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Video previews' : index === 2 ? 'Post-play mini-player' : index === 3 ? 'Autoplay' : index === 4 ? 'Automatic skipping' : index === 5 ? 'Still watching check' : 'Source continuity'} updated`)
         return
       }
-      if (index === 6) return openIndependentSetup()
-      setSettingsConfirmation(index === 7 ? 'unpair' : 'reset')
+      if (index === 7) return openIndependentSetup()
+      setSettingsConfirmation(index === 8 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
       return
     }
     if (index === 0) {
       setSettingsConfirmation(null)
-      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 7 : 8 })
+      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 8 : 9 })
       return
     }
     if (settingsConfirmation === 'unpair') receiverRef.current?.unpair()
@@ -2524,7 +2599,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     } else if (focus.zone === 'setting') {
       if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
       else if (action === 'up') changeFocus({ zone: 'setting', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(8, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(9, focus.index + 1) })
     }
   }
 
@@ -2671,6 +2746,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         const selectedAction = actions[focus.index] ?? 'play'
         if (selectedAction === 'play') playMedia(selected)
         else if (selectedAction === 'trailer') openTrailer(selected)
+        else if (selectedAction === 'like' || selectedAction === 'dislike') {
+          rateMedia(selected, selectedAction === 'like' ? 'up' : 'down')
+          showNotice(selectedAction === 'like' ? 'Rating updated' : 'Recommendations adjusted')
+        }
         else closeDetails()
       }
       else if (action === 'back') closeDetails()
@@ -2757,23 +2836,48 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (screen === 'postplay') {
-      const maximum = postPlayItems.length + 1
-      if (action === 'left') setPostPlayFocus((index) => Math.max(index === 2 ? 2 : 0, index - 1))
-      else if (action === 'right') setPostPlayFocus((index) => Math.min(maximum, index + 1))
-      else if (action === 'up' && postPlayFocus >= 2) setPostPlayFocus(0)
-      else if (action === 'down' && postPlayFocus < 2 && postPlayItems.length) setPostPlayFocus(2)
-      else if (action === 'select') {
-        if (postPlayFocus === 0) void playMedia(postPlayMedia)
-        else if (postPlayFocus === 1) {
+      const miniAvailable = playbackSettings.postPlayExperienceEnabled
+      if (action === 'back' || action === 'stop') return returnToPostPlayPlayer()
+      if (postPlayStage === 'rating') {
+        if (action === 'left') setPostPlayFocus((index) => index === 2 ? 1 : miniAvailable ? 0 : 1)
+        else if (action === 'right') setPostPlayFocus((index) => index === 0 ? 1 : Math.min(2, index + 1))
+        else if (action === 'up' || action === 'down') setPostPlayFocus((index) => index === 0 ? 0 : index)
+        else if (action === 'select') {
+          if (postPlayFocus === 0 && miniAvailable) returnToPostPlayPlayer()
+          else answerPostPlayRating(postPlayFocus === 2 ? 'down' : 'up')
+        }
+        return
+      }
+      const firstRecommendation = 3
+      const lastRecommendation = postPlayItems.length ? postPlayItems.length + 2 : 2
+      if (action === 'left') {
+        setPostPlayFocus((index) => {
+          if (index === 1) return miniAvailable ? 0 : 1
+          if (index === 2) return 1
+          return index > firstRecommendation ? index - 1 : index
+        })
+      } else if (action === 'right') {
+        setPostPlayFocus((index) => index === 0 ? 1 : index === 1 ? 2 : Math.min(lastRecommendation, index + 1))
+      } else if (action === 'up') {
+        setPostPlayFocus((index) => index >= firstRecommendation + 3 ? index - 3 : index >= firstRecommendation ? 1 : index)
+      } else if (action === 'down') {
+        setPostPlayFocus((index) => index < firstRecommendation
+          ? postPlayItems.length ? firstRecommendation : index
+          : Math.min(lastRecommendation, index + 3))
+      } else if (action === 'select') {
+        if (postPlayFocus === 0 && miniAvailable) returnToPostPlayPlayer()
+        else if (postPlayFocus === 1) void playMedia(postPlayMedia)
+        else if (postPlayFocus === 2) {
+          finishActivePlayback()
           clearNavigationHistory()
           restoreHomeNavigation()
+        } else {
+          const media = postPlayItems[postPlayFocus - firstRecommendation]
+          if (media) {
+            finishActivePlayback()
+            selectCatalogMedia(media)
+          }
         }
-        else {
-          const media = postPlayItems[postPlayFocus - 2]
-          if (media) selectCatalogMedia(media)
-        }
-      } else if (action === 'back' || action === 'stop') {
-        if (!restorePreviousNavigation()) restoreHomeNavigation()
       }
       return
     }
@@ -2927,6 +3031,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onPersonSelect={openPersonSearch}
           onRelationFocus={(index) => changeFocus({ zone: 'relation', index })}
           onRelationSelect={selectRelatedMedia}
+          rating={ratingFor(selected)}
+          onRate={(value) => rateMedia(selected, value)}
         />
       )}
       {screen === 'search' && (
@@ -2983,6 +3089,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onRelationSelect={selectRelatedMedia}
           onPersonFocus={(index) => changeFocus({ zone: 'person', index })}
           onPersonSelect={openPersonSearch}
+          rating={ratingFor(selected)}
           trailerOpen={trailerOpen}
           trailerSource={trailerSource?.url}
           trailerError={trailerError}
@@ -3121,13 +3228,24 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           recommendations={postPlayItems}
           authored={Boolean(postPlayMedia.recommendations?.length)}
           focus={postPlayFocus}
+          stage={postPlayStage}
+          rating={ratingFor(postPlayMedia)}
+          ratingTransitioning={postPlayRatingTransitioning}
+          miniPlayerEnabled={playbackSettings.postPlayExperienceEnabled}
+          nativeVideoAvailable={avplayRef.current.available && Boolean(activeLoadRef.current)}
           onFocus={setPostPlayFocus}
+          onRate={answerPostPlayRating}
+          onReturnToPlayer={returnToPostPlayPlayer}
           onReplay={() => void playMedia(postPlayMedia)}
           onHome={() => {
+            finishActivePlayback()
             clearNavigationHistory()
             restoreHomeNavigation()
           }}
-          onRecommendation={selectCatalogMedia}
+          onRecommendation={(media) => {
+            finishActivePlayback()
+            selectCatalogMedia(media)
+          }}
         />
       )}
       {screen === 'error' && <ErrorScreen message={errorMessage} onRetry={retryPlayback} />}

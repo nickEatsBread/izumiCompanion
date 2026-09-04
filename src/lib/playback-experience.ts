@@ -8,6 +8,7 @@ import type {
 export interface PlaybackExperienceSettings {
   homeCarouselLayout: boolean
   videoPreviewsEnabled: boolean
+  postPlayExperienceEnabled: boolean
   autoplayNextEpisode: boolean
   autoSkipSegments: boolean
   stillWatchingEnabled: boolean
@@ -43,6 +44,7 @@ const STORAGE_KEY = 'izumi.companion.playback-experience'
 export const defaultPlaybackExperienceSettings: PlaybackExperienceSettings = {
   homeCarouselLayout: false,
   videoPreviewsEnabled: true,
+  postPlayExperienceEnabled: true,
   autoplayNextEpisode: false,
   autoSkipSegments: false,
   stillWatchingEnabled: true,
@@ -56,6 +58,7 @@ export function readPlaybackExperienceSettings(): PlaybackExperienceSettings {
     return {
       homeCarouselLayout: value.homeCarouselLayout === true,
       videoPreviewsEnabled: value.videoPreviewsEnabled !== false,
+      postPlayExperienceEnabled: value.postPlayExperienceEnabled !== false,
       autoplayNextEpisode: value.autoplayNextEpisode === true,
       autoSkipSegments: value.autoSkipSegments === true,
       stillWatchingEnabled: value.stillWatchingEnabled !== false,

@@ -70,13 +70,13 @@ describe('series overview actions', () => {
   }
 
   it('keeps play as the primary action and exposes only supported destinations', () => {
-    expect(seriesOverviewActionsFor(media)).toEqual(['play', 'trailer'])
+    expect(seriesOverviewActionsFor(media)).toEqual(['play', 'trailer', 'like', 'dislike'])
     expect(seriesOverviewActionsFor({
       ...media,
       seasonEpisodeCounts: [12, 10],
       trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
       relations: [{ relationType: 'SEQUEL', media }],
-    })).toEqual(['play', 'episodes', 'trailer', 'relations'])
+    })).toEqual(['play', 'episodes', 'trailer', 'like', 'dislike', 'relations'])
   })
 
   it('combines explicit franchise relations with provider recommendations without duplicates', () => {
@@ -87,7 +87,7 @@ describe('series overview actions', () => {
       ['SEQUEL', 'Example series 2'],
       ['SIMILAR', 'Similar series'],
     ])
-    expect(seriesOverviewActionsFor({ ...media, recommendations: [similar] })).toEqual(['play', 'trailer', 'relations'])
+    expect(seriesOverviewActionsFor({ ...media, recommendations: [similar] })).toEqual(['play', 'trailer', 'like', 'dislike', 'relations'])
   })
 
   it('keeps cast and crew identities available for filtered discovery', () => {
@@ -102,8 +102,8 @@ describe('series overview actions', () => {
   })
 
   it('does not expose unsupported trailer providers', () => {
-    expect(seriesOverviewActionsFor({ ...media, trailer: { id: '12345', site: 'vimeo' } })).toEqual(['play', 'trailer'])
-    expect(detailActionsFor(media)).toEqual(['play', 'trailer', 'close'])
+    expect(seriesOverviewActionsFor({ ...media, trailer: { id: '12345', site: 'vimeo' } })).toEqual(['play', 'trailer', 'like', 'dislike'])
+    expect(detailActionsFor(media)).toEqual(['play', 'trailer', 'like', 'dislike', 'close'])
   })
 
   it('accepts only canonical YouTube IDs or URLs', () => {

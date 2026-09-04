@@ -60,6 +60,20 @@ body.avplay-visible #av-player {
   opacity: 1;
 }
 
+body.avplay-mini #av-player {
+  top: 86px;
+  right: auto;
+  bottom: auto;
+  left: 76px;
+  z-index: 2;
+  width: 920px;
+  height: 518px;
+  opacity: 1;
+}
+
+body.avplay-mini #app { z-index: auto; }
+body.avplay-mini .app-shell.screen-postplay { background: transparent; }
+
 #app {
   position: relative;
   z-index: 1;
@@ -1416,6 +1430,7 @@ body.avplay-visible #av-player {
 }
 
 .detail-actions button:first-child { color: #fff; background: rgba(83, 83, 83, .92); }
+.detail-actions button.is-selected:not(.is-focused) { border-color: #e8e8e8; background: rgba(78,78,78,.94); }
 .detail-actions button.is-focused,
 .detail-actions button:hover {
   color: var(--control-focus-ink);
@@ -1778,6 +1793,8 @@ body.avplay-visible #av-player {
   background: linear-gradient(#f4f4f4, #bdbdbd);
   outline: 0;
 }
+
+.series-action.is-selected:not(.is-focused) { color: #f4f4f4; background: rgba(255,255,255,.1); }
 
 .series-action.is-focused > svg,
 .series-action:hover > svg { color: #404040; }
@@ -3670,28 +3687,101 @@ body.avplay-visible #av-player {
 .still-watching-panel button { padding: 14px 18px; border: 1px solid #555; display: flex; align-items: center; gap: 9px; color: #eee; background: #242424; font-size: 16px; font-weight: 850; }
 .still-watching-panel button.is-focused { color: #080808; background: #f4f4f1; border-color: #f4f4f1; box-shadow: var(--control-focus-shadow); }
 
-.post-play-screen { position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; color: #fff; background: #070707; }
-.post-play-backdrop { position: absolute; top: 0; right: 0; left: 0; width: 100%; height: 58vh; object-fit: cover; filter: brightness(.45) saturate(.78); }
-.post-play-shade { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(0deg, #070707 37%, rgba(7,7,7,.86) 59%, rgba(7,7,7,.2) 100%); }
-.post-play-content { position: relative; z-index: 2; padding: 10vh 5.8vw 5vh; }
-.post-play-content > h1 { max-width: 58vw; margin: 1vh 0 0; font-size: clamp(44px, 4.6vw, 82px); letter-spacing: -.045em; line-height: .98; }
-.post-play-content > p:not(.state-kicker) { max-width: 620px; margin: 1.5vh 0 2.4vh; color: #c0c0c0; font-size: 18px; line-height: 1.45; }
-.post-play-actions { display: flex; gap: 11px; }
-.post-play-actions button { padding: 13px 19px; border: 1px solid #666; border-radius: 3px; display: flex; align-items: center; gap: 9px; color: #fff; background: rgba(24,24,24,.9); font-size: 16px; font-weight: 850; }
+.post-play-screen { position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; color: #fff; background: transparent; }
+.post-play-backdrop { position: absolute; z-index: 0; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; object-fit: cover; filter: brightness(.24) saturate(.72); }
+.post-play-shade { position: absolute; z-index: 1; top: 0; right: 0; bottom: 0; left: 0; background: radial-gradient(circle at 25% 25%, rgba(25,25,25,.34), transparent 38%), #070707; }
+.post-play-mini-player {
+  position: absolute;
+  z-index: 3;
+  top: 86px;
+  left: 76px;
+  width: 920px;
+  height: 518px;
+  padding: 0;
+  overflow: hidden;
+  border: 3px solid rgba(255,255,255,.38);
+  border-radius: 5px;
+  color: #fff;
+  background: #111;
+  box-shadow: 0 28px 90px rgba(0,0,0,.62);
+  text-align: left;
+  transform: translate3d(0,0,0);
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.post-play-mini-player.has-native-video { background: transparent; }
+.post-play-mini-player > img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.post-play-mini-vignette { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(0deg, rgba(0,0,0,.86), transparent 48%); }
+.post-play-mini-label { position: absolute; right: 28px; bottom: 25px; left: 28px; display: flex; align-items: center; }
+.post-play-mini-label > span { min-width: 0; margin-left: 14px; display: block; }
+.post-play-mini-label strong,
+.post-play-mini-label small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.post-play-mini-label strong { font-size: 24px; }
+.post-play-mini-label small { margin-top: 3px; color: #c2c2c2; font-size: 16px; }
+.post-play-mini-player.is-focused { border-color: #fff; box-shadow: 0 0 0 5px #fff, 0 30px 100px rgba(0,0,0,.72); transform: scale(1.012); }
+
+.post-play-rating-panel,
+.post-play-recommendation-panel { position: absolute; z-index: 3; top: 13vh; right: 5vw; width: 39vw; }
+.post-play-rating-panel { top: 22vh; }
+.post-play-rating-panel > h1,
+.post-play-recommendation-panel h1 { margin: 1vh 0 0; font-size: 3.9vw; letter-spacing: -.045em; line-height: 1; }
+.post-play-rating-panel > p:not(.state-kicker) { max-width: 620px; margin: 2vh 0 4vh; color: #b8b8b8; font-size: 1.32vw; line-height: 1.48; }
+.post-play-rating-panel > small { margin-top: 3vh; display: block; color: #777; font-size: 1vw; }
+.post-play-rating-actions { display: flex; }
+.post-play-rating-actions button {
+  width: 178px;
+  height: 148px;
+  border: 2px solid #4d4d4d;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #eee;
+  background: #191919;
+  font-size: 21px;
+  font-weight: 850;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+.post-play-rating-actions button + button { margin-left: 16px; }
+.post-play-rating-actions button span { margin-top: 12px; }
+.post-play-rating-actions button.is-focused { color: #080808; background: #f4f4f1; border-color: #f4f4f1; box-shadow: var(--control-focus-shadow); transform: translateY(-4px); }
+.post-play-rating-actions button.is-selected svg { animation: post-play-rating-pop 380ms cubic-bezier(.2,.8,.2,1); }
+.post-play-screen.is-transitioning .post-play-rating-panel { animation: post-play-rating-leave 440ms ease both; }
+.post-play-screen.is-recommendations .post-play-recommendation-panel { animation: post-play-recommendations-enter 280ms cubic-bezier(.2,.78,.2,1) both; }
+
+.post-play-recommendation-panel > header { display: flex; align-items: flex-end; justify-content: space-between; }
+.post-play-recommendation-panel > header h1 { max-width: 25vw; overflow: hidden; font-size: 2.5vw; text-overflow: ellipsis; white-space: nowrap; }
+.post-play-recommendation-panel > header > span { padding-bottom: .35vh; color: #888; font-size: 1vw; font-weight: 800; }
+.post-play-actions { margin-top: 2.2vh; display: flex; }
+.post-play-actions button { padding: 13px 19px; border: 1px solid #666; border-radius: 3px; display: flex; align-items: center; color: #fff; background: rgba(24,24,24,.94); font-size: 16px; font-weight: 850; }
+.post-play-actions button + button { margin-left: 11px; }
+.post-play-actions button span { margin-left: 9px; }
 .post-play-actions button.is-focused { color: #080808; background: #f4f4f1; border-color: #f4f4f1; box-shadow: var(--control-focus-shadow); }
-.post-play-recommendations { margin-top: 6vh; }
-.post-play-recommendations > header { margin-bottom: 1.4vh; display: flex; align-items: baseline; justify-content: space-between; }
-.post-play-recommendations > header p { margin: 0; font-size: 25px; font-weight: 850; }
-.post-play-recommendations > header span { color: #777; font-size: 14px; font-weight: 800; }
-.post-play-recommendations > div { display: flex; gap: 16px; overflow: hidden; padding: 5px; }
-.post-play-recommendations button { width: 180px; flex: 0 0 180px; padding: 0 0 13px; border: 1px solid #2e2e2e; border-radius: 4px; overflow: hidden; color: #fff; background: #141414; text-align: left; }
+.post-play-recommendations { margin-top: 2.8vh; display: flex; flex-wrap: wrap; }
+.post-play-recommendations button { width: 178px; height: 224px; margin: 0 12px 14px 0; flex: 0 0 178px; padding: 0 0 10px; border: 2px solid #2e2e2e; border-radius: 4px; overflow: hidden; color: #fff; background: #141414; text-align: left; transform: translate3d(0,0,0); transition: border-color 120ms ease, transform 120ms ease; }
 .post-play-recommendations button > img,
-.post-play-poster-fallback { display: flex; width: 100%; height: 225px; align-items: center; justify-content: center; object-fit: cover; background: #222; }
-.post-play-recommendations button strong,
-.post-play-recommendations button small { display: block; margin: 11px 12px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.post-play-recommendations button strong { font-size: 15px; }
-.post-play-recommendations button small { margin-top: 4px; color: #858585; font-size: 12px; }
-.post-play-recommendations button.is-focused { border-color: #fff; outline: 4px solid #fff; transform: translateY(-3px); }
+.post-play-poster-fallback { display: flex; width: 100%; height: 187px; align-items: center; justify-content: center; object-fit: cover; background: #222; }
+.post-play-recommendations button strong { display: block; margin: 8px 10px 0; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.post-play-recommendations button.is-focused { border-color: #fff; box-shadow: 0 0 0 3px #fff; transform: scale(1.035); }
+.post-play-empty { margin-top: 4vh; color: #aaa; font-size: 1.2vw; line-height: 1.5; }
+.post-play-screen.without-mini-player .post-play-shade { background: linear-gradient(90deg, rgba(7,7,7,.98) 0%, rgba(7,7,7,.82) 60%, rgba(7,7,7,.45)); }
+.post-play-screen.without-mini-player .post-play-rating-panel,
+.post-play-screen.without-mini-player .post-play-recommendation-panel { right: auto; left: 6vw; width: 88vw; }
+.post-play-screen.without-mini-player .post-play-recommendation-panel > header h1 { max-width: 60vw; }
+
+@keyframes post-play-rating-pop {
+  0% { transform: scale(.82) rotate(-7deg); }
+  58% { transform: scale(1.2) rotate(4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes post-play-rating-leave {
+  from { opacity: 1; transform: translate3d(0,0,0); }
+  to { opacity: 0; transform: translate3d(28px,0,0); }
+}
+@keyframes post-play-recommendations-enter {
+  from { opacity: 0; transform: translate3d(24px,0,0); }
+  to { opacity: 1; transform: translate3d(0,0,0); }
+}
 
 .player-times {
   margin-top: 9px;

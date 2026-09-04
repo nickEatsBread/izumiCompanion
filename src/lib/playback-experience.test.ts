@@ -97,6 +97,7 @@ describe('playback experience', () => {
     expect(readPlaybackExperienceSettings()).toMatchObject({
       homeCarouselLayout: false,
       videoPreviewsEnabled: true,
+      postPlayExperienceEnabled: true,
       autoplayNextEpisode: true,
     })
   })
@@ -104,5 +105,12 @@ describe('playback experience', () => {
   it('persists an explicit video-preview opt-out', () => {
     localStorage.setItem('izumi.companion.playback-experience', JSON.stringify({ videoPreviewsEnabled: false }))
     expect(readPlaybackExperienceSettings().videoPreviewsEnabled).toBe(false)
+  })
+
+  it('keeps post-play enabled for existing TVs and persists an explicit opt-out', () => {
+    localStorage.setItem('izumi.companion.playback-experience', JSON.stringify({ autoplayNextEpisode: true }))
+    expect(readPlaybackExperienceSettings().postPlayExperienceEnabled).toBe(true)
+    localStorage.setItem('izumi.companion.playback-experience', JSON.stringify({ postPlayExperienceEnabled: false }))
+    expect(readPlaybackExperienceSettings().postPlayExperienceEnabled).toBe(false)
   })
 })

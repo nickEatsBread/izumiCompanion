@@ -16,6 +16,8 @@ import {
   Space,
   TrendingUp,
   Tv,
+  ThumbsDown,
+  ThumbsUp,
   UserRound,
   X,
 } from 'lucide-preact'
@@ -24,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CompanionMedia, CompanionPerson, CompanionRelation, FocusLocation } from '../types'
 import { episodeCountsFor, episodeDetailsFor, seasonNumberFor } from '../lib/catalog'
 import type { PlaybackExperienceSettings } from '../lib/playback-experience'
+import type { MediaRating } from '../lib/media-rating'
 import { gridWindow, linearWindow } from '../lib/windowing'
 import { NavRail } from './NavRail'
 
@@ -533,7 +536,7 @@ export function relatedTitlesFor(media: CompanionMedia): CompanionRelation[] {
   }).slice(0, 24)
 }
 
-export type SeriesOverviewAction = 'play' | 'episodes' | 'trailer' | 'relations'
+export type SeriesOverviewAction = 'play' | 'episodes' | 'trailer' | 'like' | 'dislike' | 'relations'
 
 export function youtubeTrailerId(media: CompanionMedia): string | undefined {
   const raw = media.trailer?.id?.trim()
@@ -550,14 +553,15 @@ export function seriesOverviewActionsFor(media: CompanionMedia): SeriesOverviewA
   const actions: SeriesOverviewAction[] = ['play']
   if (episodeCountsFor(media).length) actions.push('episodes')
   actions.push('trailer')
+  actions.push('like', 'dislike')
   if (relatedTitlesFor(media).length) actions.push('relations')
   return actions
 }
 
-export type DetailAction = 'play' | 'trailer' | 'close'
+export type DetailAction = 'play' | 'trailer' | 'like' | 'dislike' | 'close'
 
 export function detailActionsFor(_media: CompanionMedia): DetailAction[] {
-  return ['play', 'trailer', 'close']
+  return ['play', 'trailer', 'like', 'dislike', 'close']
 }
 
 export function contributorsFor(media: CompanionMedia): CompanionPerson[] {
@@ -617,6 +621,7 @@ export function SeriesScreen({
   onRelationSelect,
   onPersonFocus,
   onPersonSelect,
+  rating,
   trailerOpen,
   trailerSource,
   trailerError,
@@ -635,6 +640,7 @@ export function SeriesScreen({
   onRelationSelect(media: CompanionMedia): void
   onPersonFocus(index: number): void
   onPersonSelect(person: CompanionPerson): void
+  rating?: MediaRating
   trailerOpen: boolean
   trailerSource?: string
   trailerError?: string
@@ -699,11 +705,17 @@ export function SeriesScreen({
                 ? 'More Episodes'
                 : action === 'trailer'
                   ? 'Play Trailer'
-                  : 'More in This Franchise'
-            const Icon = action === 'play' ? Play : action === 'episodes' ? Tv : action === 'trailer' ? Film : Bookmark
+                  : action === 'like'
+                    ? rating === 'up' ? 'Liked' : 'I Like This'
+                    : action === 'dislike'
+                      ? rating === 'down' ? 'Not for Me' : 'Not for Me'
+                      : 'More in This Franchise'
+            const Icon = action === 'play' ? Play : action === 'episodes' ? Tv : action === 'trailer' ? Film : action === 'like' ? ThumbsUp : action === 'dislike' ? ThumbsDown : Bookmark
+            const selectedRating = action === 'like' && rating === 'up' || action === 'dislike' && rating === 'down'
             return <button
               type="button"
-              class={`series-action${focused ? ' is-focused' : ''}`}
+              class={`series-action${focused ? ' is-focused' : ''}${selectedRating ? ' is-selected' : ''}`}
+              aria-pressed={action === 'like' || action === 'dislike' ? selectedRating : undefined}
               data-focus-id={`series-action-${index}`}
               tabIndex={focused ? 0 : -1}
               onFocus={() => onSeriesActionFocus(index)}
@@ -711,7 +723,7 @@ export function SeriesScreen({
               onClick={() => onSeriesAction(action)}
               key={action}
             >
-              <Icon size={24} fill={action === 'play' ? 'currentColor' : 'none'} />
+              <Icon size={24} fill={action === 'play' || selectedRating ? 'currentColor' : 'none'} />
               <span>{label}</span>
             </button>
           })}
@@ -1018,6 +1030,8 @@ export function DetailScreen({
   onPersonSelect,
   onRelationFocus,
   onRelationSelect,
+  rating,
+  onRate,
 }: {
   media: CompanionMedia
   focus: FocusLocation
@@ -1032,6 +1046,8 @@ export function DetailScreen({
   onPersonSelect(person: CompanionPerson): void
   onRelationFocus(index: number): void
   onRelationSelect(media: CompanionMedia): void
+  rating?: MediaRating
+  onRate(value: MediaRating): void
 }) {
   const reason = media.placement
     ? `${media.placement.position ? `#${media.placement.position} in ` : ''}${media.placement.label}`
@@ -1056,19 +1072,24 @@ export function DetailScreen({
           {actions.map((action, index) => (
             <button
               type="button"
-              class={focus.zone === 'detail' && focus.index === index ? 'is-focused' : ''}
+              class={`${focus.zone === 'detail' && focus.index === index ? 'is-focused' : ''}${action === 'like' && rating === 'up' || action === 'dislike' && rating === 'down' ? ' is-selected' : ''}`}
+              aria-pressed={action === 'like' || action === 'dislike' ? action === 'like' && rating === 'up' || action === 'dislike' && rating === 'down' : undefined}
               data-focus-id={`detail-${index}`}
               tabIndex={focus.zone === 'detail' && focus.index === index ? 0 : -1}
               onFocus={() => onFocus(index)}
               onMouseEnter={() => onFocus(index)}
-              onClick={() => action === 'play' ? onPlay(media) : action === 'trailer' ? onTrailer(media) : onClose()}
+              onClick={() => action === 'play' ? onPlay(media) : action === 'trailer' ? onTrailer(media) : action === 'like' ? onRate('up') : action === 'dislike' ? onRate('down') : onClose()}
               key={action}
             >
               {action === 'play'
                 ? <><Play size={25} fill="currentColor" /><span>{media.progress ? 'Resume' : 'Play'}</span></>
                 : action === 'trailer'
                   ? <><Film size={25} /><span>Play Trailer</span></>
-                  : <><X size={25} /><span>Back to browse</span></>}
+                  : action === 'like'
+                    ? <><ThumbsUp size={25} fill={rating === 'up' ? 'currentColor' : 'none'} /><span>{rating === 'up' ? 'Liked' : 'I Like This'}</span></>
+                    : action === 'dislike'
+                      ? <><ThumbsDown size={25} fill={rating === 'down' ? 'currentColor' : 'none'} /><span>Not for Me</span></>
+                      : <><X size={25} /><span>Back to browse</span></>}
             </button>
           ))}
         </div>
@@ -1148,6 +1169,7 @@ export function SettingsScreen({
   const settingsOptions = [
     { title: 'Cinematic home carousel', detail: 'Keep featured artwork above the rows instead of expanding each focused card.', icon: Tv, enabled: playbackSettings.homeCarouselLayout },
     { title: 'Video previews', detail: 'Play trailers automatically after you pause on a title.', icon: Film, enabled: playbackSettings.videoPreviewsEnabled },
+    { title: 'Post-play recommendations', detail: 'Ask for feedback and keep the ending available while you browse what to watch next.', icon: Tv, enabled: playbackSettings.postPlayExperienceEnabled },
     { title: 'Autoplay next episode', detail: 'Show a short countdown, then continue the series.', icon: Play, enabled: playbackSettings.autoplayNextEpisode },
     { title: 'Automatically skip segments', detail: 'Use AniSkip, IntroDB and chapter timing supplied by izumi.', icon: Captions, enabled: playbackSettings.autoSkipSegments },
     { title: 'Still watching check', detail: 'Pause autoplay after three episodes until you confirm.', icon: ShieldCheck, enabled: playbackSettings.stillWatchingEnabled },

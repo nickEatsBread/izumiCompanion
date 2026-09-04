@@ -7,6 +7,14 @@ afterEach(() => {
 })
 
 describe('AVPlay setup', () => {
+  it('moves the native video plane into the requested post-play viewport', () => {
+    const setDisplayRect = vi.fn()
+    Object.assign(globalThis, { window: { webapis: { avplay: { setDisplayRect } } } })
+    const controller = new AvPlayController()
+    controller.setDisplayRect(76.4, 85.6, 919.7, 518.2)
+    expect(setDisplayRect).toHaveBeenCalledWith(76, 86, 920, 518)
+  })
+
   it('configures adaptive playback while IDLE and starts after prepare', async () => {
     const calls: string[] = []
     const player = {
