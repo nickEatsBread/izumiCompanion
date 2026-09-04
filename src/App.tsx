@@ -324,6 +324,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const seekHoldDelayRef = useRef<number>()
   const seekHoldIntervalRef = useRef<number>()
   const seekHoldActionRef = useRef<'rewind' | 'fastForward'>()
+  const seekHoldDidPulseRef = useRef(false)
   const seekHoldStartedRef = useRef(0)
   const pendingSeekRef = useRef<number>()
   const seekInFlightRef = useRef(false)
@@ -644,7 +645,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         onTime: (position, duration) => {
           // AVPlay exposes progress toward its configured buffer target, but not an absolute
           // buffered range. Keep the rail aligned with the conservative five-second play buffer.
-          updatePlayer({ position, duration, bufferedPosition: Math.min(duration, Math.max(playerRef.current.bufferedPosition, position + 5)) })
+          updatePlayer({ position: pendingSeekRef.current ?? position, duration, bufferedPosition: Math.min(duration, Math.max(playerRef.current.bufferedPosition, position + 5)) })
           playbackTimeRef.current?.(position, duration)
           if (activeSubtitleRef.current.startsWith('external-')) {
             setSubtitleText(externalSubtitlesRef.current.textAt(position, subtitlePreferencesRef.current.delayMs))
@@ -846,7 +847,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const statusTimer = window.setInterval(() => {
       if (!activeLoadRef.current) return
       if (avplayRef.current.available) {
-        updatePlayer({ position: avplayRef.current.currentTime(), duration: avplayRef.current.duration() })
+        updatePlayer({ position: pendingSeekRef.current ?? avplayRef.current.currentTime(), duration: avplayRef.current.duration() })
       }
       publishStatus()
     }, 1_000)
@@ -1142,9 +1143,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       image.decoding = 'async'
       image.src = source
       cache.set(source, image)
-      // Six nearby cards at up to three assets each is a useful M56-era TV budget: enough for
-      // immediate horizontal/vertical movement without retaining an entire catalogue in memory.
-      while (cache.size > 18) cache.delete(cache.keys().next().value!)
+      // Twenty-four mixed artwork objects complement the dedicated 32-logo cache while keeping
+      // decoded-image retention bounded for older TVs.
+      while (cache.size > 24) cache.delete(cache.keys().next().value!)
     }
   }
 
@@ -1192,13 +1193,37 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const queueHomeDetails = (media: CompanionMedia[]) => {
     const generation = homeDetailGenerationRef.current
+    const existing = new Map(homeDetailQueueRef.current.map((task) => [
+      `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`,
+      task,
+    ]))
+    const prioritized: HomeDetailTask[] = []
+    const priorityKeys = new Set<string>()
     for (const item of media) {
       warmHomeArtwork(item)
       const key = `${item.ref.provider}:${item.ref.type}:${item.ref.id}`
+      if (priorityKeys.has(key)) continue
+      priorityKeys.add(key)
+      const queued = existing.get(key)
+      if (queued) {
+        prioritized.push(queued)
+        continue
+      }
       if (homeDetailRequestsRef.current.has(key)) continue
       homeDetailRequestsRef.current.add(key)
-      homeDetailQueueRef.current.push({ media: item, generation, preview: showPreviewTools })
+      prioritized.push({ media: item, generation, preview: showPreviewTools })
     }
+    const stale = homeDetailQueueRef.current.filter((task) => {
+      const key = `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`
+      return !priorityKeys.has(key)
+    })
+    const nextQueue = [...prioritized, ...stale].slice(0, 14)
+    const kept = new Set(nextQueue.map((task) => `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`))
+    for (const task of homeDetailQueueRef.current) {
+      const key = `${task.media.ref.provider}:${task.media.ref.type}:${task.media.ref.id}`
+      if (!kept.has(key)) homeDetailRequestsRef.current.delete(key)
+    }
+    homeDetailQueueRef.current = nextQueue
     pumpHomeDetailQueue()
   }
 
@@ -1724,7 +1749,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }, finish)
   }
 
-  const seekFromRemote = (direction: -1 | 1, multiplier = 1) => {
+  const seekFromRemote = (direction: -1 | 1, multiplier = 1, commit = true) => {
     const view = playerRef.current
     const position = playerSeekTarget(pendingSeekRef.current ?? view.position, view.duration, direction, multiplier)
     pendingSeekRef.current = position
@@ -1733,18 +1758,23 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setPlayerPromptFocus('timeline')
     revealPlayerControls(true)
     showSeekFeedback(direction, multiplier)
-    flushPendingSeek()
+    if (commit) flushPendingSeek()
   }
 
   const stopSeekHold = (action?: RemoteAction) => {
-    if (action && action !== seekHoldActionRef.current) return
+    const active = seekHoldActionRef.current
+    if (action && action !== active) return
     if (seekHoldDelayRef.current) window.clearTimeout(seekHoldDelayRef.current)
     if (seekHoldIntervalRef.current) window.clearInterval(seekHoldIntervalRef.current)
     seekHoldDelayRef.current = undefined
     seekHoldIntervalRef.current = undefined
     seekHoldActionRef.current = undefined
+    if (!active) return
+    if (seekHoldDidPulseRef.current) flushPendingSeek()
+    else seekFromRemote(active === 'fastForward' ? 1 : -1)
+    seekHoldDidPulseRef.current = false
     if (seekFeedbackTimerRef.current) window.clearTimeout(seekFeedbackTimerRef.current)
-    seekFeedbackTimerRef.current = window.setTimeout(() => setSeekFeedback(undefined), 450)
+    seekFeedbackTimerRef.current = window.setTimeout(() => setSeekFeedback(undefined), 900)
   }
 
   seekHoldKeyDownRef.current = (action, repeated) => {
@@ -1757,18 +1787,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (repeated) return false
     stopSeekHold()
     seekHoldActionRef.current = action
+    seekHoldDidPulseRef.current = false
     seekHoldStartedRef.current = tvNow()
     seekHoldDelayRef.current = window.setTimeout(() => {
       const pulse = () => {
         const active = seekHoldActionRef.current
         if (!active) return
+        seekHoldDidPulseRef.current = true
         const multiplier = seekHoldMultiplier(tvNow() - seekHoldStartedRef.current)
-        seekFromRemote(active === 'fastForward' ? 1 : -1, multiplier)
+        // Scrub the UI continuously, but make one decoder seek on release. Repeated AVPlay seeks
+        // cause a buffering cycle and saturate older Samsung TVs.
+        seekFromRemote(active === 'fastForward' ? 1 : -1, multiplier, false)
       }
       pulse()
-      seekHoldIntervalRef.current = window.setInterval(pulse, 360)
-    }, 360)
-    return false
+      seekHoldIntervalRef.current = window.setInterval(pulse, 450)
+    }, 340)
+    return true
   }
   seekHoldKeyUpRef.current = stopSeekHold
 

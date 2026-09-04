@@ -206,9 +206,11 @@ export function ErrorScreen({ message, onRetry }: { message: string; onRetry(): 
   )
 }
 
-function formatTime(value: number): string {
+export function formatPlaybackTime(value: number): string {
   const seconds = Math.max(0, Math.floor(value))
+  const hours = Math.floor(seconds / 3_600)
   const minutes = Math.floor(seconds / 60)
+  if (hours > 0) return `${hours}:${String(minutes % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
 }
 
@@ -350,7 +352,7 @@ export function PlayerScreen({
     <main class="player-screen">
       {previewBackdrop && <img class="player-preview-backdrop" src={previewBackdrop} alt="" />}
       <div class={`player-vignette${controlsVisible ? ' is-visible' : ''}`} />
-      {state === 'buffering' && (
+      {state === 'buffering' && !seekFeedback && (
         <div class="player-buffering-status" role="status" aria-live="polite">
           <span class="player-buffering-spinner" aria-hidden="true" />
           <span class="player-buffering-copy">
@@ -418,7 +420,7 @@ export function PlayerScreen({
           aria-valuemin={0}
           aria-valuemax={Math.max(0, Math.round(duration))}
           aria-valuenow={Math.max(0, Math.round(position))}
-          aria-valuetext={isLive ? 'Live' : `${formatTime(position)} of ${formatTime(duration)}, buffered to ${formatTime(bufferedPosition)}`}
+          aria-valuetext={isLive ? 'Live' : `${formatPlaybackTime(position)} of ${formatPlaybackTime(duration)}, buffered to ${formatPlaybackTime(bufferedPosition)}`}
           tabIndex={0}
           onFocus={onTimelineFocus}
           onMouseEnter={onTimelineFocus}
@@ -435,7 +437,7 @@ export function PlayerScreen({
               />
             ))}
           </div>
-          <div class="player-times"><span>{isLive ? 'LIVE' : formatTime(position)}</span><span>{isLive ? '' : formatTime(duration)}</span></div>
+          <div class="player-times"><span>{isLive ? 'LIVE' : formatPlaybackTime(position)}</span><span>{isLive ? '' : formatPlaybackTime(duration)}</span></div>
         </div>
         <div class="player-actions" aria-label="Playback options">
           {controls.map(({ label, detail, icon: Icon }, index) => (

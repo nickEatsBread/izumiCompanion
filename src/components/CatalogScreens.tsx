@@ -93,6 +93,10 @@ function TrailerPlayer({
     else target.postMessage(serialized, 'https://www.youtube-nocookie.com')
   }
   const send = (func: string, args: unknown[] = []) => post({ event: 'command', func, args })
+  const enableAudio = () => {
+    send('setVolume', [100])
+    send('unMute')
+  }
   const suppressCaptions = (force = false) => {
     const now = Date.now()
     if (!force && now - captionsSuppressedAtRef.current < 1_500) return
@@ -122,6 +126,7 @@ function TrailerPlayer({
       revealControls(true)
     } else {
       if (playbackRef.current === 'ended') send('seekTo', [0, true])
+      enableAudio()
       send('playVideo')
       applyPlayback('buffering')
       revealControls(true)
@@ -148,6 +153,7 @@ function TrailerPlayer({
       if (firstReadyEvent && !readyRef.current) {
         readyRef.current = true
         suppressCaptions(true)
+        enableAudio()
         send('playVideo')
         // The bridge can deliver readiness before a reliable onStateChange. Once playback has
         // been requested, uncover the real player instead of leaving the title-page artwork over it.
@@ -212,6 +218,7 @@ function TrailerPlayer({
       revealControls(action === 'pause')
       if (action === 'toggle') toggle()
       else if (action === 'play') {
+        enableAudio()
         send('playVideo')
         applyPlayback('buffering')
       } else if (action === 'pause') {
@@ -252,6 +259,7 @@ function TrailerPlayer({
           post(TRAILER_LISTENING_MESSAGE)
           window.setTimeout(() => {
             suppressCaptions(true)
+            enableAudio()
             send('playVideo')
           }, 350)
         }}

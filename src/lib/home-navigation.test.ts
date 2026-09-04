@@ -113,22 +113,23 @@ describe('TV home navigation model', () => {
 
   it('prefetches the immediate right and vertical destinations before a bounded look-ahead', () => {
     const rows = [
-      row('first', 'First', 'catalog', [media('a'), media('b'), media('c'), media('d')]),
-      row('second', 'Second', 'catalog', [media('e'), media('f'), media('g')]),
-      row('third', 'Third', 'catalog', [media('h'), media('i')]),
+      row('first', 'First', 'catalog', [media('a'), media('b'), media('c'), media('d'), media('j'), media('k')]),
+      row('second', 'Second', 'catalog', [media('e'), media('f'), media('g'), media('l'), media('m'), media('n'), media('o'), media('p')]),
+      row('third', 'Third', 'catalog', [media('h'), media('i'), media('q'), media('r')]),
     ]
 
     expect(homeDetailPrefetchTargets(rows, { zone: 'row', row: 1, index: 1 }, { first: 3, third: 1 })
-      .map(({ ref }) => ref.id)).toEqual(['f', 'g', 'i', 'h', 'd', 'e'])
+      .map(({ ref }) => ref.id)).toEqual(['f', 'g', 'i', 'q', 'd', 'j', 'l', 'm', 'n', 'e'])
   })
 
   it('warms the first shelf before leaving the hero', () => {
     const rows = [
-      row('first', 'First', 'catalog', [media('a'), media('b'), media('c'), media('d')]),
-      row('second', 'Second', 'catalog', [media('e'), media('f')]),
+      row('first', 'First', 'catalog', [media('a'), media('b'), media('c'), media('d'), media('g'), media('h')]),
+      row('second', 'Second', 'catalog', [media('e'), media('f'), media('i')]),
+      row('third', 'Third', 'catalog', [media('j'), media('k')]),
     ]
-    expect(homeDetailPrefetchTargets(rows, { zone: 'hero', index: 0 }, { first: 1, second: 1 })
-      .map(({ ref }) => ref.id)).toEqual(['b', 'c', 'f', 'e', 'd', 'a'])
+    expect(homeDetailPrefetchTargets(rows, { zone: 'hero', index: 0 }, { first: 1, second: 1, third: 1 })
+      .map(({ ref }) => ref.id)).toEqual(['b', 'c', 'f', 'i', 'k', 'j', 'd', 'g', 'h', 'a'])
   })
 
   it('resolves Browse to the linked client merged catalogue', () => {

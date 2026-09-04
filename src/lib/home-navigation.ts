@@ -16,9 +16,9 @@ function mediaKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
 }
 
-/** Return detail requests in remote-navigation priority order. The immediate right and vertical
- * destinations are warmed first, followed by a small look-ahead window. Keeping the window bounded
- * prevents artwork traffic from competing with D-pad painting on memory-constrained TVs. */
+/** Return detail requests in remote-navigation priority order. Ten nearby destinations cover four
+ * horizontal moves plus both vertical landing areas without retaining an entire catalogue on a
+ * memory-constrained TV. */
 export function homeDetailPrefetchTargets(
   rows: CompanionHomeRow[],
   focus: FocusLocation,
@@ -47,14 +47,14 @@ export function homeDetailPrefetchTargets(
     add(row.items[focus.index])
     if (length > 1) add(row.items[(focus.index + 1) % length])
     addRowDestination(focus.row + 1, true)
-    addRowDestination(focus.row - 1)
-    for (let offset = 2; offset <= Math.min(3, length - 1); offset += 1) add(row.items[(focus.index + offset) % length])
+    addRowDestination(focus.row - 1, true)
+    for (let offset = 2; offset <= Math.min(4, length - 1); offset += 1) add(row.items[(focus.index + offset) % length])
     if (length > 1) add(row.items[(focus.index - 1 + length) % length])
-    return targets
+    return targets.slice(0, 10)
   }
 
-  // Hero/nav focus can enter the first shelf next, so prepare that tile, its next two choices,
-  // and the following shelf's independent vertical destination before the user moves.
+  // Hero/nav focus can enter the first shelf next, so prepare its horizontal look-ahead and both
+  // subsequent vertical landing areas before the user moves.
   const firstRow = rows[0]
   const firstIndex = rememberedHomeRowIndex(firstRow, remembered)
   if (firstRow?.items.length) {
@@ -62,10 +62,11 @@ export function homeDetailPrefetchTargets(
     if (firstRow.items.length > 1) add(firstRow.items[(firstIndex + 1) % firstRow.items.length])
   }
   addRowDestination(1, true)
-  for (let offset = 2; offset <= Math.min(3, (firstRow?.items.length ?? 0) - 1); offset += 1) {
+  addRowDestination(2, true)
+  for (let offset = 2; offset <= Math.min(5, (firstRow?.items.length ?? 0) - 1); offset += 1) {
     add(firstRow?.items[(firstIndex + offset) % firstRow.items.length])
   }
-  return targets
+  return targets.slice(0, 10)
 }
 
 function mergePresentationMedia(media: CompanionMedia, details: CompanionMedia): CompanionMedia {

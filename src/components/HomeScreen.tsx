@@ -223,7 +223,7 @@ const failedTitleImages: Record<string, boolean> = {}
 const titleImageLoads: Partial<Record<string, Promise<boolean>>> = {}
 const preloadedTitleImageOrder: string[] = []
 const failedTitleImageOrder: string[] = []
-const MAX_PRELOADED_TITLE_IMAGES = 24
+const MAX_PRELOADED_TITLE_IMAGES = 32
 
 function preloadTitleImage(source?: string): Promise<boolean> {
   if (!source || failedTitleImages[source]) return Promise.resolve(false)
