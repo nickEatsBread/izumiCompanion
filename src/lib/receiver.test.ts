@@ -750,4 +750,20 @@ describe('companion play routing', () => {
     }, 'linked-client')
     receiver.disconnect()
   })
+
+  it('adopts a TV-scoped Worker handoff without a linked client credential', async () => {
+    storage.clear()
+    FakeXmlHttpRequest.responder = () => ({ status: 200, body: {} })
+    const receiverEvents = { ...events(), onIndependentPlaybackReady: vi.fn() }
+    const receiver = new CompanionReceiver(receiverEvents)
+
+    receiver.adoptStandaloneTransport(transport)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(storage.getItem('izumi.companion.credential')).toBe('07'.repeat(32))
+    expect(JSON.parse(storage.getItem('izumi.companion.cloudflare') || '{}')).toEqual(transport)
+    expect(receiverEvents.onPaired).toHaveBeenLastCalledWith(true)
+    expect(receiverEvents.onIndependentPlaybackReady).toHaveBeenLastCalledWith(true)
+    expect(FakeXmlHttpRequest.sent.some((request) => request.url.endsWith('/snapshots?screen=auto'))).toBe(true)
+  })
 })

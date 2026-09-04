@@ -50,6 +50,7 @@ import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
 import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
+import { TvLinkReceiver, type TvLinkInfo } from './lib/tv-link'
 import { installVoiceSearch } from './lib/voice-search'
 import { mediaRatingKey, readMediaRatings, writeMediaRating, type MediaRating } from './lib/media-rating'
 import {
@@ -311,9 +312,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [pairing, setPairing] = useState<PairingInfo>()
   const [qrCode, setQrCode] = useState<string>()
   const [standaloneQrCode, setStandaloneQrCode] = useState<string>()
-  const standaloneChallenge = normalizeTvLinkCode(pairing?.challenge ?? (showPreviewTools ? 'TV42IZ' : ''))
-  const pairingDisplayCode = standaloneChallenge
-    ? `${standaloneChallenge.slice(0, 3)} ${standaloneChallenge.slice(3, 6)}`
+  const [tvLinkInfo, setTvLinkInfo] = useState<TvLinkInfo>({ code: '', expiresAt: 0, phase: 'preparing' })
+  const pairingChallenge = normalizeTvLinkCode(pairing?.challenge ?? (showPreviewTools ? 'TV42IZ' : ''))
+  const pairingDisplayCode = pairingChallenge
+    ? `${pairingChallenge.slice(0, 3)} ${pairingChallenge.slice(3, 6)}`
+    : ''
+  const tvLinkDisplayCode = tvLinkInfo.code
+    ? `${tvLinkInfo.code.slice(0, 4)} ${tvLinkInfo.code.slice(4, 8)}`
     : ''
   const [loadingProgress, setLoadingProgress] = useState(previewParameters.get('scenario') === 'buffering' ? 46 : 34)
   const [errorMessage, setErrorMessage] = useState('The TV player could not open this source.')
@@ -393,6 +398,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [focusRestoreEpoch, setFocusRestoreEpoch] = useState(0)
 
   const receiverRef = useRef<CompanionReceiver>()
+  const tvLinkReceiverRef = useRef<TvLinkReceiver>()
   const avplayRef = useRef(new AvPlayController())
   const activeLoadRef = useRef<CastLoadRequest>()
   const playerRef = useRef(player)
@@ -1092,19 +1098,52 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }, [pairing?.link])
 
   useEffect(() => {
-    if (!standaloneChallenge) {
+    if (screen !== 'standalone-link') return
+    if (previewParameters.has('capture')) {
+      setTvLinkInfo({
+        code: 'ABCD2345',
+        expiresAt: Date.now() + 10 * 60_000,
+        phase: 'waiting',
+        message: 'Scan the QR code or enter the TV code on your phone.',
+      })
+      return
+    }
+    const receiver = receiverRef.current
+    if (!receiver) {
+      setTvLinkInfo({ code: '', expiresAt: 0, phase: 'error', message: 'The TV receiver is still starting. Go back and try again.' })
+      return
+    }
+    const link = new TvLinkReceiver(receiver.pairingInfo.deviceId, {
+      onInfo: setTvLinkInfo,
+      onSetup: (transport) => {
+        const activeReceiver = receiverRef.current
+        if (!activeReceiver) throw new Error('The TV receiver closed before setup completed.')
+        activeReceiver.adoptStandaloneTransport(transport)
+        setPaired(true)
+      },
+    })
+    tvLinkReceiverRef.current = link
+    link.start()
+    return () => {
+      link.stop()
+      if (tvLinkReceiverRef.current === link) tvLinkReceiverRef.current = undefined
+    }
+  }, [screen])
+
+  useEffect(() => {
+    if (!tvLinkInfo.code) {
       setStandaloneQrCode(undefined)
       return
     }
     let cancelled = false
-    void QRCode.toDataURL(tvLinkUrl(standaloneChallenge), {
+    void QRCode.toDataURL(tvLinkUrl(tvLinkInfo.code), {
       width: 420,
       margin: 2,
       color: { dark: '#050505', light: '#ffffff' },
       errorCorrectionLevel: 'H',
     }).then((value) => { if (!cancelled) setStandaloneQrCode(value) })
     return () => { cancelled = true }
-  }, [standaloneChallenge])
+  }, [tvLinkInfo.code])
 
   useEffect(() => {
     const nativeVideo = avplayRef.current.available
@@ -3211,8 +3250,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         <StandaloneLinkScreen
           connected={connected}
           qrCode={standaloneQrCode}
-          pairingCode={pairingDisplayCode}
-          expiresAt={pairing?.expiresAt}
+          pairingCode={tvLinkDisplayCode}
+          expiresAt={tvLinkInfo.expiresAt}
+          phase={tvLinkInfo.phase}
+          statusMessage={tvLinkInfo.message}
+          confirmation={tvLinkInfo.confirmation}
           posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
           backFocused={focus.zone === 'setting'}
           onBackFocus={() => changeFocus({ zone: 'setting', index: 0 })}

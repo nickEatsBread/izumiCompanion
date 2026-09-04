@@ -871,6 +871,37 @@ export class CompanionReceiver {
     return Boolean(this.cloudflare && this.cloudflare.playbackMode !== 'device-only')
   }
 
+  /** Persist the TV-scoped capability received through the stateless phone handoff. */
+  adoptStandaloneTransport(value: unknown): void {
+    const transport = parseCloudflareTransport(value)
+    if (!transport || transport.playbackMode === 'device-only') throw new Error('The Cloudflare TV setup is invalid.')
+    const credential = this.credential || secureRandomHex(32)
+    if (!credential) throw new Error('This TV could not create secure local credentials.')
+    const previousCredential = localStorage.getItem('izumi.companion.credential')
+    const previousTransport = localStorage.getItem('izumi.companion.cloudflare')
+    try {
+      localStorage.setItem('izumi.companion.credential', credential)
+      localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
+    } catch {
+      if (previousCredential === null) localStorage.removeItem('izumi.companion.credential')
+      else localStorage.setItem('izumi.companion.credential', previousCredential)
+      if (previousTransport === null) localStorage.removeItem('izumi.companion.cloudflare')
+      else localStorage.setItem('izumi.companion.cloudflare', previousTransport)
+      throw new Error('This TV could not save the Cloudflare setup.')
+    }
+    if (this.cloudflare && (this.cloudflare.endpoint !== transport.endpoint || this.cloudflare.pairingId !== transport.pairingId)) {
+      void this.revokeCloudflarePairing()
+    }
+    this.credential = credential
+    this.cloudflare = transport
+    this.events.onPaired(true)
+    this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
+    this.events.onIndependentPlaybackReady?.(true)
+    // The Worker maps an unsupported "auto" request to the profile's configured default, so this
+    // starts either the AniList, TMDB or Stremio home selected during phone setup.
+    this.requestCatalog('auto')
+  }
+
   /** Ask the authenticated, currently linked izumi client to open the private Worker onboarding. */
   requestIndependentSetup(): boolean {
     if (!this.credential || !this.connected) return false

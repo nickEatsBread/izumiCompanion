@@ -33,6 +33,7 @@ import type {
   SubtitlePreferences,
 } from '../types'
 import type { MediaRating } from '../lib/media-rating'
+import type { TvLinkPhase } from '../lib/tv-link'
 
 export type IndependentSetupPhase = 'intro' | 'waiting' | 'ready' | 'error'
 
@@ -687,6 +688,9 @@ export function StandaloneLinkScreen({
   qrCode,
   pairingCode,
   expiresAt,
+  phase,
+  statusMessage,
+  confirmation,
   posters,
   backFocused,
   onBackFocus,
@@ -696,12 +700,22 @@ export function StandaloneLinkScreen({
   qrCode?: string
   pairingCode: string
   expiresAt?: number
+  phase: TvLinkPhase
+  statusMessage?: string
+  confirmation?: string
   posters: string[]
   backFocused: boolean
   onBackFocus(): void
   onBack(): void
 }) {
   const { remainingSeconds, remainingLabel } = usePairingCountdown(expiresAt)
+  const statusTitle = phase === 'phone-connected' ? 'Phone connected'
+    : phase === 'confirming' ? 'Check the confirmation number'
+      : phase === 'installing' ? 'Linking your private Worker'
+        : phase === 'complete' ? 'TV setup complete'
+          : phase === 'error' ? 'Setup needs attention'
+            : phase === 'preparing' ? 'Preparing secure setup'
+              : 'Secure setup ready'
   return (
     <main class="state-screen ready-screen standalone-link-screen">
       <PairingBackdrop posters={posters} />
@@ -716,9 +730,16 @@ export function StandaloneLinkScreen({
             <div><b>2</b><span>Complete the one-time phone setup</span></div>
             <div><b>3</b><span>Return here to start watching</span></div>
           </div>
-          <div class="standalone-link-status">
-            <strong>Phone setup preview</strong>
-            <span>The setup page is nearly ready. This QR currently opens the placeholder handoff.</span>
+          <div class={`standalone-link-status is-${phase}`} aria-live="polite">
+            <strong>{statusTitle}</strong>
+            <span>{statusMessage || 'Scan the QR code to begin the one-time setup.'}</span>
+            {confirmation && (phase === 'confirming' || phase === 'installing') && (
+              <div class="standalone-confirmation">
+                <small>CONFIRMATION NUMBER</small>
+                <b>{confirmation.slice(0, 3)} {confirmation.slice(3)}</b>
+                <em>Only continue on your phone if both numbers match.</em>
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -733,11 +754,11 @@ export function StandaloneLinkScreen({
             ? <div class="standalone-qr-shell"><img src={qrCode} alt="Open independent TV setup on your phone" /></div>
             : <div class="standalone-qr-wait" role="status"><i aria-hidden="true" /><span>{connected ? 'Preparing secure link…' : 'Connecting this TV…'}</span></div>}
           <strong>Scan with your phone</strong>
-          <span>or visit tv-setup.izumi.watch</span>
+          <span>or visit tv-link.izumi.watch</span>
           <div class="standalone-code">
             <small>TV CODE</small>
-            <b>{pairingCode || '------'}</b>
-            {expiresAt && <em>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</em>}
+            <b>{pairingCode || '--------'}</b>
+            {expiresAt && phase !== 'complete' && <em>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</em>}
           </div>
         </aside>
       </section>

@@ -3264,6 +3264,45 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
   line-height: 1.35;
 }
 
+.standalone-link-status.is-error strong { color: #ffb3b3; }
+.standalone-link-status.is-complete strong { color: #a9e7bf; }
+
+.standalone-confirmation {
+  max-width: 39vw;
+  margin-top: 1.35vh;
+  padding: 1.2vh 1.2vw;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, .32);
+  background: rgba(255, 255, 255, .07);
+}
+
+.standalone-confirmation small {
+  max-width: 6.5vw;
+  color: rgba(255, 255, 255, .55);
+  font-size: .62vw;
+  font-weight: 850;
+  letter-spacing: .12em;
+  line-height: 1.25;
+}
+
+.standalone-confirmation b {
+  margin-left: 1.2vw;
+  color: #fff;
+  font-size: 1.7vw;
+  letter-spacing: .14em;
+  white-space: nowrap;
+}
+
+.standalone-confirmation em {
+  max-width: 12vw;
+  margin-left: 1.2vw;
+  color: rgba(255, 255, 255, .62);
+  font-size: .72vw;
+  font-style: normal;
+  line-height: 1.3;
+}
+
 .standalone-link-back { margin-top: 3.2vh; }
 .standalone-link-back > svg { margin-right: .65vw; }
 

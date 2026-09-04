@@ -3,10 +3,10 @@ import { normalizeTvLinkCode, tvLinkUrl } from './onboarding'
 
 describe('TV onboarding handoff', () => {
   it('normalizes a display-formatted code for the phone handoff', () => {
-    expect(normalizeTvLinkCode('d6a 4e6')).toBe('D6A4E6')
+    expect(normalizeTvLinkCode('abcd 2345')).toBe('ABCD2345')
   })
 
-  it('builds the placeholder Cloudflare setup URL', () => {
-    expect(tvLinkUrl('D6A 4E6')).toBe('https://tv-setup.izumi.watch/?code=D6A4E6')
+  it('builds the live Cloudflare TV Link URL', () => {
+    expect(tvLinkUrl('ABCD 2345')).toBe('https://tv-link.izumi.watch/?code=ABCD2345')
   })
 })
