@@ -5385,6 +5385,21 @@ body,
   vertical-align: middle;
 }
 
+/* Keep the separator outside the certification's flex box. On Chromium M56 the generic
+ * span::before rule otherwise makes the dot a flex item inside the badge and pushes its age
+ * label onto the circular outline. */
+.home-focus-facts > span + .media-certification {
+  margin-left: 32px;
+  position: relative;
+}
+
+.home-focus-facts > span + .media-certification::before {
+  position: absolute;
+  top: 50%;
+  left: -19px;
+  margin: -3px 0 0;
+}
+
 .home-focus-facts > span + span::before {
   width: 6px;
   height: 6px;
