@@ -13,6 +13,7 @@ const screens: { id: ScreenName; label: string }[] = [
   { id: 'settings', label: 'Settings' },
   { id: 'details', label: 'Details' },
   { id: 'ready', label: 'Ready' },
+  { id: 'standalone-link', label: 'TV link' },
   { id: 'loading', label: 'Loading' },
   { id: 'player', label: 'Player' },
   { id: 'error', label: 'Error' },

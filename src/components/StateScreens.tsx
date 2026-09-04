@@ -36,6 +36,41 @@ import type { MediaRating } from '../lib/media-rating'
 
 export type IndependentSetupPhase = 'intro' | 'waiting' | 'ready' | 'error'
 
+function usePairingCountdown(expiresAt?: number) {
+  const [remainingSeconds, setRemainingSeconds] = useState(() => Math.max(0, Math.ceil(((expiresAt ?? 0) - Date.now()) / 1000)))
+  useEffect(() => {
+    const update = () => setRemainingSeconds(Math.max(0, Math.ceil(((expiresAt ?? 0) - Date.now()) / 1000)))
+    update()
+    if (!expiresAt) return
+    const timer = window.setInterval(update, 1_000)
+    return () => window.clearInterval(timer)
+  }, [expiresAt])
+  return {
+    remainingSeconds,
+    remainingLabel: `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`,
+  }
+}
+
+function PairingBackdrop({ posters }: { posters: string[] }) {
+  const posterSource = posters.slice(0, 8)
+  const posterLoop = posterSource.length
+    ? Array.from({ length: 12 }, (_, index) => posterSource[index % posterSource.length])
+    : []
+  return (
+    <div class="pairing-backdrop" aria-hidden="true">
+      <div class="pairing-poster-stage">
+        <div class="pairing-poster-track pairing-poster-track-one">
+          {posterLoop.map((poster, index) => <img src={poster} alt="" key={`${poster}-${index}`} />)}
+        </div>
+        <div class="pairing-poster-track pairing-poster-track-two">
+          {posterLoop.slice().reverse().map((poster, index) => <img src={poster} alt="" key={`reverse-${poster}-${index}`} />)}
+        </div>
+      </div>
+      <div class="pairing-blue-wash" />
+    </div>
+  )
+}
+
 export function IndependentSetupScreen({
   phase,
   connected,
@@ -108,39 +143,23 @@ export function ReadyScreen({
   pairingCode,
   expiresAt,
   posters,
+  independentFocused,
+  onIndependentFocus,
+  onIndependent,
 }: {
   connected: boolean
   qrCode?: string
   pairingCode: string
   expiresAt?: number
   posters: string[]
+  independentFocused: boolean
+  onIndependentFocus(): void
+  onIndependent(): void
 }) {
-  const [remainingSeconds, setRemainingSeconds] = useState(() => Math.max(0, Math.ceil(((expiresAt ?? 0) - Date.now()) / 1000)))
-  useEffect(() => {
-    const update = () => setRemainingSeconds(Math.max(0, Math.ceil(((expiresAt ?? 0) - Date.now()) / 1000)))
-    update()
-    if (!expiresAt) return
-    const timer = window.setInterval(update, 1_000)
-    return () => window.clearInterval(timer)
-  }, [expiresAt])
-  const remainingLabel = `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`
-  const posterSource = posters.slice(0, 8)
-  const posterLoop = posterSource.length
-    ? Array.from({ length: 12 }, (_, index) => posterSource[index % posterSource.length])
-    : []
+  const { remainingSeconds, remainingLabel } = usePairingCountdown(expiresAt)
   return (
     <main class="state-screen ready-screen">
-      <div class="pairing-backdrop" aria-hidden="true">
-        <div class="pairing-poster-stage">
-          <div class="pairing-poster-track pairing-poster-track-one">
-            {posterLoop.map((poster, index) => <img src={poster} alt="" key={`${poster}-${index}`} />)}
-          </div>
-          <div class="pairing-poster-track pairing-poster-track-two">
-            {posterLoop.slice().reverse().map((poster, index) => <img src={poster} alt="" key={`reverse-${poster}-${index}`} />)}
-          </div>
-        </div>
-        <div class="pairing-blue-wash" />
-      </div>
+      <PairingBackdrop posters={posters} />
       <img class="state-brand" src={companionLockup} alt="izumi companion" />
       <div class="ready-panel">
         <div class="ready-copy">
@@ -153,6 +172,18 @@ export function ReadyScreen({
             <span>PAIRING CODE</span>
             <strong>{pairingCode || '------'}</strong>
             {expiresAt && <small>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</small>}
+          </div>
+          <div class="ready-independent-option">
+            <span>Don’t want to pair?</span>
+            <button
+              type="button"
+              class={independentFocused ? 'is-focused' : ''}
+              data-focus-id="setting-0"
+              onFocus={onIndependentFocus}
+              onClick={onIndependent}
+            >
+              Use TV independently <ArrowRight size={24} aria-hidden="true" />
+            </button>
           </div>
         </div>
         {connected && qrCode && (
@@ -647,6 +678,69 @@ export function PlayerScreen({
           </div>
         </section>
       )}
+    </main>
+  )
+}
+
+export function StandaloneLinkScreen({
+  connected,
+  qrCode,
+  pairingCode,
+  expiresAt,
+  posters,
+  backFocused,
+  onBackFocus,
+  onBack,
+}: {
+  connected: boolean
+  qrCode?: string
+  pairingCode: string
+  expiresAt?: number
+  posters: string[]
+  backFocused: boolean
+  onBackFocus(): void
+  onBack(): void
+}) {
+  const { remainingSeconds, remainingLabel } = usePairingCountdown(expiresAt)
+  return (
+    <main class="state-screen ready-screen standalone-link-screen">
+      <PairingBackdrop posters={posters} />
+      <img class="state-brand" src={companionLockup} alt="izumi companion" />
+      <section class="standalone-link-panel">
+        <div class="standalone-link-copy">
+          <p class="state-kicker">INDEPENDENT TV SETUP</p>
+          <h1>Set up this TV directly</h1>
+          <p>Scan with your phone to connect this TV to your private Cloudflare setup. Supported sources and watch progress will work without keeping izumi open on another device.</p>
+          <div class="standalone-link-steps" aria-label="Setup overview">
+            <div><b>1</b><span>Scan the QR code</span></div>
+            <div><b>2</b><span>Complete the one-time phone setup</span></div>
+            <div><b>3</b><span>Return here to start watching</span></div>
+          </div>
+          <div class="standalone-link-status">
+            <strong>Phone setup preview</strong>
+            <span>The setup page is nearly ready. This QR currently opens the placeholder handoff.</span>
+          </div>
+          <button
+            type="button"
+            class={`standalone-link-back${backFocused ? ' is-focused' : ''}`}
+            data-focus-id="setting-0"
+            onFocus={onBackFocus}
+            onClick={onBack}
+          ><ChevronLeft size={25} aria-hidden="true" /> Back to pairing</button>
+        </div>
+        <aside class="standalone-qr-panel">
+          {qrCode
+            ? <div class="standalone-qr-shell"><img src={qrCode} alt="Open independent TV setup on your phone" /></div>
+            : <div class="standalone-qr-wait" role="status"><i aria-hidden="true" /><span>{connected ? 'Preparing secure link…' : 'Connecting this TV…'}</span></div>}
+          <strong>Scan with your phone</strong>
+          <span>tv-link.izumi.watch</span>
+          <div class="standalone-code">
+            <small>TV CODE</small>
+            <b>{pairingCode || '------'}</b>
+            {expiresAt && <em>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</em>}
+          </div>
+        </aside>
+      </section>
     </main>
   )
 }

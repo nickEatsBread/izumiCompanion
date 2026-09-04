@@ -9,6 +9,7 @@ export type ScreenName =
   | 'watch-history'
   | 'settings'
   | 'independent-setup'
+  | 'standalone-link'
   | 'details'
   | 'ready'
   | 'loading'

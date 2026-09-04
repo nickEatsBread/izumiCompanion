@@ -24,7 +24,7 @@ import {
 import { HomeScreen, trailerNeedsEnglishCaptions } from './components/HomeScreen'
 import { NavigationSkeleton } from './components/NavigationSkeleton'
 import { PreviewToolbar } from './components/PreviewToolbar'
-import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, type IndependentSetupPhase } from './components/StateScreens'
+import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, StandaloneLinkScreen, type IndependentSetupPhase } from './components/StateScreens'
 import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRail'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
@@ -44,6 +44,7 @@ import {
   wrappedHeroIndex,
 } from './lib/home-navigation'
 import { popNavigationEntry, pushNavigationEntry } from './lib/navigation-history'
+import { normalizeTvLinkCode, tvLinkUrl } from './lib/onboarding'
 import { registerRemoteKeys, remoteAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
@@ -253,7 +254,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'watch-history', 'settings', 'independent-setup', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'watch-history', 'settings', 'independent-setup', 'standalone-link', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -295,6 +296,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       ? { zone: 'series-action', index: 0 }
       : initialDestination === 'independent-setup'
         ? { zone: 'setting', index: 1 }
+      : initialDestination === 'ready' || initialDestination === 'standalone-link'
+        ? { zone: 'setting', index: 0 }
       : initialDestination === 'settings'
           ? { zone: 'setting', index: 0 }
           : initialDestination === 'my-list' || initialDestination === 'watch-history'
@@ -307,6 +310,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [paired, setPaired] = useState(Boolean(localStorage.getItem('izumi.companion.credential')))
   const [pairing, setPairing] = useState<PairingInfo>()
   const [qrCode, setQrCode] = useState<string>()
+  const [standaloneQrCode, setStandaloneQrCode] = useState<string>()
+  const standaloneChallenge = normalizeTvLinkCode(pairing?.challenge ?? (showPreviewTools ? 'TV42IZ' : ''))
+  const pairingDisplayCode = standaloneChallenge
+    ? `${standaloneChallenge.slice(0, 3)} ${standaloneChallenge.slice(3, 6)}`
+    : ''
   const [loadingProgress, setLoadingProgress] = useState(previewParameters.get('scenario') === 'buffering' ? 46 : 34)
   const [errorMessage, setErrorMessage] = useState('The TV player could not open this source.')
   const [player, setPlayer] = useState<PlayerView>({
@@ -1082,6 +1090,21 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }).then((value) => { if (!cancelled) setQrCode(value) })
     return () => { cancelled = true }
   }, [pairing?.link])
+
+  useEffect(() => {
+    if (!standaloneChallenge) {
+      setStandaloneQrCode(undefined)
+      return
+    }
+    let cancelled = false
+    void QRCode.toDataURL(tvLinkUrl(standaloneChallenge), {
+      width: 420,
+      margin: 2,
+      color: { dark: '#050505', light: '#ffffff' },
+      errorCorrectionLevel: 'H',
+    }).then((value) => { if (!cancelled) setStandaloneQrCode(value) })
+    return () => { cancelled = true }
+  }, [standaloneChallenge])
 
   useEffect(() => {
     const nativeVideo = avplayRef.current.available
@@ -1879,8 +1902,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (activeLoadRef.current) void startAvPlay(activeLoadRef.current)
     else if (paired) {
       if (!restorePreviousNavigation()) restoreHomeNavigation()
+    } else {
+      setScreen('ready')
+      changeFocus({ zone: 'setting', index: 0 })
     }
-    else setScreen('ready')
   }
 
   const requestMediaDetails = (media: CompanionMedia) => {
@@ -2559,6 +2584,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     changeFocus({ zone: 'setting', index: 1 })
   }
 
+  const openStandaloneLink = () => {
+    setScreen('standalone-link')
+    changeFocus({ zone: 'setting', index: 0 })
+  }
+
+  const closeStandaloneLink = () => {
+    setScreen('ready')
+    changeFocus({ zone: 'setting', index: 0 })
+  }
+
   const runSettingsAction = (index: number) => {
     if (!settingsConfirmation) {
       if (index < 7) {
@@ -2591,6 +2626,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSettingsConfirmation(null)
     setIndependentPlaybackReady(false)
     setScreen('ready')
+    changeFocus({ zone: 'setting', index: 0 })
   }
 
   const moveSettingsFocus = (action: RemoteAction) => {
@@ -2723,6 +2759,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       else if (canStart && (action === 'right' || action === 'down')) changeFocus({ zone: 'setting', index: 1 })
       else if (action === 'select') focus.index === 1 && canStart ? startIndependentSetup() : closeIndependentSetup()
       else if (action === 'back') closeIndependentSetup()
+      return
+    }
+    if (screen === 'standalone-link') {
+      if (action === 'select' || action === 'back') closeStandaloneLink()
       return
     }
     if (screen === 'details') {
@@ -2901,6 +2941,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (screen === 'ready') {
       if (action === 'back') requestExit()
+      else if (action === 'select') openStandaloneLink()
       return
     }
     if (action === 'back') requestExit()
@@ -2973,6 +3014,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setSettingsConfirmation(null)
       changeFocus({ zone: 'setting', index: 0 })
     }
+    if (next === 'ready' || next === 'standalone-link') changeFocus({ zone: 'setting', index: 0 })
     if (next === 'loading') setLoadingProgress(34)
     if (next === 'player') {
       setPlayerControlFocus(0)
@@ -3157,9 +3199,24 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         <ReadyScreen
           connected={connected}
           qrCode={qrCode}
-          pairingCode={pairing ? `${pairing.challenge.slice(0, 3)} ${pairing.challenge.slice(3, 6)}`.toUpperCase() : ''}
+          pairingCode={pairingDisplayCode}
           expiresAt={pairing?.expiresAt}
           posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
+          independentFocused={focus.zone === 'setting'}
+          onIndependentFocus={() => changeFocus({ zone: 'setting', index: 0 })}
+          onIndependent={openStandaloneLink}
+        />
+      )}
+      {screen === 'standalone-link' && (
+        <StandaloneLinkScreen
+          connected={connected}
+          qrCode={standaloneQrCode}
+          pairingCode={pairingDisplayCode}
+          expiresAt={pairing?.expiresAt}
+          posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
+          backFocused={focus.zone === 'setting'}
+          onBackFocus={() => changeFocus({ zone: 'setting', index: 0 })}
+          onBack={closeStandaloneLink}
         />
       )}
       {screen === 'loading' && (
