@@ -9,11 +9,11 @@ import type { FocusLocation } from '../types'
 import izumiMark from '../../brand/svg/izumi-mark-color.svg'
 
 const items = [
-  { label: 'Home', detail: 'Continue and discover', icon: House },
-  { label: 'Search', detail: 'Find any title', icon: Search },
-  { label: 'Browse', detail: 'Merged catalogue', icon: Compass },
-  { label: 'My List', detail: 'Saved for later', icon: Bookmark },
-  { label: 'Settings', detail: 'Playback and pairing', icon: Settings },
+  { label: 'Home', icon: House },
+  { label: 'Search', icon: Search },
+  { label: 'Browse', icon: Compass },
+  { label: 'My List', icon: Bookmark },
+  { label: 'Settings', icon: Settings },
 ]
 
 interface NavRailProps {
@@ -30,7 +30,7 @@ export const navItemCount = items.length
 export function NavRail({ activeIndex, focus, catalogLabel = 'Catalogue', expanded = false, onFocus, onSelect }: NavRailProps) {
   const markFocused = focus.zone === 'nav' && focus.index === -1
 
-  const renderItem = ({ label, detail, icon: Icon }: (typeof items)[number], index: number) => {
+  const renderItem = ({ label, icon: Icon }: (typeof items)[number], index: number) => {
     const focused = focus.zone === 'nav' && focus.index === index
     return (
       <button
@@ -48,7 +48,7 @@ export function NavRail({ activeIndex, focus, catalogLabel = 'Catalogue', expand
         <span class="nav-item-glyph">
           <Icon size={24} strokeWidth={2} aria-hidden="true" />
         </span>
-        <span class="nav-item-label"><strong>{label}</strong><small>{detail}</small></span>
+        <span class="nav-item-label"><strong>{label}</strong></span>
       </button>
     )
   }

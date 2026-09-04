@@ -636,9 +636,8 @@ async function main() {
     const navigation = await evaluate(`(() => ({
       width: document.querySelector('.nav-rail').getBoundingClientRect().width,
       items: Array.from(document.querySelectorAll('.nav-item-label strong')).map(function (item) { return item.textContent; }),
-      details: Array.from(document.querySelectorAll('.nav-item-label small')).map(function (item) { return item.textContent; }),
       labelLefts: Array.from(document.querySelectorAll('.nav-item-label strong')).map(function (item) { return Math.round(item.getBoundingClientRect().left); }),
-      detailLefts: Array.from(document.querySelectorAll('.nav-item-label small')).map(function (item) { return Math.round(item.getBoundingClientRect().left); }),
+      secondaryLabels: document.querySelectorAll('.nav-item-label small').length,
       focused: document.querySelector('.nav-item.is-focused').textContent,
       retainedRow: Number(document.querySelector('.media-row.is-active').getAttribute('data-home-row')),
       retainedIndex: Number(document.querySelector('.home-focus-card.is-focused').getAttribute('data-media-index')),
@@ -648,9 +647,8 @@ async function main() {
     }))()`)
     assert(navigation.width >= 370 && navigation.width <= 430, `Navigation drawer width is ${navigation.width}px.`)
     assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","My List","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
-    assert(navigation.details.every((detail) => detail.length > 0), 'Navigation destinations are missing descriptions.')
+    assert(navigation.secondaryLabels === 0, 'Navigation still renders secondary description text.')
     assert(Math.max(...navigation.labelLefts) - Math.min(...navigation.labelLefts) <= 1, `Navigation labels are not aligned: ${navigation.labelLefts}.`)
-    assert(Math.max(...navigation.detailLefts) - Math.min(...navigation.detailLefts) <= 1, `Navigation descriptions are not aligned: ${navigation.detailLefts}.`)
     assert(navigation.retainedRow === 1 && navigation.retainedIndex === 0 && navigation.retainedRowTop === 52, `Opening the sidebar reset the active rail: ${JSON.stringify(navigation)}.`)
     assert(navigation.rowsClass.includes('is-browsing') && navigation.heroReceding, `Opening the sidebar restored the top-of-page presentation: ${JSON.stringify(navigation)}.`)
     await capture('m56-navigation.png')

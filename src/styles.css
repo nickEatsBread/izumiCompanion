@@ -270,11 +270,11 @@ body.avplay-visible #av-player {
 
 .nav-rail.is-open .nav-item {
   width: calc(100% - .8vw);
-  min-height: 74px;
-  height: auto;
+  min-height: 64px;
+  height: 64px;
   margin: 0 .4vw;
   justify-content: flex-start;
-  padding: 13px 1.1vw;
+  padding: 10px 1.1vw;
   border-radius: 8px;
 }
 
@@ -327,10 +327,8 @@ body.avplay-visible #av-player {
 .nav-rail.is-open .nav-utility { align-items: stretch; margin-top: 8px; }
 .nav-rail.is-open .nav-item.is-active:not(.is-focused) .nav-item-glyph { background: rgba(255, 255, 255, .12); }
 
-.nav-item-label strong,
-.nav-item-label small { display: block; overflow: hidden; text-overflow: ellipsis; }
+.nav-item-label strong { display: block; overflow: hidden; text-overflow: ellipsis; }
 .nav-item-label strong { font-size: clamp(17px, 1.05vw, 21px); font-weight: 800; }
-.nav-item-label small { margin-top: 3px; color: #777; font-size: clamp(12px, .72vw, 15px); font-weight: 650; }
 
 .nav-rail.is-open .nav-item-label {
   opacity: 1;
@@ -338,7 +336,6 @@ body.avplay-visible #av-player {
 }
 
 .nav-rail.is-open .nav-item.is-focused .nav-item-label { color: #090909; }
-.nav-rail.is-open .nav-item.is-focused .nav-item-label small { color: #595959; }
 .nav-rail.is-open .nav-item.is-active:not(.is-focused) { background: rgba(255, 255, 255, .075); }
 
 .navigation-skeleton {
