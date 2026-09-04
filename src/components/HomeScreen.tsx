@@ -23,7 +23,7 @@ interface HomeScreenProps {
   hero: CompanionMedia
   heroIndex: number
   heroCount: number
-  page?: 'home' | 'browse'
+  page?: 'home' | 'browse' | 'series' | 'movies'
   carouselLayout: boolean
   focus: FocusLocation
   returnFocus: FocusLocation
@@ -794,7 +794,7 @@ export function HomeScreen({
   return (
     <main
       class={`home-screen page-${page} mode-${carouselLayout ? 'carousel' : 'spotlight'}${browsingRows ? ' is-browsing' : ''}`}
-      aria-label={page === 'browse' ? 'Browse merged catalogue' : 'Home'}
+      aria-label={page === 'browse' ? 'Browse merged catalogue' : page === 'series' ? 'Series' : page === 'movies' ? 'Movies' : 'Home'}
     >
       <NavRail
         activeIndex={activeNav}

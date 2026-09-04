@@ -3,6 +3,7 @@ import type { CompanionCatalogOption, CompanionHomeRow, CompanionHomeSnapshot, C
 export const MERGED_CATALOG_SCREEN = 'merged'
 
 export type CatalogMediaDestination = 'details' | 'series'
+export type HomeMediaKind = 'movie' | 'show'
 
 /** Catalogue tiles always open a title page. Continue Watching owns the only shelf-level
  * direct-play shortcut, while provider mediaKind corrects inconsistent legacy ref types. */
@@ -128,6 +129,32 @@ export function orderedHomeRows(rows: CompanionHomeRow[]): CompanionHomeRow[] {
       return priority(left.row) - priority(right.row) || left.index - right.index
     })
     .map(({ row }) => row)
+}
+
+export function homeMediaMatchesKind(media: CompanionMedia, kind: HomeMediaKind): boolean {
+  if (media.mediaKind) return media.mediaKind === kind
+  if (kind === 'movie') return media.ref.type === 'movie'
+  return ['anime', 'series', 'tv', 'show'].includes(media.ref.type.toLowerCase())
+}
+
+/** Project the normal Home experience onto one media type without duplicating rows or protocol
+ * data. Empty shelves disappear and the first matching title becomes the featured hero. */
+export function homeSnapshotForKind(snapshot: CompanionHomeSnapshot, kind: HomeMediaKind): CompanionHomeSnapshot {
+  const filter = (items: CompanionMedia[] | undefined) => items?.filter((item) => homeMediaMatchesKind(item, kind))
+  const rows = snapshot.rows
+    .map((row) => ({ ...row, items: row.items.filter((item) => homeMediaMatchesKind(item, kind)) }))
+    .filter((row) => row.items.length > 0)
+  const hero = snapshot.hero && homeMediaMatchesKind(snapshot.hero, kind)
+    ? snapshot.hero
+    : rows[0]?.items[0]
+  const views = snapshot.views ? {
+    search: filter(snapshot.views.search),
+    trending: filter(snapshot.views.trending),
+    series: filter(snapshot.views.series),
+    movies: filter(snapshot.views.movies),
+    myList: filter(snapshot.views.myList),
+  } : undefined
+  return { ...snapshot, hero, rows, ...(views ? { views } : {}) }
 }
 
 /** Build a small featured rail from provider-authored hero/trending data without extending protocol v1. */

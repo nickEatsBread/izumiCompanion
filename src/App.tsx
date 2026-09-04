@@ -24,7 +24,7 @@ import { HomeScreen, trailerNeedsEnglishCaptions } from './components/HomeScreen
 import { NavigationSkeleton } from './components/NavigationSkeleton'
 import { PreviewToolbar } from './components/PreviewToolbar'
 import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, type IndependentSetupPhase } from './components/StateScreens'
-import { navItemCount } from './components/NavRail'
+import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRail'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
@@ -34,6 +34,7 @@ import {
   catalogMediaDestination,
   homeDetailPrefetchTargets,
   homeHeroItems,
+  homeSnapshotForKind,
   isMergedCatalog,
   mergeHomeMediaDetails,
   mergedCatalogOption,
@@ -193,8 +194,18 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings', 'independent-setup', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'settings', 'independent-setup', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
+}
+
+type CinematicDestination = 'home' | 'trending' | 'series-home' | 'movies'
+
+function cinematicSnapshotFor(snapshot: CompanionHomeSnapshot, destination: CinematicDestination): CompanionHomeSnapshot {
+  const ordered = { ...snapshot, rows: orderedHomeRows(snapshot.rows) }
+  if (destination === 'trending') return { ...snapshot, rows: browseCategoryRows(snapshot) }
+  if (destination === 'series-home') return homeSnapshotForKind(ordered, 'show')
+  if (destination === 'movies') return homeSnapshotForKind(ordered, 'movie')
+  return ordered
 }
 
 export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
@@ -205,10 +216,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const requestedPreviewCatalog = previewParameters.get('catalog')
     ?? (initialDestination === 'trending' ? 'merged' : previewSnapshot.catalog.screen)
   const initialPreviewSnapshot = useMemo(() => previewSnapshotForCatalog(requestedPreviewCatalog), [requestedPreviewCatalog])
+  const initialDisplaySnapshot = useMemo(() => ['home', 'trending', 'series-home', 'movies'].includes(initialDestination)
+    ? cinematicSnapshotFor(initialPreviewSnapshot, initialDestination as CinematicDestination)
+    : initialPreviewSnapshot, [initialDestination, initialPreviewSnapshot])
   const [screen, setScreen] = useState<ScreenName>(initialDestination)
   const [snapshot, setSnapshot] = useState<CompanionHomeSnapshot>(initialPreviewSnapshot)
   const [selected, setSelected] = useState<CompanionMedia>(() => {
-    const media = initialPreviewSnapshot.hero ?? fallbackMedia
+    const media = initialDisplaySnapshot.hero ?? initialDisplaySnapshot.rows[0]?.items[0] ?? fallbackMedia
     return showPreviewTools && (initialDestination === 'series' || initialDestination === 'details')
       ? previewDetailsFor(media)
       : media
@@ -223,12 +237,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         : initialDestination === 'settings'
           ? { zone: 'setting', index: 0 }
           : { zone: 'hero', index: 0 })
-  const [activeNav, setActiveNav] = useState(
-    initialDestination === 'search' ? 1
-      : initialDestination === 'trending' || initialDestination === 'series' || initialDestination === 'movies' ? 2
-        : initialDestination === 'my-list' ? 3
-          : initialDestination === 'settings' || initialDestination === 'independent-setup' ? 4 : 0,
-  )
+  const [activeNav, setActiveNav] = useState(navIndexFor(initialDestination))
   const [notice, setNotice] = useState('')
   const [safeArea, setSafeArea] = useState(false)
   const [connected, setConnected] = useState(false)
@@ -794,8 +803,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       onSnapshot: (next) => {
         const pendingCatalog = catalogRequestRef.current
         if (pendingCatalog && next.catalog.screen !== pendingCatalog.screen) return
+        const currentCinematicDestination = (['trending', 'series-home', 'movies'] as ScreenName[]).includes(screenRef.current)
+          ? screenRef.current as CinematicDestination
+          : 'home'
         const destination = pendingCatalog?.destination
-          ?? (screenRef.current === 'trending' && isMergedCatalog(next) ? 'trending' : 'home')
+          ?? (currentCinematicDestination === 'trending' && !isMergedCatalog(next) ? 'home' : currentCinematicDestination)
         const completedCatalogRequest = Boolean(pendingCatalog && next.catalog.screen === pendingCatalog.screen)
         if (completedCatalogRequest && pendingCatalog) {
           window.clearTimeout(pendingCatalog.timer)
@@ -806,9 +818,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         homeRowIndexesRef.current = {}
         heroIndexRef.current = 0
         setHeroIndex(0)
-        setSelected(next.hero ?? next.rows[0]?.items[0] ?? fallbackMedia)
+        const displaySnapshot = cinematicSnapshotFor(next, destination)
+        setSelected(displaySnapshot.hero ?? displaySnapshot.rows[0]?.items[0] ?? fallbackMedia)
         setFocusLocation({ zone: 'hero', index: 0 })
-        setActiveNav(destination === 'trending' ? 2 : 0)
+        setActiveNav(navIndexFor(destination))
         setScreen(destination)
         if (completedCatalogRequest) finishNavigationTransition()
         settleStartupAfterPaint()
@@ -992,7 +1005,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     // Chromium 56 accepts the focus options object but ignores preventScroll. During the Home
     // entrance animation it can otherwise scroll the hidden 1080p root to center the incoming
     // rail, leaving every settled row above the physical TV viewport.
-    if (screen === 'home' || screen === 'trending') {
+    if (['home', 'trending', 'series-home', 'movies'].includes(screen)) {
       const home = element.closest<HTMLElement>('.home-screen')
       const track = element.closest<HTMLElement>('.home-motion-track')
       if (home) {
@@ -1150,12 +1163,21 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   // Focus moves many times per second on a remote. None of these catalogue/search projections
   // depend on focus, so keep their arrays stable until the paired device sends a new snapshot.
-  const cinematicScreen = screen === 'home' || screen === 'trending'
+  const cinematicScreen = ['home', 'trending', 'series-home', 'movies'].includes(screen)
   const collections = useMemo(() => catalogCollections(snapshot), [snapshot])
   const homeRows = useMemo(() => orderedHomeRows(snapshot.rows), [snapshot.rows])
   const browseRows = useMemo(() => browseCategoryRows(snapshot), [snapshot])
-  const cinematicRows = screen === 'trending' ? browseRows : homeRows
-  const homeHeroRail = useMemo(() => homeHeroItems(snapshot), [snapshot])
+  const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
+  const browseSnapshot = useMemo(() => ({ ...snapshot, rows: browseRows }), [snapshot, browseRows])
+  const seriesHomeSnapshot = useMemo(() => homeSnapshotForKind(homeSnapshot, 'show'), [homeSnapshot])
+  const movieHomeSnapshot = useMemo(() => homeSnapshotForKind(homeSnapshot, 'movie'), [homeSnapshot])
+  const cinematicSnapshot = screen === 'trending' ? browseSnapshot
+    : screen === 'series-home' ? seriesHomeSnapshot
+      : screen === 'movies' ? movieHomeSnapshot
+        : homeSnapshot
+  const cinematicRows = cinematicSnapshot.rows
+  const heroRailSnapshot = screen === 'trending' ? snapshot : cinematicSnapshot
+  const homeHeroRail = useMemo(() => homeHeroItems(heroRailSnapshot), [heroRailSnapshot])
   const focusedHomeMedia = cinematicScreen && focus.zone === 'row'
     ? cinematicRows[focus.row]?.items[focus.index]
     : undefined
@@ -1320,8 +1342,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
     return () => window.clearTimeout(timer)
   }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, focusedHomeMedia?.trailer?.language, playbackSettings.videoPreviewsEnabled, screen, showPreviewTools])
-  const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
-  const browseSnapshot = useMemo(() => ({ ...snapshot, rows: browseRows }), [snapshot, browseRows])
   const allMedia = collections.search
   const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
@@ -1418,16 +1438,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const enterCinematicDestination = (
-    destination: 'home' | 'trending',
+    destination: CinematicDestination,
     nextSnapshot: CompanionHomeSnapshot = snapshot,
   ) => {
+    const displaySnapshot = cinematicSnapshotFor(nextSnapshot, destination)
     homeRowIndexesRef.current = {}
     heroIndexRef.current = 0
     setHeroIndex(0)
-    setSelected(nextSnapshot.hero ?? nextSnapshot.rows[0]?.items[0] ?? fallbackMedia)
+    setSelected(displaySnapshot.hero ?? displaySnapshot.rows[0]?.items[0] ?? fallbackMedia)
     lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
     setCatalogMenuOpen(false)
-    setActiveNav(destination === 'trending' ? 2 : 0)
+    setActiveNav(navIndexFor(destination))
     setScreen(destination)
     changeFocus({ zone: 'hero', index: 0 })
   }
@@ -1458,7 +1479,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const previousIndex = Math.max(0, catalogOptions.findIndex((catalog) => catalog.screen === snapshot.catalog.screen))
     catalogRequestRef.current = { screen: option.screen, label: option.label, timer, previousIndex, destination }
     setCatalogMenuOpen(false)
-    setActiveNav(destination === 'trending' ? 2 : 0)
+    setActiveNav(navIndexFor(destination))
     setScreen(destination)
     if (destination === 'trending') changeFocus({ zone: 'hero', index: 0 })
     else changeFocus({ zone: 'nav', index: -1 })
@@ -1629,13 +1650,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const openSeries = (media: CompanionMedia) => {
     closeTrailer()
+    if (screen !== 'series') {
+      detailReturnScreenRef.current = screen
+      detailReturnFocusRef.current = focusRef.current
+    }
     setSelected(media)
     const seasonCounts = episodeCountsFor(media)
     const initialSeason = seasonCounts.length > 1
       ? Math.max(0, Math.min(seasonCounts.length - 1, (media.season ?? 1) - 1))
       : 0
     setSeriesSeason(initialSeason)
-    setActiveNav(2)
     setCatalogMenuOpen(false)
     setScreen('series')
     changeFocus(initialSeriesFocus())
@@ -1693,8 +1717,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     closeTrailer()
     setCatalogMenuOpen(false)
     setSettingsConfirmation(null)
-    const destinations: ScreenName[] = ['home', 'search', 'trending', 'my-list', 'settings']
-    const destination = destinations[index] ?? 'home'
+    const destination = navDestinationAt(index)
     if (destination === 'trending') {
       if (isMergedCatalog(snapshot)) {
         if (destination !== screen) beginNavigationTransition()
@@ -1702,25 +1725,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       } else requestCatalogOption(mergedCatalogOption(snapshot), 'trending')
       return
     }
+    if (destination === 'home' || destination === 'series-home' || destination === 'movies') {
+      if (destination !== screen) beginNavigationTransition()
+      enterCinematicDestination(destination)
+      return
+    }
     setActiveNav(index)
     if (destination !== screen) beginNavigationTransition()
     setScreen(destination)
-    if (destination === 'home') {
-      heroIndexRef.current = 0
-      setHeroIndex(0)
-      setSelected(snapshot.hero ?? snapshot.rows[0]?.items[0] ?? fallbackMedia)
-      lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
-      changeFocus({ zone: 'hero', index: 0 })
-    } else if (destination === 'search') {
+    if (destination === 'search') {
       setSearchPerson(undefined)
       changeSearchKeyFocus(0)
-    }
-    else if (destination === 'series') {
-      const firstSeries = seriesItems[0] ?? fallbackMedia
-      setSeriesSeason(0)
-      setSelected(firstSeries)
-      changeFocus(initialSeriesFocus())
-      requestMediaDetails(firstSeries)
     }
     else if (destination === 'settings') changeFocus({ zone: 'setting', index: 0 })
     else {
@@ -2232,13 +2247,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setIndependentSetupError('')
     setIndependentSetupPhase(independentPlaybackReady ? 'ready' : 'intro')
     setScreen('independent-setup')
-    setActiveNav(4)
+    setActiveNav(navIndexFor('settings'))
     changeFocus({ zone: 'setting', index: independentPlaybackReady ? 0 : 1 })
   }
 
   const closeIndependentSetup = () => {
     setScreen('settings')
-    setActiveNav(4)
+    setActiveNav(navIndexFor('settings'))
     changeFocus({ zone: 'setting', index: 6 })
   }
 
@@ -2335,7 +2350,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       return
     }
-    if (screen === 'home' || screen === 'trending') {
+    if (cinematicScreen) {
       if (catalogMenuOpen) {
         if (action === 'up' || action === 'down') {
           const offset = action === 'up' ? -1 : 1
@@ -2385,11 +2400,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if (focus.zone === 'series-season' || focus.zone === 'episode') changeFocus({ zone: 'series-action', index: Math.max(0, actions.indexOf('episodes')) })
         else if (focus.zone === 'relation') changeFocus({ zone: 'series-action', index: Math.max(0, actions.indexOf('relations')) })
         else if (focus.zone === 'person') changeFocus({ zone: 'series-action', index: actions.length - 1 })
-        else selectNav(0)
+        else {
+          const destination = detailReturnScreenRef.current
+          setScreen(destination)
+          setActiveNav(navIndexFor(destination))
+          setFocusLocation(detailReturnFocusRef.current)
+        }
       }
       return
     }
-    if (['movies', 'my-list'].includes(screen)) {
+    if (screen === 'my-list') {
       if (['up', 'down', 'left', 'right'].includes(action)) moveBrowseFocus(action)
       else if (action === 'select') {
         if (focus.zone === 'nav') selectNav(focus.index)
@@ -2597,8 +2617,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       else requestCatalogOption(mergedCatalogOption(snapshot), 'trending')
       return
     }
-    if (['series', 'movies', 'my-list'].includes(next)) {
-      const navIndex = next === 'my-list' ? 3 : 2
+    if (next === 'series-home' || next === 'movies') {
+      enterCinematicDestination(next)
+      return
+    }
+    if (['series', 'my-list'].includes(next)) {
+      const navIndex = next === 'my-list' ? navIndexFor('my-list') : navIndexFor('series-home')
       const items = browseItemsFor(next)
       setActiveNav(navIndex)
       setSelected(items[0] ?? fallbackMedia)
@@ -2608,7 +2632,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       } else changeFocus({ zone: 'grid', index: 0 })
     }
     if (next === 'settings') {
-      setActiveNav(4)
+      setActiveNav(navIndexFor('settings'))
       setSettingsConfirmation(null)
       changeFocus({ zone: 'setting', index: 0 })
     }
@@ -2635,13 +2659,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   return (
     <div class={`app-shell screen-${screen}${safeArea ? ' show-safe-area' : ''}`}>
-      {(screen === 'home' || screen === 'trending') && (
+      {cinematicScreen && (
         <HomeScreen
-          snapshot={screen === 'trending' ? browseSnapshot : homeSnapshot}
+          snapshot={cinematicSnapshot}
           hero={selected}
           heroIndex={heroIndex}
           heroCount={homeHeroRail.length}
-          page={screen === 'trending' ? 'browse' : 'home'}
+          page={screen === 'trending' ? 'browse' : screen === 'series-home' ? 'series' : screen === 'movies' ? 'movies' : 'home'}
           carouselLayout={playbackSettings.homeCarouselLayout}
           focus={focus}
           returnFocus={lastHomeContentFocusRef.current}
@@ -2737,11 +2761,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           trailerError={trailerError}
         />
       )}
-      {(['movies', 'my-list'] as const).map((name) => screen === name && (
+      {(['my-list'] as const).map((name) => screen === name && (
         <CatalogScreen
           mode={name}
-          title={name === 'movies' ? 'Movies' : 'My List'}
-          description={name === 'movies' ? 'Feature-length stories for tonight.' : 'Saved and in-progress titles from your izumi library.'}
+          title="My List"
+          description="Saved and in-progress titles from your izumi library."
           items={browseItemsFor(name)}
           selected={selected}
           focus={focus}
@@ -2875,7 +2899,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         />
       )}
       {screen === 'error' && <ErrorScreen message={errorMessage} onRetry={retryPlayback} />}
-      {navigationPhase !== 'idle' && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings'].includes(screen) && (
+      {navigationPhase !== 'idle' && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'settings'].includes(screen) && (
         <NavigationSkeleton screen={screen} leaving={navigationPhase === 'leaving'} />
       )}
       {exitConfirmation && (

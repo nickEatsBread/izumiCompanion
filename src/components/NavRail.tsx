@@ -1,19 +1,23 @@
 import {
   Bookmark,
   Compass,
+  Film,
   House,
   Search,
   Settings,
+  Tv,
 } from 'lucide-preact'
-import type { FocusLocation } from '../types'
+import type { FocusLocation, ScreenName } from '../types'
 import izumiMark from '../../brand/svg/izumi-mark-color.svg'
 
-const items = [
-  { label: 'Home', icon: House },
-  { label: 'Search', icon: Search },
-  { label: 'Browse', icon: Compass },
-  { label: 'My List', icon: Bookmark },
-  { label: 'Settings', icon: Settings },
+const items: Array<{ label: string; icon: typeof House; destination: ScreenName }> = [
+  { label: 'Home', icon: House, destination: 'home' },
+  { label: 'Search', icon: Search, destination: 'search' },
+  { label: 'Browse', icon: Compass, destination: 'trending' },
+  { label: 'Series', icon: Tv, destination: 'series-home' },
+  { label: 'Movies', icon: Film, destination: 'movies' },
+  { label: 'My List', icon: Bookmark, destination: 'my-list' },
+  { label: 'Settings', icon: Settings, destination: 'settings' },
 ]
 
 interface NavRailProps {
@@ -26,6 +30,18 @@ interface NavRailProps {
 }
 
 export const navItemCount = items.length
+
+export function navDestinationAt(index: number): ScreenName {
+  return items[index]?.destination ?? 'home'
+}
+
+export function navIndexFor(destination: ScreenName): number {
+  if (destination === 'series') return 3
+  if (destination === 'details') return 4
+  if (destination === 'independent-setup') return 6
+  const index = items.findIndex((item) => item.destination === destination)
+  return index < 0 ? 0 : index
+}
 
 export function NavRail({ activeIndex, focus, catalogLabel = 'Catalogue', expanded = false, onFocus, onSelect }: NavRailProps) {
   const markFocused = focus.zone === 'nav' && focus.index === -1

@@ -5,6 +5,8 @@ import {
   cyclicRailIndexes,
   homeDetailPrefetchTargets,
   homeHeroItems,
+  homeMediaMatchesKind,
+  homeSnapshotForKind,
   isMergedCatalog,
   mergeHomeMediaDetails,
   mergedCatalogOption,
@@ -36,6 +38,33 @@ describe('TV home navigation model', () => {
   it('puts Continue Watching before ranked and catalogue rows', () => {
     const rows = [row('new', 'New releases', 'catalog'), row('top', 'Trending now', 'catalog'), row('continue', 'Continue Watching', 'continue')]
     expect(orderedHomeRows(rows).map(({ id }) => id)).toEqual(['continue', 'top', 'new'])
+  })
+
+  it('builds Home-style Series and Movies projections without leaking the other media type', () => {
+    const show = media('show')
+    const movie: CompanionMedia = { ...media('movie'), mediaKind: 'movie', ref: { provider: 'tmdb', type: 'movie', id: 'movie' } }
+    const snapshot: CompanionHomeSnapshot = {
+      app: 'izumi',
+      kind: 'companion-home',
+      version: 1,
+      revision: 'media-types',
+      generatedAt: 1,
+      catalog: { screen: 'preview', label: 'Preview' },
+      hero: movie,
+      rows: [
+        row('mixed', 'Popular', 'catalog', [movie, show]),
+        row('movie-only', 'Movies', 'catalog', [movie]),
+      ],
+      views: { trending: [movie, show] },
+    }
+
+    const series = homeSnapshotForKind(snapshot, 'show')
+    const movies = homeSnapshotForKind(snapshot, 'movie')
+    expect(series.hero).toBe(show)
+    expect(series.rows).toHaveLength(1)
+    expect(series.views?.trending).toEqual([show])
+    expect(movies.rows.flatMap(({ items }) => items).every((item) => homeMediaMatchesKind(item, 'movie'))).toBe(true)
+    expect(homeHeroItems(series)).toEqual([show])
   })
 
   it('builds a unique five-item hero rail from provider-ranked media', () => {

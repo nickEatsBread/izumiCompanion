@@ -2,6 +2,7 @@ export type ScreenName =
   | 'home'
   | 'search'
   | 'trending'
+  | 'series-home'
   | 'series'
   | 'movies'
   | 'my-list'
