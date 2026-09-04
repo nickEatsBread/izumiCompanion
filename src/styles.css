@@ -3312,7 +3312,7 @@ body.avplay-visible #av-player {
   border: 1px solid rgba(255, 255, 255, .22);
   display: flex;
   align-items: center;
-  gap: 27px;
+  gap: 42px;
   color: #fff;
   background: rgba(8, 8, 8, .86);
   box-shadow: 0 18px 54px rgba(0, 0, 0, .5);
