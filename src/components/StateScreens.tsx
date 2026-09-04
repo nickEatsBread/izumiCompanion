@@ -30,6 +30,74 @@ import type {
   SubtitlePreferences,
 } from '../types'
 
+export type IndependentSetupPhase = 'intro' | 'waiting' | 'ready' | 'error'
+
+export function IndependentSetupScreen({
+  phase,
+  connected,
+  focusIndex,
+  error,
+  onFocus,
+  onBack,
+  onStart,
+}: {
+  phase: IndependentSetupPhase
+  connected: boolean
+  focusIndex: number
+  error?: string
+  onFocus(index: number): void
+  onBack(): void
+  onStart(): void
+}) {
+  const canStart = phase === 'intro' || phase === 'error'
+  return (
+    <main class="state-screen independent-setup-screen">
+      <img class="state-brand" src={companionLockup} alt="izumi companion" />
+      <section class="independent-setup-panel">
+        <header class="independent-setup-heading">
+          <p>Independent TV playback</p>
+          <h1>Use this TV without keeping izumi open</h1>
+          <span>A one-time Cloudflare Worker setup gives your TV a private route to the parts of izumi it needs.</span>
+        </header>
+
+        <div class="independent-setup-features">
+          <article><b>01</b><div><h2>Watch progress</h2><p>Keep your izumi playtime available across your devices through your private Worker.</p></div></article>
+          <article><b>02</b><div><h2>Most sources</h2><p>Resolve compatible add-on sources and optional debrid links without leaving another device running.</p></div></article>
+          <article><b>03</b><div><h2>TV-first playback</h2><p>Start supported titles directly here. Device-only and P2P sources may still need izumi open.</p></div></article>
+        </div>
+
+        <div class="independent-setup-instruction">
+          <strong>This takes approximately 10 minutes.</strong>
+          <p>Open izumi on the device currently linked to this TV, then select OK.</p>
+        </div>
+
+        <footer class={`independent-setup-footer phase-${phase}`}>
+          {phase === 'waiting' && <div class="independent-setup-progress" role="status">
+            <i aria-hidden="true" />
+            <div><strong>Continue on your linked device</strong><span>izumi opened the private Worker setup for this TV.</span></div>
+          </div>}
+          {phase === 'ready' && <div class="independent-setup-progress is-ready" role="status">
+            <Check size={36} aria-hidden="true" />
+            <div><strong>This TV is ready</strong><span>Independent playback is connected to your private Worker.</span></div>
+          </div>}
+          {phase === 'error' && <div class="independent-setup-progress is-error" role="alert">
+            <AlertTriangle size={34} aria-hidden="true" />
+            <div><strong>Setup could not open</strong><span>{error || 'Make sure izumi is open on the linked device, then try again.'}</span></div>
+          </div>}
+          <div class="independent-setup-actions">
+            <button type="button" class={focusIndex === 0 ? 'is-focused' : ''} data-focus-id="setting-0" onFocus={() => onFocus(0)} onClick={onBack}>
+              {phase === 'ready' ? 'Done' : 'Back'}
+            </button>
+            {canStart && <button type="button" class={focusIndex === 1 ? 'is-focused' : ''} data-focus-id="setting-1" onFocus={() => onFocus(1)} onClick={onStart}>
+              {phase === 'error' ? 'Try again' : connected ? 'OK' : 'Open izumi, then OK'}
+            </button>}
+          </div>
+        </footer>
+      </section>
+    </main>
+  )
+}
+
 export function ReadyScreen({
   connected,
   qrCode,

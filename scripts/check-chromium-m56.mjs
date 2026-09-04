@@ -1010,7 +1010,7 @@ async function main() {
     await capture('m56-post-play.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=settings` })
-    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 8")
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 9")
     await waitFor("!document.getElementById('startup-splash')")
     const settings = await evaluate(`(() => ({
       options: document.querySelectorAll('.settings-options > button').length,
@@ -1020,7 +1020,7 @@ async function main() {
       panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(settings.options === 8 && settings.toggles === 6, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.options === 9 && settings.toggles === 6, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
     assert(settings.videoPreviewLabel === 'Video previews' && settings.videoPreviewsEnabled === 'true', `Video-preview preference is missing or defaults incorrectly: ${JSON.stringify(settings)}.`)
     assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
     assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
@@ -1031,10 +1031,30 @@ async function main() {
     const previewsDisabled = await evaluate("JSON.parse(localStorage.getItem('izumi.companion.playback-experience')).videoPreviewsEnabled === false")
     assert(previewsDisabled, 'The video-preview opt-out was not persisted.')
 
+    await evaluate("document.querySelectorAll('.settings-options > button')[6].click()")
+    await waitFor("document.querySelector('.independent-setup-screen .independent-setup-heading h1')")
+    const independentSetup = await evaluate(`(() => ({
+      title: document.querySelector('.independent-setup-heading h1').textContent.trim(),
+      titleSize: parseFloat(getComputedStyle(document.querySelector('.independent-setup-heading h1')).fontSize),
+      instructionSize: parseFloat(getComputedStyle(document.querySelector('.independent-setup-instruction p')).fontSize),
+      logoWidth: document.querySelector('.independent-setup-screen .state-brand').naturalWidth,
+      actions: document.querySelectorAll('.independent-setup-actions button').length,
+      body: [document.body.scrollWidth, document.body.scrollHeight]
+    }))()`)
+    assert(independentSetup.title === 'Use this TV without keeping izumi open', `Independent setup title is wrong: ${independentSetup.title}.`)
+    assert(independentSetup.titleSize >= 60 && independentSetup.instructionSize >= 24, `Independent setup type is too small for TV: ${JSON.stringify(independentSetup)}.`)
+    assert(independentSetup.logoWidth > 0 && independentSetup.actions === 2, `Independent setup branding/actions did not render: ${JSON.stringify(independentSetup)}.`)
+    assert(JSON.stringify(independentSetup.body) === '[1920,1080]', `Independent setup overflowed the TV viewport: ${independentSetup.body}.`)
+    await evaluate("document.querySelector('.independent-setup-actions button:last-child').click()")
+    await waitFor("document.querySelector('.independent-setup-progress > i')")
+    const spinner = await evaluate("getComputedStyle(document.querySelector('.independent-setup-progress > i')).borderTopColor")
+    assert(spinner === 'rgb(255, 255, 255)', `Independent setup spinner is not white: ${spinner}.`)
+    await capture('m56-independent-setup.png')
+
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write('Chromium 56 check passed: Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, and no application runtime errors.\n')
+    process.stdout.write('Chromium 56 check passed: Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, and no application runtime errors.\n')
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()

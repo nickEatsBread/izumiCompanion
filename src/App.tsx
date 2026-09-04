@@ -23,7 +23,7 @@ import {
 import { HomeScreen } from './components/HomeScreen'
 import { NavigationSkeleton } from './components/NavigationSkeleton'
 import { PreviewToolbar } from './components/PreviewToolbar'
-import { ErrorScreen, ExitConfirmation, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen } from './components/StateScreens'
+import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, type IndependentSetupPhase } from './components/StateScreens'
 import { navItemCount } from './components/NavRail'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
@@ -192,7 +192,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series', 'movies', 'my-list', 'settings', 'independent-setup', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -217,12 +217,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     ? { zone: 'detail', index: 0 }
     : initialDestination === 'series'
       ? { zone: 'series-action', index: 0 }
-      : { zone: 'hero', index: 0 })
+      : initialDestination === 'independent-setup'
+        ? { zone: 'setting', index: 1 }
+        : initialDestination === 'settings'
+          ? { zone: 'setting', index: 0 }
+          : { zone: 'hero', index: 0 })
   const [activeNav, setActiveNav] = useState(
     initialDestination === 'search' ? 1
       : initialDestination === 'trending' || initialDestination === 'series' || initialDestination === 'movies' ? 2
         : initialDestination === 'my-list' ? 3
-          : initialDestination === 'settings' ? 4 : 0,
+          : initialDestination === 'settings' || initialDestination === 'independent-setup' ? 4 : 0,
   )
   const [notice, setNotice] = useState('')
   const [safeArea, setSafeArea] = useState(false)
@@ -287,6 +291,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [searchError, setSearchError] = useState('')
   const [seriesSeason, setSeriesSeason] = useState(0)
   const [settingsConfirmation, setSettingsConfirmation] = useState<SettingsConfirmation>(null)
+  const [independentPlaybackReady, setIndependentPlaybackReady] = useState(false)
+  const [independentSetupPhase, setIndependentSetupPhase] = useState<IndependentSetupPhase>('intro')
+  const [independentSetupError, setIndependentSetupError] = useState('')
   const [catalogMenuOpen, setCatalogMenuOpen] = useState(false)
   const [catalogMenuFocus, setCatalogMenuFocus] = useState(0)
   const [navigationPhase, setNavigationPhase] = useState<'idle' | 'loading' | 'leaving'>('idle')
@@ -819,6 +826,20 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       },
       onControl: handleControl,
       onDeviceSourceAvailability: setDeviceSourceChangeAvailable,
+      onIndependentPlaybackReady: (ready) => {
+        setIndependentPlaybackReady(ready)
+        if (ready && screenRef.current === 'independent-setup') setIndependentSetupPhase('ready')
+      },
+      onWorkerSetupStatus: (status, message) => {
+        if (status === 'opened' || status === 'starting') setIndependentSetupPhase('waiting')
+        else if (status === 'dismissed') {
+          setIndependentSetupPhase('intro')
+          showNotice('Setup was closed on the linked device')
+        } else {
+          setIndependentSetupError(message || 'The linked device could not open setup.')
+          setIndependentSetupPhase('error')
+        }
+      },
       onDeviceSourceOptions: (options) => {
         setDeviceSourceOptions(options)
         setPlayerMenu('source')
@@ -1556,7 +1577,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setErrorMessage('Your private izumi Worker could not be reached. Check its deployment and try again.')
       setScreen('error')
     } else if (result === 'no-source') {
-      setErrorMessage('Your private Worker found no TV-playable source. In izumi, enable Real-Debrid for torrent sources or turn on the optional connected-device fallback.')
+      setErrorMessage('Your private Worker found no TV-playable source. Configure a debrid provider in izumi for torrent sources, or turn on the optional connected-device fallback.')
       setScreen('error')
     } else if (result === 'notified') {
       simulationTimerRef.current = window.setTimeout(() => {
@@ -2184,6 +2205,32 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
   }
 
+  const openIndependentSetup = () => {
+    setIndependentSetupError('')
+    setIndependentSetupPhase(independentPlaybackReady ? 'ready' : 'intro')
+    setScreen('independent-setup')
+    setActiveNav(4)
+    changeFocus({ zone: 'setting', index: independentPlaybackReady ? 0 : 1 })
+  }
+
+  const closeIndependentSetup = () => {
+    setScreen('settings')
+    setActiveNav(4)
+    changeFocus({ zone: 'setting', index: 6 })
+  }
+
+  const startIndependentSetup = () => {
+    setIndependentSetupError('')
+    if (receiverRef.current?.requestIndependentSetup() || showPreviewTools) {
+      setIndependentSetupPhase('waiting')
+      changeFocus({ zone: 'setting', index: 0 })
+      return
+    }
+    setIndependentSetupError('Open izumi on the device currently linked to this TV, then try again.')
+    setIndependentSetupPhase('error')
+    changeFocus({ zone: 'setting', index: 1 })
+  }
+
   const runSettingsAction = (index: number) => {
     if (!settingsConfirmation) {
       if (index < 6) {
@@ -2192,13 +2239,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Video previews' : index === 2 ? 'Autoplay' : index === 3 ? 'Automatic skipping' : index === 4 ? 'Still watching check' : 'Source continuity'} updated`)
         return
       }
-      setSettingsConfirmation(index === 6 ? 'unpair' : 'reset')
+      if (index === 6) return openIndependentSetup()
+      setSettingsConfirmation(index === 7 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
       return
     }
     if (index === 0) {
       setSettingsConfirmation(null)
-      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 6 : 7 })
+      changeFocus({ zone: 'setting', index: settingsConfirmation === 'unpair' ? 7 : 8 })
       return
     }
     if (settingsConfirmation === 'unpair') receiverRef.current?.unpair()
@@ -2213,6 +2261,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSnapshot(emptySnapshot)
     setSelected(fallbackMedia)
     setSettingsConfirmation(null)
+    setIndependentPlaybackReady(false)
     setScreen('ready')
   }
 
@@ -2231,7 +2280,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     } else if (focus.zone === 'setting') {
       if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
       else if (action === 'up') changeFocus({ zone: 'setting', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(7, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(8, focus.index + 1) })
     }
   }
 
@@ -2334,6 +2383,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if (!settingsConfirmation && focus.zone === 'nav') selectNav(focus.index)
         else if (focus.zone === 'setting') runSettingsAction(focus.index)
       } else if (action === 'back') settingsConfirmation ? runSettingsAction(0) : selectNav(0)
+      return
+    }
+    if (screen === 'independent-setup') {
+      const canStart = independentSetupPhase === 'intro' || independentSetupPhase === 'error'
+      if (canStart && (action === 'left' || action === 'up')) changeFocus({ zone: 'setting', index: 0 })
+      else if (canStart && (action === 'right' || action === 'down')) changeFocus({ zone: 'setting', index: 1 })
+      else if (action === 'select') focus.index === 1 && canStart ? startIndependentSetup() : closeIndependentSetup()
+      else if (action === 'back') closeIndependentSetup()
       return
     }
     if (screen === 'details') {
@@ -2685,6 +2742,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           activeNav={activeNav}
           paired={paired}
           connected={connected}
+          independentReady={independentPlaybackReady}
           deviceId={pairing?.deviceId}
           confirmation={settingsConfirmation}
           playbackSettings={playbackSettings}
@@ -2692,6 +2750,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onNavFocus={(index) => changeFocus({ zone: 'nav', index })}
           onFocus={(index) => changeFocus({ zone: 'setting', index })}
           onAction={runSettingsAction}
+        />
+      )}
+      {screen === 'independent-setup' && (
+        <IndependentSetupScreen
+          phase={independentSetupPhase}
+          connected={connected}
+          focusIndex={focus.zone === 'setting' ? focus.index : 0}
+          error={independentSetupError}
+          onFocus={(index) => changeFocus({ zone: 'setting', index })}
+          onBack={closeIndependentSetup}
+          onStart={startIndependentSetup}
         />
       )}
       {screen === 'ready' && (

@@ -511,6 +511,37 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
+  it('opens authenticated Worker setup on the linked client and accepts only its matching status', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: {
+        local: (callback: (error: unknown, service: unknown) => void) => callback(null, {
+          channel: () => channel,
+        }),
+      },
+    })
+    const receiverEvents = { ...events(), onWorkerSetupStatus: vi.fn(), onIndependentPlaybackReady: vi.fn() }
+    const receiver = new CompanionReceiver(receiverEvents)
+    await receiver.connect()
+
+    expect(receiver.independentPlaybackReady).toBe(true)
+    expect(receiver.requestIndependentSetup()).toBe(true)
+    const request = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.worker-setup')
+    expect(request).toBeTruthy()
+    expect(request?.[1]).toMatchObject({
+      credential,
+      pairingId: credential.slice(0, 16),
+    })
+    expect(request?.[2]).toBe('broadcast')
+
+    const requestId = request?.[1].requestId
+    channel.emit('izumi.companion.worker-setup-status', { credential: 'wrong', requestId, status: 'opened' })
+    expect(receiverEvents.onWorkerSetupStatus).not.toHaveBeenCalled()
+    channel.emit('izumi.companion.worker-setup-status', { credential, requestId, status: 'opened' })
+    expect(receiverEvents.onWorkerSetupStatus).toHaveBeenCalledWith('opened', undefined)
+    receiver.disconnect()
+  })
+
   it('prefetches a Worker source once and consumes it on next-episode playback', async () => {
     FakeXmlHttpRequest.responder = () => ({
       status: 200,

@@ -6,6 +6,7 @@ export type ScreenName =
   | 'movies'
   | 'my-list'
   | 'settings'
+  | 'independent-setup'
   | 'details'
   | 'ready'
   | 'loading'

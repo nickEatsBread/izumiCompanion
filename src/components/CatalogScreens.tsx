@@ -2,6 +2,7 @@ import {
   Bookmark,
   Captions,
   ChevronRight,
+  Cloud,
   Delete,
   Film,
   History,
@@ -1088,6 +1089,7 @@ export function SettingsScreen({
   activeNav,
   paired,
   connected,
+  independentReady,
   deviceId,
   confirmation,
   playbackSettings,
@@ -1100,6 +1102,7 @@ export function SettingsScreen({
   activeNav: number
   paired: boolean
   connected: boolean
+  independentReady: boolean
   deviceId?: string
   confirmation: SettingsConfirmation
   playbackSettings: PlaybackExperienceSettings
@@ -1116,6 +1119,7 @@ export function SettingsScreen({
     { title: 'Automatically skip segments', detail: 'Use AniSkip, IntroDB and chapter timing supplied by izumi.', icon: Captions, enabled: playbackSettings.autoSkipSegments },
     { title: 'Still watching check', detail: 'Pause autoplay after three episodes until you confirm.', icon: ShieldCheck, enabled: playbackSettings.stillWatchingEnabled },
     { title: 'Keep the current source', detail: 'Prefer the same provider when the next episode is available.', icon: History, enabled: playbackSettings.preferBingeSource },
+    { title: 'Use TV without izumi open', detail: independentReady ? 'Connected to your private Worker and ready for independent playback.' : 'One-time setup for private sync and most compatible sources.', icon: Cloud },
     { title: 'Unpair this TV', detail: 'Disconnect this TV from your izumi sync group.', icon: Link2Off },
     { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
   ]

@@ -2757,6 +2757,10 @@ body.avplay-visible #av-player {
 .settings-toggle.is-on i::after { left: 20px; background: #fff; }
 .settings-options > button.is-focused .settings-toggle { color: #111; }
 
+.settings-screen .settings-panel { margin-top: 2.2vh; }
+.settings-screen .settings-options { gap: .55vh; }
+.settings-screen .settings-options > button { min-height: 65px; padding-top: .58vw; padding-bottom: .58vw; }
+
 .settings-confirm-backdrop {
   position: absolute;
   z-index: 30;
@@ -2808,6 +2812,143 @@ body.avplay-visible #av-player {
   overflow: hidden;
   background: #06101d;
 }
+
+.independent-setup-screen {
+  display: block;
+  overflow: hidden;
+  background: #070707;
+}
+
+.independent-setup-screen::before {
+  content: '';
+  position: absolute;
+  top: -32vh;
+  right: -6vw;
+  width: 64vw;
+  height: 92vh;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 50%;
+  box-shadow: 0 0 0 8vw rgba(255, 255, 255, .012), 0 0 0 19vw rgba(255, 255, 255, .009);
+}
+
+.independent-setup-panel {
+  position: relative;
+  z-index: 2;
+  width: 84vw;
+  height: 78vh;
+  margin: 17vh 8vw 5vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.independent-setup-heading { width: 70vw; }
+.independent-setup-heading > p {
+  margin: 0 0 1.2vh;
+  color: rgba(255, 255, 255, .5);
+  font-size: 1.08vw;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.independent-setup-heading h1 {
+  margin: 0;
+  max-width: 65vw;
+  color: #fff;
+  font-size: 3.45vw;
+  line-height: 1.04;
+  letter-spacing: -.045em;
+}
+.independent-setup-heading > span {
+  display: block;
+  max-width: 62vw;
+  margin-top: 1.7vh;
+  color: rgba(255, 255, 255, .67);
+  font-size: 1.35vw;
+  line-height: 1.42;
+}
+
+.independent-setup-features {
+  margin-top: 4.2vh;
+  display: flex;
+  border-top: 1px solid rgba(255, 255, 255, .16);
+  border-bottom: 1px solid rgba(255, 255, 255, .16);
+}
+.independent-setup-features article {
+  width: 33.333%;
+  min-height: 13.5vh;
+  padding: 2.2vh 2.2vw 2.1vh 0;
+  display: flex;
+  align-items: flex-start;
+}
+.independent-setup-features article + article {
+  padding-left: 2.2vw;
+  border-left: 1px solid rgba(255, 255, 255, .16);
+}
+.independent-setup-features b {
+  margin-right: 1.2vw;
+  color: rgba(255, 255, 255, .32);
+  font-size: 1vw;
+  letter-spacing: .1em;
+}
+.independent-setup-features h2 { margin: 0; font-size: 1.35vw; line-height: 1.15; }
+.independent-setup-features p {
+  max-width: 20vw;
+  margin: .8vh 0 0;
+  color: rgba(255, 255, 255, .55);
+  font-size: .98vw;
+  line-height: 1.4;
+}
+
+.independent-setup-instruction { margin-top: 3vh; }
+.independent-setup-instruction strong { display: block; color: rgba(255, 255, 255, .55); font-size: 1.08vw; font-weight: 700; }
+.independent-setup-instruction p { margin: .65vh 0 0; color: #fff; font-size: 1.32vw; font-weight: 750; }
+
+.independent-setup-footer {
+  min-height: 8.4vh;
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.independent-setup-progress { display: flex; align-items: center; min-height: 5.8vh; }
+.independent-setup-progress > i {
+  width: 2.05vw;
+  height: 2.05vw;
+  min-width: 32px;
+  min-height: 32px;
+  margin-right: 1.15vw;
+  border: 5px solid rgba(255, 255, 255, .22);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: independent-setup-spin .85s linear infinite;
+}
+.independent-setup-progress > svg { margin-right: 1.15vw; color: #fff; }
+.independent-setup-progress.is-error > svg { color: #fff; }
+.independent-setup-progress div { display: flex; flex-direction: column; }
+.independent-setup-progress strong { font-size: 1.2vw; }
+.independent-setup-progress span { margin-top: .35vh; color: rgba(255, 255, 255, .52); font-size: .94vw; }
+.independent-setup-actions { margin-left: auto; display: flex; align-items: center; }
+.independent-setup-actions button {
+  min-width: 9vw;
+  margin-left: .8vw;
+  padding: 1.2vh 1.6vw;
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 2px;
+  color: #fff;
+  background: rgba(255, 255, 255, .08);
+  font-size: 1.08vw;
+  font-weight: 850;
+}
+.independent-setup-actions button.is-focused,
+.independent-setup-actions button:hover {
+  color: #050505;
+  border-color: #fff;
+  outline: 0;
+  background: #fff;
+  box-shadow: var(--control-focus-shadow);
+}
+
+@keyframes independent-setup-spin { to { transform: rotate(360deg); } }
 
 .pairing-poster-stage {
   position: absolute;

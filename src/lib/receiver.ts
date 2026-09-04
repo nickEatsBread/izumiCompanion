@@ -30,6 +30,8 @@ export interface CompanionTrailerSource {
   url: string
 }
 
+export type CompanionWorkerSetupStatus = 'opened' | 'starting' | 'dismissed' | 'error'
+
 export type CompanionPlayResult =
   | 'local'
   | 'notified'
@@ -50,6 +52,8 @@ export interface ReceiverEvents {
   onControl(request: CastControlRequest, senderId: string): void
   onDeviceSourceAvailability?(available: boolean): void
   onDeviceSourceOptions?(options: LinkedDeviceSourceOptions): void
+  onIndependentPlaybackReady?(ready: boolean): void
+  onWorkerSetupStatus?(status: CompanionWorkerSetupStatus, message?: string): void
 }
 
 function parseMessage(value: unknown): unknown {
@@ -446,11 +450,13 @@ export class CompanionReceiver {
   private detailRequests = new Map<string, (media: CompanionMedia | null) => void>()
   private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
   private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
+  private workerSetupRequestId = ''
 
   constructor(private readonly events: ReceiverEvents) {
     this.events.onPairingInfo(this.pairing)
     this.events.onPaired(Boolean(this.credential))
     this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
+    this.events.onIndependentPlaybackReady?.(this.independentPlaybackReady)
     const snapshot = this.credential ? storedSnapshot() : null
     if (snapshot) this.events.onSnapshot(snapshot)
   }
@@ -500,9 +506,23 @@ export class CompanionReceiver {
       this.cloudflare = transport
       localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
       this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
+      this.events.onIndependentPlaybackReady?.(this.independentPlaybackReady)
       this.publish('izumi.companion.transport-ready', {
         pairingId: transport.pairingId,
       }, peerId(from) || 'host')
+    })
+    this.channel.on('izumi.companion.worker-setup-status', (value) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      const allowed: CompanionWorkerSetupStatus[] = ['opened', 'starting', 'dismissed', 'error']
+      if (!this.credential
+        || input.credential !== this.credential
+        || input.requestId !== this.workerSetupRequestId
+        || !allowed.includes(input.status as CompanionWorkerSetupStatus)) return
+      const status = input.status as CompanionWorkerSetupStatus
+      this.events.onWorkerSetupStatus?.(status, typeof input.message === 'string' ? input.message.slice(0, 180) : undefined)
+      if (status === 'dismissed' || status === 'error') this.workerSetupRequestId = ''
     })
     this.channel.on('izumi.companion.snapshot', (value) => this.receiveSnapshot(value))
     this.channel.on('izumi.companion.catalog-result', (value) => {
@@ -610,6 +630,22 @@ export class CompanionReceiver {
 
   requestRefresh(): void {
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
+  }
+
+  get independentPlaybackReady(): boolean {
+    return Boolean(this.cloudflare && this.cloudflare.playbackMode !== 'device-only')
+  }
+
+  /** Ask the authenticated, currently linked izumi client to open the private Worker onboarding. */
+  requestIndependentSetup(): boolean {
+    if (!this.credential || !this.connected) return false
+    this.workerSetupRequestId = randomHex(12)
+    this.publish('izumi.companion.worker-setup', {
+      credential: this.credential,
+      pairingId: this.credential.slice(0, 16),
+      requestId: this.workerSetupRequestId,
+    }, 'broadcast')
+    return true
   }
 
   async requestDetails(media: CompanionMedia, presentationOnly = false): Promise<CompanionMedia | null> {
