@@ -3327,7 +3327,7 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 .standalone-qr-panel > span {
   margin-top: .25vh;
   color: #606060;
-  font-size: .88vw;
+  font-size: .96vw;
 }
 
 .standalone-code {

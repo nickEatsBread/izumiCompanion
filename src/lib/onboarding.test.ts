@@ -7,6 +7,6 @@ describe('TV onboarding handoff', () => {
   })
 
   it('builds the placeholder Cloudflare setup URL', () => {
-    expect(tvLinkUrl('D6A 4E6')).toBe('https://tv-link.izumi.watch/?code=D6A4E6')
+    expect(tvLinkUrl('D6A 4E6')).toBe('https://tv-setup.izumi.watch/?code=D6A4E6')
   })
 })

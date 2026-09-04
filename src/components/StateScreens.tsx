@@ -733,7 +733,7 @@ export function StandaloneLinkScreen({
             ? <div class="standalone-qr-shell"><img src={qrCode} alt="Open independent TV setup on your phone" /></div>
             : <div class="standalone-qr-wait" role="status"><i aria-hidden="true" /><span>{connected ? 'Preparing secure link…' : 'Connecting this TV…'}</span></div>}
           <strong>Scan with your phone</strong>
-          <span>tv-link.izumi.watch</span>
+          <span>or visit tv-setup.izumi.watch</span>
           <div class="standalone-code">
             <small>TV CODE</small>
             <b>{pairingCode || '------'}</b>

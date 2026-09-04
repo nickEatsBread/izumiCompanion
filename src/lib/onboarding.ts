@@ -1,4 +1,4 @@
-const TV_LINK_ORIGIN = 'https://tv-link.izumi.watch/'
+const TV_LINK_ORIGIN = 'https://tv-setup.izumi.watch/'
 
 export function normalizeTvLinkCode(code: string): string {
   return code.replace(/\s+/g, '').toUpperCase()

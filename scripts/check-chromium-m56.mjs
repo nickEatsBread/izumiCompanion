@@ -1211,6 +1211,7 @@ async function main() {
         qrNatural: [qr.naturalWidth, qr.naturalHeight],
         qrDisplay: [qr.getBoundingClientRect().width, qr.getBoundingClientRect().height],
         panel: [panel.left, panel.top, panel.right, panel.bottom],
+        manualLink: document.querySelector('.standalone-qr-panel > span').textContent.trim(),
         code: document.querySelector('.standalone-code b').textContent.trim(),
         body: [document.body.scrollWidth, document.body.scrollHeight]
       };
@@ -1219,6 +1220,7 @@ async function main() {
     assert(standaloneLink.titleSize >= 60 && standaloneLink.copySize >= 21, `Standalone setup type is too small for TV: ${JSON.stringify(standaloneLink)}.`)
     assert(standaloneLink.qrNatural[0] === 420 && standaloneLink.qrNatural[1] === 420, `Standalone QR source is not 420px: ${standaloneLink.qrNatural}.`)
     assert(standaloneLink.qrDisplay[0] >= 330 && standaloneLink.qrDisplay[1] >= 330, `Standalone QR is too small to scan across a room: ${standaloneLink.qrDisplay}.`)
+    assert(standaloneLink.manualLink === 'or visit tv-setup.izumi.watch', `Standalone manual setup link is wrong: ${standaloneLink.manualLink}.`)
     assert(/^[A-Z0-9]{3} [A-Z0-9]{3}$/.test(standaloneLink.code), `Standalone preview code is malformed: ${standaloneLink.code}.`)
     assert(standaloneLink.panel.every((edge) => edge >= 0) && standaloneLink.panel[2] <= 1920 && standaloneLink.panel[3] <= 1080, `Standalone setup panel is clipped: ${standaloneLink.panel}.`)
     assert(JSON.stringify(standaloneLink.body) === '[1920,1080]', `Standalone setup overflowed the TV viewport: ${standaloneLink.body}.`)
