@@ -776,7 +776,7 @@ async function main() {
       return heading && heading.textContent.trim() !== ${JSON.stringify(parentSeriesTitle)};
     })()`)
     await press('Backspace')
-    await waitFor(`document.querySelector('.app-shell.screen-series .series-title-block h1').textContent.trim() === ${JSON.stringify(parentSeriesTitle)}`)
+    await waitFor(`document.querySelector('.app-shell.screen-series .series-title-block h1').textContent.trim() === ${JSON.stringify(parentSeriesTitle)} && document.querySelector('.series-relation-row.is-focused')`)
     const nestedSeriesReturn = await evaluate(`(() => ({
       title: document.querySelector('.series-title-block h1').textContent.trim(),
       relationFocused: Boolean(document.querySelector('.series-relation-row.is-focused'))
@@ -1190,10 +1190,46 @@ async function main() {
     assert(spinner === 'rgb(255, 255, 255)', `Independent setup spinner is not white: ${spinner}.`)
     await capture('m56-independent-setup.png')
 
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=ready` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.ready-independent-option button.is-focused')")
+    await waitFor("!document.getElementById('startup-splash')")
+    const readySetupAction = await evaluate(`(() => ({
+      label: document.querySelector('.ready-independent-option button').textContent.trim(),
+      body: [document.body.scrollWidth, document.body.scrollHeight]
+    }))()`)
+    assert(readySetupAction.label === 'Use TV independently', `Unpaired setup action is wrong: ${readySetupAction.label}.`)
+    assert(JSON.stringify(readySetupAction.body) === '[1920,1080]', `Ready screen overflowed the TV viewport: ${readySetupAction.body}.`)
+    await press('Enter')
+    await waitFor("document.querySelector('.standalone-link-screen .standalone-qr-shell img') && document.querySelector('.standalone-link-screen .standalone-qr-shell img').complete")
+    const standaloneLink = await evaluate(`(() => {
+      var panel = document.querySelector('.standalone-link-panel').getBoundingClientRect();
+      var qr = document.querySelector('.standalone-qr-shell img');
+      return {
+        title: document.querySelector('.standalone-link-copy h1').textContent.trim(),
+        titleSize: parseFloat(getComputedStyle(document.querySelector('.standalone-link-copy h1')).fontSize),
+        copySize: parseFloat(getComputedStyle(document.querySelector('.standalone-link-copy > p:not(.state-kicker)')).fontSize),
+        qrNatural: [qr.naturalWidth, qr.naturalHeight],
+        qrDisplay: [qr.getBoundingClientRect().width, qr.getBoundingClientRect().height],
+        panel: [panel.left, panel.top, panel.right, panel.bottom],
+        code: document.querySelector('.standalone-code b').textContent.trim(),
+        body: [document.body.scrollWidth, document.body.scrollHeight]
+      };
+    })()`)
+    assert(standaloneLink.title === 'Set up this TV directly', `Standalone setup title is wrong: ${standaloneLink.title}.`)
+    assert(standaloneLink.titleSize >= 60 && standaloneLink.copySize >= 21, `Standalone setup type is too small for TV: ${JSON.stringify(standaloneLink)}.`)
+    assert(standaloneLink.qrNatural[0] === 420 && standaloneLink.qrNatural[1] === 420, `Standalone QR source is not 420px: ${standaloneLink.qrNatural}.`)
+    assert(standaloneLink.qrDisplay[0] >= 330 && standaloneLink.qrDisplay[1] >= 330, `Standalone QR is too small to scan across a room: ${standaloneLink.qrDisplay}.`)
+    assert(/^[A-Z0-9]{3} [A-Z0-9]{3}$/.test(standaloneLink.code), `Standalone preview code is malformed: ${standaloneLink.code}.`)
+    assert(standaloneLink.panel.every((edge) => edge >= 0) && standaloneLink.panel[2] <= 1920 && standaloneLink.panel[3] <= 1080, `Standalone setup panel is clipped: ${standaloneLink.panel}.`)
+    assert(JSON.stringify(standaloneLink.body) === '[1920,1080]', `Standalone setup overflowed the TV viewport: ${standaloneLink.body}.`)
+    await capture('m56-standalone-link.png')
+    await press('Backspace')
+    await waitFor("document.querySelector('.ready-independent-option button.is-focused')")
+
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, and no application runtime errors.\n`)
+    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, unpaired phone handoff, and no application runtime errors.\n`)
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()
