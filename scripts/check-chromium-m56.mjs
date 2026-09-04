@@ -740,7 +740,16 @@ async function main() {
       await press(activeRow < 1 ? 'ArrowDown' : 'ArrowUp')
     }
     await waitFor("document.querySelector('.media-row.is-active[data-home-row=\"1\"] .home-focus-card.is-focused')")
+    for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     const seriesTitle = await evaluate("document.querySelector('.home-focus-card.is-focused').getAttribute('aria-label')")
+    const seriesReturnPoint = await evaluate(`(() => {
+      var card = document.querySelector('.home-focus-card.is-focused');
+      return {
+        row: Number(card.closest('.media-row').getAttribute('data-home-row')),
+        index: Number(card.getAttribute('data-media-index')),
+        title: card.getAttribute('aria-label')
+      };
+    })()`)
     await press('Enter')
     await waitFor("document.querySelector('.app-shell.screen-series .series-screen')")
     const seriesSelection = await evaluate(`(() => ({
@@ -752,6 +761,42 @@ async function main() {
     assert(seriesSelection.shell.includes('screen-series') && !seriesSelection.player, `A normal series tile started playback: ${JSON.stringify(seriesSelection)}.`)
     assert(seriesSelection.title && seriesTitle.includes(seriesSelection.title) && seriesSelection.actions > 0, `The selected series page did not open: ${JSON.stringify({ seriesTitle, seriesSelection })}.`)
     await capture('m56-series-selection.png')
+    const relationAction = await evaluate(`(() => {
+      var button = Array.from(document.querySelectorAll('.series-action')).find(function (item) { return item.textContent.indexOf('More in This Franchise') >= 0; });
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`)
+    assert(relationAction, `The selected series has no related-title action: ${JSON.stringify(seriesSelection)}.`)
+    await waitFor("document.querySelector('.series-relation-row.is-focused')")
+    const parentSeriesTitle = await evaluate("document.querySelector('.series-title-block h1').textContent.trim()")
+    await evaluate("document.querySelector('.series-relation-row.is-focused').click()")
+    await waitFor(`(() => {
+      var heading = document.querySelector('.series-title-block h1, .detail-copy h1');
+      return heading && heading.textContent.trim() !== ${JSON.stringify(parentSeriesTitle)};
+    })()`)
+    await press('Backspace')
+    await waitFor(`document.querySelector('.app-shell.screen-series .series-title-block h1').textContent.trim() === ${JSON.stringify(parentSeriesTitle)}`)
+    const nestedSeriesReturn = await evaluate(`(() => ({
+      title: document.querySelector('.series-title-block h1').textContent.trim(),
+      relationFocused: Boolean(document.querySelector('.series-relation-row.is-focused'))
+    }))()`)
+    assert(nestedSeriesReturn.title === parentSeriesTitle && nestedSeriesReturn.relationFocused,
+      `Back did not restore the parent series and related-title focus: ${JSON.stringify(nestedSeriesReturn)}.`)
+    await press('Backspace')
+    await waitFor("document.querySelector('.series-action.is-focused')")
+    await press('Backspace')
+    await waitFor("document.querySelector('.app-shell.screen-home .media-row.is-active .home-focus-card.is-focused')")
+    const restoredSeriesReturnPoint = await evaluate(`(() => {
+      var card = document.querySelector('.home-focus-card.is-focused');
+      return {
+        row: Number(card.closest('.media-row').getAttribute('data-home-row')),
+        index: Number(card.getAttribute('data-media-index')),
+        title: card.getAttribute('aria-label')
+      };
+    })()`)
+    assert(JSON.stringify(restoredSeriesReturnPoint) === JSON.stringify(seriesReturnPoint),
+      `Back did not restore the exact Home rail and title: ${JSON.stringify({ seriesReturnPoint, restoredSeriesReturnPoint })}.`)
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=details` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.detail-actions [data-focus-id=\"detail-0\"]')")

@@ -43,6 +43,7 @@ import {
   rememberedHomeRowIndex,
   wrappedHeroIndex,
 } from './lib/home-navigation'
+import { popNavigationEntry, pushNavigationEntry } from './lib/navigation-history'
 import { registerRemoteKeys, remoteAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
@@ -180,6 +181,52 @@ interface HomeDetailTask {
   generation: number
   preview: boolean
 }
+
+interface NavigationScrollPosition {
+  selector: string
+  left: number
+  top: number
+}
+
+interface NavigationEntry {
+  screen: ScreenName
+  focus: FocusLocation
+  selected: CompanionMedia
+  activeNav: number
+  heroIndex: number
+  homeRowIndexes: Record<string, number>
+  seriesSeason: number
+  searchQuery: string
+  searchPerson?: CompanionPerson
+  searchGenre?: string
+  searchResults?: CompanionMedia[]
+  searchPending: boolean
+  searchError: string
+  scroll: NavigationScrollPosition[]
+}
+
+const NAVIGATION_SCROLL_SELECTORS = [
+  '.home-screen',
+  '.home-motion-track',
+  '.browse-catalog',
+  '.search-results',
+  '.series-library-scroll',
+  '.season-options > div',
+  '.series-relation-list',
+  '.contributor-strip',
+]
+
+const RESTORABLE_SCREENS: ScreenName[] = [
+  'home',
+  'trending',
+  'series-home',
+  'movies',
+  'search',
+  'series',
+  'details',
+  'my-list',
+  'watch-history',
+]
 
 const HOME_DETAIL_CONCURRENCY = 6
 const HOME_PRESENTATION_CACHE_LIMIT = 32
@@ -388,8 +435,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const homeDetailActiveRef = useRef(0)
   const homeDetailGenerationRef = useRef(0)
   const homePresentationCacheRef = useRef(new Map<string, CompanionMedia>())
-  const detailReturnScreenRef = useRef<ScreenName>('home')
-  const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
+  const navigationHistoryRef = useRef<NavigationEntry[]>([])
+  const pendingNavigationScrollRef = useRef<NavigationScrollPosition[]>()
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
   const focusRef = useRef<FocusLocation>(focus)
   const screenRef = useRef<ScreenName>(screen)
@@ -592,6 +639,70 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setFocusRestoreEpoch((value) => value + 1)
   }
 
+  const captureNavigationScroll = (): NavigationScrollPosition[] => NAVIGATION_SCROLL_SELECTORS.flatMap((selector) => {
+    const element = document.querySelector<HTMLElement>(selector)
+    return element ? [{ selector, left: element.scrollLeft, top: element.scrollTop }] : []
+  })
+
+  const pushCurrentNavigation = () => {
+    const currentScreen = screenRef.current
+    if (!RESTORABLE_SCREENS.includes(currentScreen)) return
+    navigationHistoryRef.current = pushNavigationEntry(navigationHistoryRef.current, {
+      screen: currentScreen,
+      focus: focusRef.current,
+      selected,
+      activeNav,
+      heroIndex: heroIndexRef.current,
+      homeRowIndexes: { ...homeRowIndexesRef.current },
+      seriesSeason,
+      searchQuery,
+      searchPerson,
+      searchGenre,
+      searchResults: remoteSearchResults,
+      searchPending,
+      searchError,
+      scroll: captureNavigationScroll(),
+    })
+  }
+
+  const clearNavigationHistory = () => {
+    navigationHistoryRef.current = []
+    pendingNavigationScrollRef.current = undefined
+  }
+
+  const restorePreviousNavigation = (): boolean => {
+    const popped = popNavigationEntry(navigationHistoryRef.current)
+    if (!popped.entry) return false
+    const previous = popped.entry
+    navigationHistoryRef.current = popped.history
+    pendingNavigationScrollRef.current = previous.scroll
+    setCatalogMenuOpen(false)
+    setSettingsConfirmation(null)
+    setSelected(previous.selected)
+    setActiveNav(previous.activeNav)
+    heroIndexRef.current = previous.heroIndex
+    setHeroIndex(previous.heroIndex)
+    homeRowIndexesRef.current = { ...previous.homeRowIndexes }
+    setSeriesSeason(previous.seriesSeason)
+    searchQueryRef.current = previous.searchQuery
+    searchPersonRef.current = previous.searchPerson
+    searchGenreRef.current = previous.searchGenre
+    setSearchQuery(previous.searchQuery)
+    setSearchPerson(previous.searchPerson)
+    setSearchGenre(previous.searchGenre)
+    setRemoteSearchResults(previous.searchResults)
+    setSearchPending(previous.searchPending)
+    setSearchError(previous.searchError)
+    if (['home', 'trending', 'series-home', 'movies'].includes(previous.screen)) {
+      lastHomeContentFocusRef.current = previous.focus
+    }
+    appliedFocusRef.current = undefined
+    setScreen(previous.screen)
+    setFocusLocation(previous.focus)
+    setFocusRestoreEpoch((value) => value + 1)
+    return true
+  }
+
   const stopPlayback = (destination: ScreenName = 'home') => {
     // Publish the terminal state before clearing the authenticated sender session. Android uses
     // this to stop its session-only HTTP-relay foreground service at EOF and on explicit stop.
@@ -617,8 +728,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setDeviceSourceOptions(undefined)
     setActiveSourceId(undefined)
     updatePlayer({ position: 0 })
-    if (destination === 'home') restoreHomeNavigation()
-    else setScreen(destination)
+    if (destination === 'home') {
+      if (!restorePreviousNavigation()) restoreHomeNavigation()
+    } else setScreen(destination)
   }
 
   const startAvPlay = async (request: CastLoadRequest) => {
@@ -1080,6 +1192,26 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }, [focus, focusRestoreEpoch, screen, snapshot.revision])
 
   useEffect(() => {
+    const positions = pendingNavigationScrollRef.current
+    if (!positions) return
+    pendingNavigationScrollRef.current = undefined
+    const frame = window.requestAnimationFrame(() => {
+      positions.forEach(({ selector, left, top }) => {
+        const element = document.querySelector<HTMLElement>(selector)
+        if (!element) return
+        const activeAnimation = dpadScrollAnimations.get(element)
+        if (activeAnimation !== undefined) {
+          window.cancelAnimationFrame(activeAnimation)
+          dpadScrollAnimations.delete(element)
+        }
+        element.scrollLeft = left
+        element.scrollTop = top
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusRestoreEpoch, screen])
+
+  useEffect(() => {
     if (!showPreviewTools || screen !== 'player' || player.state !== 'playing' || activeLoadRef.current) return
     const timer = window.setInterval(() => {
       const view = playerRef.current
@@ -1124,8 +1256,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const openDetails = (media: CompanionMedia) => {
     closeTrailer()
-    detailReturnScreenRef.current = screen
-    detailReturnFocusRef.current = focusRef.current
+    pushCurrentNavigation()
     setSelected(media)
     setFocusLocation({ zone: 'detail', index: 0 })
     setScreen('details')
@@ -1181,8 +1312,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const closeDetails = () => {
-    setScreen(detailReturnScreenRef.current)
-    setFocusLocation(detailReturnFocusRef.current)
+    if (!restorePreviousNavigation()) restoreHomeNavigation()
   }
 
   // Focus moves many times per second on a remote. None of these catalogue/search projections
@@ -1601,6 +1731,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const generation = ++playRequestGenerationRef.current
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     if (activeLoadRef.current) finishActivePlayback()
+    pushCurrentNavigation()
     setSelected(media)
     setPlaybackMedia(media)
     setNextEpisodeVisible(false)
@@ -1663,7 +1794,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const retryPlayback = () => {
     if (activeLoadRef.current) void startAvPlay(activeLoadRef.current)
-    else if (paired) restoreHomeNavigation()
+    else if (paired) {
+      if (!restorePreviousNavigation()) restoreHomeNavigation()
+    }
     else setScreen('ready')
   }
 
@@ -1680,10 +1813,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const openSeries = (media: CompanionMedia) => {
     closeTrailer()
-    if (screen !== 'series') {
-      detailReturnScreenRef.current = screen
-      detailReturnFocusRef.current = focusRef.current
-    }
+    pushCurrentNavigation()
     setSelected(media)
     const seasonCounts = episodeCountsFor(media)
     const initialSeason = seasonCounts.length > 1
@@ -1721,6 +1851,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const openPersonSearch = (person: CompanionPerson) => {
     closeTrailer()
+    pushCurrentNavigation()
     const query = person.name.trim().slice(0, 80)
     searchPersonRef.current = person
     searchQueryRef.current = query
@@ -1746,6 +1877,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const selectNav = (index: number) => {
     if (index === -1) return openCatalogMenu()
     closeTrailer()
+    clearNavigationHistory()
     setCatalogMenuOpen(false)
     setSettingsConfirmation(null)
     const destination = navDestinationAt(index)
@@ -1780,6 +1912,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const openVoiceSearch = (query?: string) => {
     const nextQuery = query?.trim() ?? ''
     closeTrailer()
+    if (screenRef.current !== 'search') pushCurrentNavigation()
     setCatalogMenuOpen(false)
     setSettingsConfirmation(null)
     if (screenRef.current === 'player' || screenRef.current === 'loading') finishActivePlayback()
@@ -2414,7 +2547,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (focus.zone === 'suggestion') applySearchSuggestion(focus.index)
         else if (focus.zone === 'search-input') document.querySelector<HTMLInputElement>('[data-focus-id="search-input-0"]')?.focus()
         else if (focus.zone === 'grid' && searchResults[focus.index]) selectCatalogMedia(searchResults[focus.index])
-      } else if (action === 'back') selectNav(0)
+      } else if (action === 'back') {
+        if (!restorePreviousNavigation()) selectNav(0)
+      }
       return
     }
     if (screen === 'series') {
@@ -2437,10 +2572,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (focus.zone === 'relation') changeFocus({ zone: 'series-action', index: Math.max(0, actions.indexOf('relations')) })
         else if (focus.zone === 'person') changeFocus({ zone: 'series-action', index: actions.length - 1 })
         else {
-          const destination = detailReturnScreenRef.current
-          setScreen(destination)
-          setActiveNav(navIndexFor(destination))
-          setFocusLocation(detailReturnFocusRef.current)
+          if (!restorePreviousNavigation()) restoreHomeNavigation()
         }
       }
       return
@@ -2595,12 +2727,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       else if (action === 'down' && postPlayFocus < 2 && postPlayItems.length) setPostPlayFocus(2)
       else if (action === 'select') {
         if (postPlayFocus === 0) void playMedia(postPlayMedia)
-        else if (postPlayFocus === 1) restoreHomeNavigation()
+        else if (postPlayFocus === 1) {
+          clearNavigationHistory()
+          restoreHomeNavigation()
+        }
         else {
           const media = postPlayItems[postPlayFocus - 2]
           if (media) selectCatalogMedia(media)
         }
-      } else if (action === 'back' || action === 'stop') restoreHomeNavigation()
+      } else if (action === 'back' || action === 'stop') {
+        if (!restorePreviousNavigation()) restoreHomeNavigation()
+      }
       return
     }
     if (screen === 'loading') {
@@ -2647,6 +2784,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const previewScreen = (next: ScreenName) => {
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
+    clearNavigationHistory()
     setCatalogMenuOpen(false)
     closeTrailer()
     if (next === 'home') {
@@ -2948,7 +3086,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           focus={postPlayFocus}
           onFocus={setPostPlayFocus}
           onReplay={() => void playMedia(postPlayMedia)}
-          onHome={restoreHomeNavigation}
+          onHome={() => {
+            clearNavigationHistory()
+            restoreHomeNavigation()
+          }}
           onRecommendation={selectCatalogMedia}
         />
       )}
