@@ -215,6 +215,40 @@ function validCompanionMedia(value: unknown): value is CompanionMedia {
     && typeof media.ref?.id === 'string'
 }
 
+function focusedHomeTitleDiagnostics(): Record<string, unknown> {
+  const card = document.querySelector<HTMLElement>('.home-focus-card.is-focused')
+  if (!card) return { available: false }
+  const elementState = (element: HTMLElement | null) => {
+    if (!element) return null
+    const style = getComputedStyle(element)
+    const bounds = element.getBoundingClientRect()
+    return {
+      display: style.display,
+      visibility: style.visibility,
+      opacity: style.opacity,
+      zIndex: style.zIndex,
+      bounds: [Math.round(bounds.left), Math.round(bounds.top), Math.round(bounds.width), Math.round(bounds.height)],
+    }
+  }
+  const logo = card.querySelector<HTMLImageElement>('.home-focus-logo')
+  const title = card.querySelector<HTMLElement>('.home-focus-title')
+  return {
+    available: true,
+    label: card.getAttribute('aria-label') ?? '',
+    treatment: card.getAttribute('data-title-treatment') ?? '',
+    cardClass: card.className,
+    logo: logo ? {
+      ...elementState(logo),
+      source: logo.currentSrc || logo.src,
+      complete: logo.complete,
+      naturalSize: [logo.naturalWidth, logo.naturalHeight],
+    } : null,
+    title: title ? { ...elementState(title), text: title.textContent?.trim() ?? '' } : null,
+    pending: elementState(card.querySelector<HTMLElement>('.home-focus-title-pending')),
+    trailer: elementState(card.querySelector<HTMLElement>('.home-hover-trailer')),
+  }
+}
+
 function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedia | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
@@ -507,6 +541,20 @@ export class CompanionReceiver {
       const finish = this.detailRequests.get(input.requestId)
       if (!finish) return
       finish(validCompanionMedia(input.media) ? input.media : null)
+    })
+    // A credential-authenticated support probe makes physical-TV paint failures diagnosable on
+    // 2018 models, whose firmware exposes neither sdb shell nor Web Inspector debug mode.
+    this.channel.on('izumi.companion.render-diagnostics', (value, from) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      if (!this.credential || input.credential !== this.credential
+        || typeof input.requestId !== 'string'
+        || !/^[A-Za-z0-9_-]{8,80}$/.test(input.requestId)) return
+      this.publish('izumi.companion.render-diagnostics-result', {
+        requestId: input.requestId,
+        homeTitle: focusedHomeTitleDiagnostics(),
+      }, peerId(from) || 'host')
     })
     this.channel.on('izumi.companion.trailer-result', (value) => {
       const message = parseMessage(value)

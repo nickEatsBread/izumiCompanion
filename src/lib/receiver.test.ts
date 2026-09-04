@@ -254,6 +254,26 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
+  it('only returns physical-TV title diagnostics to an authenticated peer', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    vi.stubGlobal('document', { querySelector: () => null })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+
+    channel.emit('izumi.companion.render-diagnostics', { credential: 'wrong', requestId: 'renderprobe1' }, { id: 'support-peer' })
+    expect(channel.publish).not.toHaveBeenCalledWith('izumi.companion.render-diagnostics-result', expect.anything(), expect.anything())
+
+    channel.emit('izumi.companion.render-diagnostics', { credential, requestId: 'renderprobe1' }, { id: 'support-peer' })
+    expect(channel.publish).toHaveBeenCalledWith('izumi.companion.render-diagnostics-result', {
+      requestId: 'renderprobe1',
+      homeTitle: { available: false },
+    }, 'support-peer')
+    receiver.disconnect()
+  })
+
   it('requests a token-scoped HTTP trailer bridge from the paired client', async () => {
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {
