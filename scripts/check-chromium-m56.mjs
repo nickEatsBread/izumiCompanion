@@ -690,12 +690,34 @@ async function main() {
     assert(detailPage.descriptionSize >= 28 && detailPage.actions.some(function (label) { return label.includes('Play Trailer'); }), `Film detail presentation is incomplete: ${JSON.stringify(detailPage)}.`)
     await evaluate("Array.from(document.querySelectorAll('.detail-actions button')).find(function (button) { return button.textContent.includes('Play Trailer'); }).click()")
     await waitFor("document.querySelector('.series-trailer-overlay iframe')")
-    const trailerWithoutCaptions = await evaluate(`(() => ({
-      source: document.querySelector('.series-trailer-overlay iframe').src,
-      captionHud: Boolean(document.querySelector('.series-trailer-caption'))
-    }))()`)
+    const trailerWithoutCaptions = await evaluate(`(() => {
+      var overlay = document.querySelector('.series-trailer-overlay');
+      var bounds = overlay.getBoundingClientRect();
+      return {
+        source: overlay.querySelector('iframe').src,
+        captionHud: Boolean(document.querySelector('.series-trailer-caption')),
+        overlay: [Math.round(bounds.left), Math.round(bounds.top), Math.round(bounds.width), Math.round(bounds.height)],
+        layer: Number(getComputedStyle(overlay).zIndex),
+        pageClass: document.querySelector('.detail-screen').className,
+        hiddenPageLayers: Array.from(document.querySelectorAll('.detail-screen > .detail-art, .detail-screen > .detail-copy, .detail-screen > .detail-poster')).every(function (element) {
+          return getComputedStyle(element).visibility === 'hidden';
+        })
+      };
+    })()`)
     assert(trailerWithoutCaptions.source.includes('cc_load_policy=0') && !trailerWithoutCaptions.source.includes('cc_lang_pref') && !trailerWithoutCaptions.captionHud,
       `Trailer captions are still forced on: ${JSON.stringify(trailerWithoutCaptions)}.`)
+    assert(JSON.stringify(trailerWithoutCaptions.overlay) === '[0,0,1920,1080]' && trailerWithoutCaptions.layer === 100
+      && trailerWithoutCaptions.pageClass.includes('has-trailer-open') && trailerWithoutCaptions.hiddenPageLayers,
+      `Title-page layers can still composite over the trailer: ${JSON.stringify(trailerWithoutCaptions)}.`)
+    await evaluate(`(() => {
+      var iframe = document.querySelector('.series-trailer-overlay iframe');
+      window.dispatchEvent(new MessageEvent('message', {
+        source: iframe.contentWindow,
+        origin: 'https://www.youtube-nocookie.com',
+        data: JSON.stringify({ event: 'onStateChange', info: { playerState: 1 } })
+      }));
+    })()`)
+    await waitFor("getComputedStyle(document.querySelector('.series-trailer-native-cover')).opacity === '0'")
     await press('Backspace')
     await waitFor("!document.querySelector('.series-trailer-overlay')")
     await capture('m56-detail-trailer.png')

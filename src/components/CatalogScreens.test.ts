@@ -57,6 +57,7 @@ describe('TV trailer iframe control', () => {
     expect(trailerPlaybackState(2)).toBe('paused')
     expect(trailerPlaybackState(3)).toBe('buffering')
     expect(trailerPlaybackState(0)).toBe('ended')
+    expect(trailerPlaybackState({ playerState: 1 })).toBe('playing')
   })
 })
 

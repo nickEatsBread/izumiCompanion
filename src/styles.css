@@ -1852,7 +1852,7 @@ body.avplay-visible #av-player {
 
 .series-trailer-overlay {
   position: fixed;
-  z-index: 50;
+  z-index: 100;
   inset: 0;
   overflow: hidden;
   background: #020202;
@@ -2095,8 +2095,8 @@ body.avplay-visible #av-player {
 }
 
 @keyframes trailer-overlay-enter {
-  from { opacity: 0; transform: scale(1.012); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .series-episode-list {
@@ -2104,6 +2104,24 @@ body.avplay-visible #av-player {
   flex-direction: column;
   gap: 2.35vh;
 }
+
+/* Tizen's accelerated image layers can ignore normal sibling paint order while a fixed iframe is
+ * active. Remove the underlying title layers from composition so the trailer is unambiguously the
+ * only full-screen surface, then restore them without remounting when Back closes the trailer. */
+.series-screen.has-trailer-open > .browse-hero-art,
+.series-screen.has-trailer-open > .series-title-block,
+.series-screen.has-trailer-open > .series-overview,
+.series-screen.has-trailer-open > .series-library,
+.series-screen.has-trailer-open > .series-relations-browser,
+.series-screen.has-trailer-open > .series-back-hint,
+.detail-screen.has-trailer-open > .detail-art,
+.detail-screen.has-trailer-open > .detail-copy,
+.detail-screen.has-trailer-open > .detail-poster {
+  visibility: hidden;
+}
+
+.series-screen.has-trailer-open,
+.detail-screen.has-trailer-open { background: #020202; }
 
 .series-episode-window-spacer {
   display: block;

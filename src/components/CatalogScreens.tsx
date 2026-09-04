@@ -35,7 +35,9 @@ export const TRAILER_LISTENING_MESSAGE = { event: 'listening', id: 1, channel: '
 const YOUTUBE_PLAYER_ORIGINS = ['https://www.youtube-nocookie.com', 'https://www.youtube.com']
 
 export function trailerPlaybackState(value: unknown): TrailerPlaybackState | undefined {
-  const state = Number(value)
+  const state = Number(value && typeof value === 'object'
+    ? (value as Record<string, unknown>).playerState
+    : value)
   if (state === 1) return 'playing'
   if (state === 2) return 'paused'
   if (state === 0) return 'ended'
@@ -69,6 +71,7 @@ function TrailerPlayer({
   const durationRef = useRef(0)
   const playbackRef = useRef<TrailerPlaybackState>('buffering')
   const readyRef = useRef(false)
+  const captionsSuppressedAtRef = useRef(0)
   const [playback, setPlayback] = useState<TrailerPlaybackState>('buffering')
   const [position, setPosition] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -89,7 +92,10 @@ function TrailerPlayer({
     else target.postMessage(serialized, 'https://www.youtube-nocookie.com')
   }
   const send = (func: string, args: unknown[] = []) => post({ event: 'command', func, args })
-  const suppressCaptions = () => {
+  const suppressCaptions = (force = false) => {
+    const now = Date.now()
+    if (!force && now - captionsSuppressedAtRef.current < 1_500) return
+    captionsSuppressedAtRef.current = now
     send('setOption', ['captions', 'track', {}])
     send('unloadModule', ['captions'])
     send('unloadModule', ['cc'])
@@ -140,13 +146,19 @@ function TrailerPlayer({
       const firstReadyEvent = payload.event === 'onReady' || payload.event === 'initialDelivery' || payload.event === 'infoDelivery'
       if (firstReadyEvent && !readyRef.current) {
         readyRef.current = true
-        suppressCaptions()
+        suppressCaptions(true)
         send('playVideo')
+        // The bridge can deliver readiness before a reliable onStateChange. Once playback has
+        // been requested, uncover the real player instead of leaving the title-page artwork over it.
+        window.setTimeout(() => setNativeCoverVisible(false), 500)
       }
-      if (payload.event === 'onApiChange') suppressCaptions()
+      if (payload.event === 'onApiChange') suppressCaptions(true)
       if (payload.event === 'onStateChange') {
         const state = trailerPlaybackState(payload.info ?? payload.data)
-        if (state) applyPlayback(state)
+        if (state) {
+          if (state === 'playing') suppressCaptions()
+          applyPlayback(state)
+        }
       }
       if (payload.event === 'onError') applyPlayback('error')
       if (payload.event === 'onAutoplayBlocked') applyPlayback('paused')
@@ -164,7 +176,10 @@ function TrailerPlayer({
           durationRef.current = nextDuration
           setDuration(nextDuration)
         }
-        if (nextState) applyPlayback(nextState)
+        if (nextState) {
+          if (nextState === 'playing') suppressCaptions()
+          applyPlayback(nextState)
+        }
       }
     }
     window.addEventListener('message', onMessage)
@@ -235,7 +250,7 @@ function TrailerPlayer({
         onLoad={() => {
           post(TRAILER_LISTENING_MESSAGE)
           window.setTimeout(() => {
-            suppressCaptions()
+            suppressCaptions(true)
             send('playVideo')
           }, 350)
         }}
@@ -596,7 +611,7 @@ export function SeriesScreen({
   )
 
   return (
-    <main class={`browse-screen series-screen is-${view}`}>
+    <main class={`browse-screen series-screen is-${view}${trailerOpen ? ' has-trailer-open' : ''}`}>
       <div class="browse-hero-art series-hero-art" key={`${selected.ref.provider}-${selected.ref.id}`}>
         {(selected.backdrop || selected.poster) && <img src={selected.backdrop || selected.poster} alt={`${selected.title} backdrop`} />}
         <span />
@@ -941,7 +956,7 @@ export function DetailScreen({
   const trailerId = youtubeTrailerId(media)
   const actions = detailActionsFor(media)
   return (
-    <main class="detail-screen">
+    <main class={`detail-screen${trailerOpen ? ' has-trailer-open' : ''}`}>
       <div class="detail-art" key={`${media.ref.provider}-${media.ref.id}`}>
         {(media.backdrop || media.poster) && <img src={media.backdrop || media.poster} alt="" />}
         <span />

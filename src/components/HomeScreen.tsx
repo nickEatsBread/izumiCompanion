@@ -380,6 +380,7 @@ function HeroArtwork({ source }: { source?: string }) {
 function HeroTrailer({ source, title, onPlayingChange }: { source: string; title: string; onPlayingChange?(playing: boolean): void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const hasPlayedRef = useRef(false)
+  const captionsSuppressedAtRef = useRef(0)
   const [playing, setPlaying] = useState(false)
   const bridgeOrigin = (() => {
     try {
@@ -394,11 +395,17 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
     if (bridgeOrigin) target.postMessage({ type: 'izumi-youtube-command', payload: serialized }, bridgeOrigin)
     else target.postMessage(serialized, 'https://www.youtube-nocookie.com')
   }
-  const start = () => {
-    post({ event: 'listening', id: 1, channel: 'widget' })
+  const suppressCaptions = (force = false) => {
+    const now = Date.now()
+    if (!force && now - captionsSuppressedAtRef.current < 1_500) return
+    captionsSuppressedAtRef.current = now
     post({ event: 'command', func: 'setOption', args: ['captions', 'track', {}] })
     post({ event: 'command', func: 'unloadModule', args: ['captions'] })
     post({ event: 'command', func: 'unloadModule', args: ['cc'] })
+  }
+  const start = () => {
+    post({ event: 'listening', id: 1, channel: 'widget' })
+    suppressCaptions(true)
     post({ event: 'command', func: 'setVolume', args: [100] })
     post({ event: 'command', func: 'unMute', args: [] })
     post({ event: 'command', func: 'playVideo', args: [] })
@@ -432,6 +439,7 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
       try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw }
       catch { return }
       const info = payload?.info
+      if (payload?.event === 'onApiChange') suppressCaptions(true)
       const state = typeof info === 'object' && info ? Number((info as Record<string, unknown>).playerState) : Number(info ?? payload?.data)
       if ((payload?.event === 'onStateChange' || payload?.event === 'initialDelivery' || payload?.event === 'infoDelivery') && Number.isFinite(state)) {
         if (state === 1) hasPlayedRef.current = true
@@ -439,6 +447,7 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
         setPlaying(next)
         onPlayingChange?.(next)
         if (next) {
+          suppressCaptions()
           post({ event: 'command', func: 'setVolume', args: [100] })
           post({ event: 'command', func: 'unMute', args: [] })
         }
