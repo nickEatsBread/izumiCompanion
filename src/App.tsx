@@ -1215,6 +1215,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (bounds.top < container.top + 12) animateScroll(scroller, 'scrollTop', Math.max(0, scroller.scrollTop + bounds.top - container.top - 18), 210)
       }
     }
+    if (focus.zone === 'setting') {
+      const scroller = element.closest<HTMLElement>('.settings-panel')
+      if (scroller) {
+        const bounds = element.getBoundingClientRect()
+        const container = scroller.getBoundingClientRect()
+        if (bounds.bottom > container.bottom - 10) animateScroll(scroller, 'scrollTop', scroller.scrollTop + bounds.bottom - container.bottom + 16, 180)
+        else if (bounds.top < container.top + 10) animateScroll(scroller, 'scrollTop', Math.max(0, scroller.scrollTop + bounds.top - container.top - 16), 180)
+      }
+    }
   // Presentation-only replies replace row arrays while the viewer remains on the same tile. They
   // must not retrigger DOM focus, layout reads, and Chromium 56's scroll correction four times per
   // prefetch batch. A catalogue revision still restores focus when the actual DOM is replaced.

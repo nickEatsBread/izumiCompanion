@@ -2754,7 +2754,17 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 .settings-toggle.is-on i::after { left: 20px; background: #fff; }
 .settings-options > button.is-focused .settings-toggle { color: #111; }
 
-.settings-screen .settings-panel { margin-top: 2.2vh; }
+.settings-screen .settings-panel {
+  position: absolute;
+  top: 16.4vh;
+  bottom: 2.5vh;
+  margin: 0 0 0 10.5vw;
+  padding: 0 .45vw .7vh 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.settings-screen .settings-panel::-webkit-scrollbar { width: 0; }
 .settings-screen .settings-options { gap: .55vh; }
 .settings-screen .settings-options > button { min-height: 65px; padding-top: .58vw; padding-bottom: .58vw; }
 

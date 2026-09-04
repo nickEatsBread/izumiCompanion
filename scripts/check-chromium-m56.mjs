@@ -1110,22 +1110,38 @@ async function main() {
     await capture('m56-player-prompts.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=postplay` })
-    await waitFor("document.readyState === 'complete' && document.querySelector('.post-play-recommendations button')")
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.post-play-rating-actions button').length === 2")
     await waitFor("!document.getElementById('startup-splash')")
-    const postPlay = await evaluate(`(() => ({
-      heading: document.querySelector('.post-play-recommendations header p').textContent,
-      recommendations: document.querySelectorAll('.post-play-recommendations button').length,
-      actions: document.querySelectorAll('.post-play-actions button').length,
+    const ratingPrompt = await evaluate(`(() => ({
+      question: document.querySelector('.post-play-rating-panel h1').textContent.trim(),
+      choices: document.querySelectorAll('.post-play-rating-actions button').length,
+      miniPlayer: Boolean(document.querySelector('.post-play-mini-player')),
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(postPlay.heading === 'More like this', `Post-play heading is ${postPlay.heading}.`)
+    assert(ratingPrompt.question === 'Did you like it?' && ratingPrompt.choices === 2, `Post-play rating prompt is incomplete: ${JSON.stringify(ratingPrompt)}.`)
+    assert(ratingPrompt.miniPlayer, 'Post-play did not retain a focusable mini-player.')
+    assert(JSON.stringify(ratingPrompt.body) === '[1920,1080]', `Post-play rating overflowed the TV viewport: ${ratingPrompt.body}.`)
+    await capture('m56-post-play-rating.png')
+    await press('ArrowRight')
+    await waitFor("document.querySelector('.post-play-rating-actions button.is-focused')")
+    await press('Enter')
+    await waitFor("document.querySelector('.post-play-recommendations button')")
+    const postPlay = await evaluate(`(() => ({
+      heading: document.querySelector('.post-play-recommendation-panel > header > span').textContent.trim(),
+      recommendations: document.querySelectorAll('.post-play-recommendations button').length,
+      actions: document.querySelectorAll('.post-play-actions button').length,
+      ratingSaved: Object.keys(JSON.parse(localStorage.getItem('izumi.companion.media-ratings') || '{}')).length,
+      body: [document.body.scrollWidth, document.body.scrollHeight]
+    }))()`)
+    assert(postPlay.heading === 'You might like', `Post-play heading is ${postPlay.heading}.`)
     assert(postPlay.recommendations >= 4, `Post-play has only ${postPlay.recommendations} recommendations.`)
     assert(postPlay.actions === 2, `Post-play action count is ${postPlay.actions}.`)
+    assert(postPlay.ratingSaved === 1, 'Post-play rating was not persisted before recommendations appeared.')
     assert(JSON.stringify(postPlay.body) === '[1920,1080]', `Post-play overflowed the TV viewport: ${postPlay.body}.`)
     await capture('m56-post-play.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=settings` })
-    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 9")
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 10")
     await waitFor("!document.getElementById('startup-splash')")
     const settings = await evaluate(`(() => ({
       options: document.querySelectorAll('.settings-options > button').length,
@@ -1135,10 +1151,18 @@ async function main() {
       panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(settings.options === 9 && settings.toggles === 6, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.options === 10 && settings.toggles === 7, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
     assert(settings.videoPreviewLabel === 'Video previews' && settings.videoPreviewsEnabled === 'true', `Video-preview preference is missing or defaults incorrectly: ${JSON.stringify(settings)}.`)
     assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
     assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
+    for (let row = 0; row < 9; row += 1) await press('ArrowDown')
+    await waitFor("document.querySelector('.settings-panel').scrollTop > 0 && document.querySelector('.settings-options > button.is-focused').getBoundingClientRect().bottom <= document.querySelector('.settings-panel').getBoundingClientRect().bottom")
+    const settingsScroll = await evaluate(`(() => {
+      const panel = document.querySelector('.settings-panel').getBoundingClientRect()
+      const focused = document.querySelector('.settings-options > button.is-focused').getBoundingClientRect()
+      return { top: document.querySelector('.settings-panel').scrollTop, focusedBottom: focused.bottom, panelBottom: panel.bottom }
+    })()`)
+    assert(settingsScroll.top > 0 && settingsScroll.focusedBottom <= settingsScroll.panelBottom, `Settings did not keep the final remote row visible: ${JSON.stringify(settingsScroll)}.`)
     await capture('m56-playback-settings.png')
 
     await evaluate("document.querySelectorAll('.settings-options > button')[1].click()")
@@ -1146,7 +1170,7 @@ async function main() {
     const previewsDisabled = await evaluate("JSON.parse(localStorage.getItem('izumi.companion.playback-experience')).videoPreviewsEnabled === false")
     assert(previewsDisabled, 'The video-preview opt-out was not persisted.')
 
-    await evaluate("document.querySelectorAll('.settings-options > button')[6].click()")
+    await evaluate("document.querySelectorAll('.settings-options > button')[7].click()")
     await waitFor("document.querySelector('.independent-setup-screen .independent-setup-heading h1')")
     const independentSetup = await evaluate(`(() => ({
       title: document.querySelector('.independent-setup-heading h1').textContent.trim(),
