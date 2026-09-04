@@ -551,10 +551,16 @@ export class CompanionReceiver {
       if (!this.credential || input.credential !== this.credential
         || typeof input.requestId !== 'string'
         || !/^[A-Za-z0-9_-]{8,80}$/.test(input.requestId)) return
-      this.publish('izumi.companion.render-diagnostics-result', {
+      const reply = () => this.publish('izumi.companion.render-diagnostics-result', {
         requestId: input.requestId,
         homeTitle: focusedHomeTitleDiagnostics(),
       }, peerId(from) || 'host')
+      if (input.action === 'focus-first-row') {
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true,
+        }))
+        window.setTimeout(reply, 700)
+      } else reply()
     })
     this.channel.on('izumi.companion.trailer-result', (value) => {
       const message = parseMessage(value)
