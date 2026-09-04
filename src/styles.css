@@ -4082,6 +4082,7 @@ body,
 .hero.is-trailer-playing {
   transform: none !important;
   -webkit-transform: none !important;
+  transition: opacity 260ms ease;
   will-change: auto;
 }
 
