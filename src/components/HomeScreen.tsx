@@ -290,29 +290,42 @@ interface StableTitleSelection {
   showText: boolean
 }
 
-function initialTitleSelection(identity: string, source?: string, settled = false): StableTitleSelection {
+export function titleFallbackVisible(source?: string, settled = false, fallbackWhilePending = false, failed = false): boolean {
+  return Boolean(source && failed) || (!source && (settled || fallbackWhilePending))
+}
+
+function initialTitleSelection(
+  identity: string,
+  source?: string,
+  settled = false,
+  fallbackWhilePending = false,
+): StableTitleSelection {
   return {
     identity,
     // Give the physical TV a real, explicitly sized <img> immediately. Waiting for a detached
     // Image.onload worked in desktop M56 but could leave the Tizen compositor with no paint layer.
     logo: source && !failedTitleImages[source] ? source : '',
-    showText: Boolean(source && failedTitleImages[source]) || (settled && !source),
+    showText: titleFallbackVisible(source, settled, fallbackWhilePending, Boolean(source && failedTitleImages[source])),
   }
 }
 
-/** Keep the title slot pending until provider metadata settles. A known logo receives an explicit
- * paint layer immediately; readable text is only chosen after the provider confirms no logo exists
- * or the real image element reports an error. This prevents late TMDB/Stremio logos losing a race
- * to an arbitrary UI timer. */
-function useStableTitleImage(identity: string, source?: string, settled = false): [string, boolean, () => void] {
-  const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source, settled))
-  const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source, settled)
+/** A known logo receives an explicit paint layer immediately. Hero art can wait for its presentation
+ * lookup, while a focused spotlight locks to readable text when prefetch has not settled yet. That
+ * guarantees a title without swapping a late logo into the card while the viewer is reading it. */
+function useStableTitleImage(
+  identity: string,
+  source?: string,
+  settled = false,
+  fallbackWhilePending = false,
+): [string, boolean, () => void] {
+  const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source, settled, fallbackWhilePending))
+  const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source, settled, fallbackWhilePending)
   // The physical M56 runtime can paint the new card before it runs the passive effect below.
   // Derive a confirmed no-logo fallback from props in the render itself, so a completed metadata
   // response can never leave the focused card's title slot blank for an extra compositor cycle.
   const showText = visible.showText || (settled && !source && !visible.logo)
   useEffect(() => {
-    setSelection(initialTitleSelection(identity, source, settled))
+    setSelection(initialTitleSelection(identity, source, settled, fallbackWhilePending))
   }, [identity])
   useEffect(() => {
     if (!settled || source) return
@@ -572,7 +585,12 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
   const [trailerPlaying, setTrailerPlaying] = useState(false)
-  const [logoImage, showTextTitle, onLogoError] = useStableTitleImage(mediaIdentity(item), item.logoImage, item.titleArtSettled)
+  const [logoImage, showTextTitle, onLogoError] = useStableTitleImage(
+    mediaIdentity(item),
+    item.logoImage,
+    item.titleArtSettled,
+    true,
+  )
   const image = artwork[artworkIndex]
   const context = homeCardContext(item, episodeCard)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined

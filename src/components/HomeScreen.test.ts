@@ -19,6 +19,7 @@ import {
   informativeHeroMeta,
   mediaFactTokens,
   ratingDisplayValue,
+  titleFallbackVisible,
 } from './HomeScreen'
 
 const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
@@ -111,5 +112,13 @@ describe('TV home presentation', () => {
     expect(homeFocusMotion({ zone: 'row', row: 0, index: 2 }, { zone: 'row', row: 0, index: 1 })).toBe('backward')
     expect(homeFocusMotion({ zone: 'row', row: 0, index: 4 }, { zone: 'row', row: 0, index: 0 }, 5)).toBe('forward')
     expect(homeFocusMotion({ zone: 'row', row: 0, index: 2 }, { zone: 'row', row: 1, index: 0 })).toBe('vertical')
+  })
+
+  it('never leaves a focused spotlight title blank while provider artwork is pending', () => {
+    expect(titleFallbackVisible(undefined, false, true)).toBe(true)
+    expect(titleFallbackVisible(undefined, false, false)).toBe(false)
+    expect(titleFallbackVisible(undefined, true, false)).toBe(true)
+    expect(titleFallbackVisible('logo.png', false, true)).toBe(false)
+    expect(titleFallbackVisible('logo.png', false, true, true)).toBe(true)
   })
 })
