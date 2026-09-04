@@ -29,7 +29,13 @@ export interface CompanionMedia {
   /** Stable identity supplied by Izumi so TV checkpoints merge into normal watch sync. */
   mediaId?: number
   /** Non-secret hint used only when this TV's private Worker resolver is explicitly enabled. */
-  resolver?: { streamType: 'movie' | 'series' }
+  resolver?: {
+    streamType: 'movie' | 'series'
+    nativeType?: string
+    imdbId?: string
+    tmdbId?: string
+    videoId?: string
+  }
   /** Transient intent used when the TV asks a linked Izumi client for a replacement source. */
   playback?: { selection: 'manual'; positionSeconds?: number }
   title: string
@@ -92,6 +98,8 @@ export interface CompanionMedia {
 export interface CompanionEpisode {
   season: number
   episode: number
+  /** Exact provider video id used by Stremio stream resources. */
+  videoId?: string
   title?: string
   description?: string
   image?: string

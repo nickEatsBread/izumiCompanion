@@ -5,6 +5,8 @@ export interface CloudResolveRequest {
   episode?: number
   season?: number
   streamType: 'movie' | 'series'
+  nativeType?: string
+  streamIds?: string[]
 }
 
 interface DirectSourceCandidate {
@@ -116,13 +118,32 @@ function resumePosition(media: CompanionMedia): number {
 }
 
 export function cloudResolveRequest(media: CompanionMedia): CloudResolveRequest {
+  const episode = Number.isInteger(media.episode) && Number(media.episode) > 0 ? Number(media.episode) : undefined
+  const season = Number.isInteger(media.season) && Number(media.season) >= 0 ? Number(media.season) : undefined
+  const streamType = media.resolver?.streamType === 'movie' || media.resolver?.streamType === 'series'
+    ? media.resolver.streamType
+    : media.ref.type === 'movie' ? 'movie' : 'series'
+  const selectedVideo = episode == null ? undefined : media.episodes?.find((entry) => (
+    entry.episode === episode && (season == null || entry.season === season)
+  )) ?? media.episodes?.[episode - 1]
+  const videoId = boundedText(selectedVideo?.videoId ?? media.resolver?.videoId, 512)
+  const imdbId = /^tt\d+$/i.test(media.resolver?.imdbId ?? '') ? media.resolver!.imdbId : undefined
+  const tmdbId = /^\d{1,12}$/.test(media.resolver?.tmdbId ?? '') ? media.resolver!.tmdbId : undefined
+  const streamIds = [...new Set([
+    videoId,
+    imdbId && (streamType === 'movie' || episode == null ? imdbId : `${imdbId}:${season ?? 1}:${episode}`),
+    tmdbId && (streamType === 'movie' || episode == null ? `tmdb:${tmdbId}` : `tmdb:${tmdbId}:${season ?? 1}:${episode}`),
+  ].filter((value): value is string => Boolean(value)))]
+  const nativeType = media.ref.provider === 'stremio' && /^[A-Za-z0-9._-]{1,80}$/.test(media.resolver?.nativeType ?? '')
+    ? media.resolver?.nativeType
+    : undefined
   return {
     ref: media.ref,
-    episode: Number.isInteger(media.episode) && Number(media.episode) > 0 ? media.episode : undefined,
-    season: Number.isInteger(media.season) && Number(media.season) >= 0 ? media.season : undefined,
-    streamType: media.resolver?.streamType === 'movie' || media.resolver?.streamType === 'series'
-      ? media.resolver.streamType
-      : media.ref.type === 'movie' ? 'movie' : 'series',
+    episode,
+    season,
+    streamType,
+    nativeType,
+    streamIds: streamIds.length ? streamIds : undefined,
   }
 }
 

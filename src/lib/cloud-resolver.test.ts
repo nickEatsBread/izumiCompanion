@@ -23,6 +23,29 @@ describe('private Worker source resolution', () => {
     })
   })
 
+  it('prefers the exact selected video id and includes portable aliases', () => {
+    expect(cloudResolveRequest({
+      ref: { provider: 'stremio', type: 'series', id: 'opaque' },
+      resolver: {
+        streamType: 'series', nativeType: 'channel', imdbId: 'tt1234567', tmdbId: '7654',
+      },
+      title: 'Example show',
+      episode: 2,
+      season: 5,
+      episodes: [
+        { season: 5, episode: 1, videoId: 'native:5:1' },
+        { season: 5, episode: 2, videoId: 'native:5:2' },
+      ],
+    })).toEqual({
+      ref: { provider: 'stremio', type: 'series', id: 'opaque' },
+      episode: 2,
+      season: 5,
+      streamType: 'series',
+      nativeType: 'channel',
+      streamIds: ['native:5:2', 'tt1234567:5:2', 'tmdb:7654:5:2'],
+    })
+  })
+
   it('turns the selected source into a TV-local AVPlay request', () => {
     const load = cloudResolveLoad({
       ok: true,
