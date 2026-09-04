@@ -15,11 +15,12 @@ import {
   Space,
   TrendingUp,
   Tv,
+  UserRound,
   X,
 } from 'lucide-preact'
 import { memo } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { CompanionMedia, FocusLocation } from '../types'
+import type { CompanionMedia, CompanionPerson, FocusLocation } from '../types'
 import { episodeCountsFor, episodeDetailsFor, seasonNumberFor } from '../lib/catalog'
 import type { PlaybackExperienceSettings } from '../lib/playback-experience'
 import { gridWindow, linearWindow } from '../lib/windowing'
@@ -538,6 +539,48 @@ export function detailActionsFor(_media: CompanionMedia): DetailAction[] {
   return ['play', 'trailer', 'close']
 }
 
+export function contributorsFor(media: CompanionMedia): CompanionPerson[] {
+  const unique = new Map<string, CompanionPerson>()
+  ;[...(media.cast ?? []), ...(media.crew ?? [])].forEach((person) => {
+    const key = `${person.provider}:${person.id}`
+    if (!unique.has(key)) unique.set(key, person)
+  })
+  return [...unique.values()].slice(0, 24)
+}
+
+function ContributorBrowser({ media, focus, onFocus, onSelect }: {
+  media: CompanionMedia
+  focus: FocusLocation
+  onFocus(index: number): void
+  onSelect(person: CompanionPerson): void
+}) {
+  const contributors = contributorsFor(media)
+  const window = linearWindow(contributors.length, focus.zone === 'person' ? focus.index : 0, 6)
+  return <section class="contributor-browser" aria-label={`Cast and crew for ${media.title}`}>
+    <header><div><p>Cast &amp; Crew</p><h2>People behind {media.title}</h2></div><span>{contributors.length} profiles</span></header>
+    <div class="contributor-strip">
+      {contributors.slice(window.start, window.end).map((person, offset) => {
+        const index = window.start + offset
+        const focused = focus.zone === 'person' && focus.index === index
+        return <button
+          type="button"
+          class={focused ? 'is-focused' : ''}
+          data-focus-id={`person-${index}`}
+          tabIndex={focused ? 0 : -1}
+          onFocus={() => onFocus(index)}
+          onMouseEnter={() => onFocus(index)}
+          onClick={() => onSelect(person)}
+          key={`${person.provider}-${person.id}-${person.credit}`}
+        >
+          <span class="contributor-portrait">{person.image ? <img src={person.image} alt="" /> : <UserRound size={42} strokeWidth={1.3} />}</span>
+          <span class="contributor-copy"><strong>{person.name}</strong><small>{person.role || (person.credit === 'cast' ? 'Cast' : 'Crew')}</small></span>
+        </button>
+      })}
+    </div>
+    <p class="contributor-hint"><Search size={17} /> Select a person to browse their films and series</p>
+  </section>
+}
+
 export function SeriesScreen({
   selected,
   hideSpoilers,
@@ -551,6 +594,8 @@ export function SeriesScreen({
   onEpisodePlay,
   onRelationFocus,
   onRelationSelect,
+  onPersonFocus,
+  onPersonSelect,
   trailerOpen,
   trailerSource,
   trailerError,
@@ -568,6 +613,8 @@ export function SeriesScreen({
   onEpisodePlay(index: number): void
   onRelationFocus(index: number): void
   onRelationSelect(media: CompanionMedia): void
+  onPersonFocus(index: number): void
+  onPersonSelect(person: CompanionPerson): void
   trailerOpen: boolean
   trailerSource?: string
   trailerError?: string
@@ -584,6 +631,7 @@ export function SeriesScreen({
   const resumeSeason = selected.season ?? 1
   const resumeEpisode = resumeSeason === seasonNumber && selected.episode ? selected.episode : -1
   const relations = selected.relations ?? []
+  const contributors = contributorsFor(selected)
   const episodeFocus = focus.zone === 'episode' ? focus.index : 0
   const episodeWindow = linearWindow(episodes.length, episodeFocus, 4)
   const trailerId = youtubeTrailerId(selected)
@@ -592,6 +640,8 @@ export function SeriesScreen({
     ? 'episodes'
     : focus.zone === 'relation'
       ? 'relations'
+      : focus.zone === 'person'
+        ? 'people'
       : 'overview'
   const subtitleParts = (selected.subtitle ?? '').split(/\s*[·•]\s*/).map((part) => part.trim()).filter(Boolean)
   const year = subtitleParts.find((part) => /^(?:19|20)\d{2}$/.test(part))
@@ -647,6 +697,7 @@ export function SeriesScreen({
             </button>
           })}
         </div>
+        {contributors.length > 0 && <p class="contributor-entry-hint"><UserRound size={18} /> Down for Cast &amp; Crew</p>}
       </section>}
 
       {view === 'episodes' && <section class="series-library" aria-label={`${selected.title} episodes`}>
@@ -743,6 +794,13 @@ export function SeriesScreen({
         </div>
       </section>}
 
+      {view === 'people' && contributors.length > 0 && <ContributorBrowser
+        media={selected}
+        focus={focus}
+        onFocus={onPersonFocus}
+        onSelect={onPersonSelect}
+      />}
+
       <div class="series-back-hint" aria-hidden="true"><i /> <span>Back</span></div>
       {trailerOpen && trailerId && (
         trailerSource
@@ -778,6 +836,7 @@ export function SearchScreen({
   onQueryChange,
   onQueryFocus,
   onQueryDone,
+  resultTitle,
 }: {
   query: string
   suggestions: string[]
@@ -797,6 +856,7 @@ export function SearchScreen({
   onQueryChange(value: string): void
   onQueryFocus(): void
   onQueryDone(): void
+  resultTitle?: string
 }) {
   const resultWindow = gridWindow(results.length, focus.zone === 'grid' ? focus.index : 0, 4, 2)
   return (
@@ -880,7 +940,7 @@ export function SearchScreen({
             </label>
           </header>
           <div class="search-result-heading">
-            <h2>{query ? `Titles related to “${query}”` : 'Popular on izumi'}</h2>
+            <h2>{resultTitle || (query ? `Titles related to “${query}”` : 'Popular on izumi')}</h2>
             <span>{results.length} {results.length === 1 ? 'title' : 'titles'}</span>
           </div>
           {loading ? (
@@ -937,6 +997,8 @@ export function DetailScreen({
   trailerSource,
   trailerError,
   onTrailerClose,
+  onPersonFocus,
+  onPersonSelect,
 }: {
   media: CompanionMedia
   focus: FocusLocation
@@ -948,6 +1010,8 @@ export function DetailScreen({
   trailerSource?: string
   trailerError?: string
   onTrailerClose(): void
+  onPersonFocus(index: number): void
+  onPersonSelect(person: CompanionPerson): void
 }) {
   const reason = media.placement
     ? `${media.placement.position ? `#${media.placement.position} in ` : ''}${media.placement.label}`
@@ -955,8 +1019,9 @@ export function DetailScreen({
   const ReasonIcon = media.placement?.kind === 'continue' ? History : TrendingUp
   const trailerId = youtubeTrailerId(media)
   const actions = detailActionsFor(media)
+  const contributors = contributorsFor(media)
   return (
-    <main class={`detail-screen${trailerOpen ? ' has-trailer-open' : ''}`}>
+    <main class={`detail-screen${focus.zone === 'person' ? ' is-people' : ''}${trailerOpen ? ' has-trailer-open' : ''}`}>
       <div class="detail-art" key={`${media.ref.provider}-${media.ref.id}`}>
         {(media.backdrop || media.poster) && <img src={media.backdrop || media.poster} alt="" />}
         <span />
@@ -986,8 +1051,15 @@ export function DetailScreen({
             </button>
           ))}
         </div>
+        {contributors.length > 0 && <p class="contributor-entry-hint"><UserRound size={18} /> Down for Cast &amp; Crew</p>}
       </section>
       {media.poster && <img class="detail-poster" src={media.poster} alt="" />}
+      {focus.zone === 'person' && contributors.length > 0 && <ContributorBrowser
+        media={media}
+        focus={focus}
+        onFocus={onPersonFocus}
+        onSelect={onPersonSelect}
+      />}
       {trailerOpen && trailerId && (
         trailerSource
           ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={media.title} backdrop={media.backdrop || media.poster} onClose={onTrailerClose} />

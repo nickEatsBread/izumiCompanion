@@ -313,7 +313,21 @@ export function previewDetailsFor(item: CompanionMedia): CompanionMedia {
       }
     })
   })
-  return { ...item, logoImage: item.logoImage || detailLogo, episodes }
+  return {
+    ...item,
+    logoImage: item.logoImage || detailLogo,
+    episodes,
+    cast: item.cast ?? [
+      { id: '101', provider: 'tmdb', name: 'Maya Chen', role: 'Lead cast', credit: 'cast' },
+      { id: '102', provider: 'tmdb', name: 'Noah Williams', role: 'Supporting cast', credit: 'cast' },
+      { id: '103', provider: 'tmdb', name: 'Aiko Tanaka', role: 'Voice cast', credit: 'cast' },
+      { id: '104', provider: 'tmdb', name: 'Daniel Kim', role: 'Guest cast', credit: 'cast' },
+    ],
+    crew: item.crew ?? [
+      { id: '201', provider: 'tmdb', name: 'Elena Park', role: 'Director', credit: 'crew' },
+      { id: '202', provider: 'tmdb', name: 'James Okafor', role: 'Writer', credit: 'crew' },
+    ],
+  }
 }
 
 export function previewSnapshotForCatalog(screen: string): CompanionHomeSnapshot {

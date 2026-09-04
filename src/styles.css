@@ -1406,7 +1406,7 @@ body.avplay-visible #av-player {
   border-radius: 3px;
   display: flex;
   align-items: center;
-  gap: .65vw;
+  gap: 1vw;
   color: #fff;
   background: rgba(60, 60, 60, .86);
   font-size: 1.02vw;
@@ -1637,12 +1637,14 @@ body.avplay-visible #av-player {
 }
 
 .series-screen.is-episodes .series-hero-art img,
-.series-screen.is-relations .series-hero-art img {
+.series-screen.is-relations .series-hero-art img,
+.series-screen.is-people .series-hero-art img {
   filter: brightness(.31) saturate(.5);
 }
 
 .series-screen.is-episodes .series-hero-art span,
-.series-screen.is-relations .series-hero-art span {
+.series-screen.is-relations .series-hero-art span,
+.series-screen.is-people .series-hero-art span {
   background:
     linear-gradient(90deg, #090909 0%, rgba(9, 9, 9, .98) 30%, rgba(9, 9, 9, .7) 58%, rgba(9, 9, 9, .5) 100%),
     linear-gradient(0deg, #090909 0%, rgba(9, 9, 9, .72) 28%, rgba(9, 9, 9, .18) 100%);
@@ -2110,10 +2112,12 @@ body.avplay-visible #av-player {
 .series-screen.has-trailer-open > .series-overview,
 .series-screen.has-trailer-open > .series-library,
 .series-screen.has-trailer-open > .series-relations-browser,
+.series-screen.has-trailer-open > .contributor-browser,
 .series-screen.has-trailer-open > .series-back-hint,
 .detail-screen.has-trailer-open > .detail-art,
 .detail-screen.has-trailer-open > .detail-copy,
-.detail-screen.has-trailer-open > .detail-poster {
+.detail-screen.has-trailer-open > .detail-poster,
+.detail-screen.has-trailer-open > .contributor-browser {
   visibility: hidden;
 }
 
@@ -2334,6 +2338,90 @@ body.avplay-visible #av-player {
 .series-relation-row small { color: #9b9b9b; font-size: .92vw; text-transform: uppercase; }
 .series-relation-row strong { margin-top: .7vh; font-size: 1.28vw; }
 .series-relation-row p { margin: 1.25vh 0 0; color: #aaa; font-size: 1.12vw; line-height: 1.42; }
+
+.contributor-browser {
+  position: absolute;
+  z-index: 5;
+  top: 18vh;
+  right: 4.8vw;
+  left: 7.3vw;
+  overflow: hidden;
+  animation: hero-copy-enter 260ms cubic-bezier(.2, .75, .2, 1) both;
+}
+
+.contributor-browser > header {
+  height: 7.6vh;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.contributor-browser > header p {
+  margin: 0;
+  color: #f1f1f1;
+  font-size: 1.8vw;
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+
+.contributor-browser > header h2 {
+  margin: .65vh 0 0;
+  color: #a9a9a9;
+  font-size: 1.05vw;
+  font-weight: 500;
+}
+
+.contributor-browser > header > span {
+  padding-bottom: .35vh;
+  color: #949494;
+  font-size: .95vw;
+  font-weight: 700;
+}
+
+.contributor-strip {
+  height: 44vh;
+  margin-top: 2.2vh;
+  display: flex;
+  align-items: flex-start;
+  gap: .78vw;
+}
+
+.contributor-strip > button {
+  width: 13.9vw;
+  flex: 0 0 13.9vw;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 3px;
+  color: #f1f1f1;
+  background: #161616;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.contributor-portrait {
+  height: 29vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #777;
+  background: #242424;
+}
+
+.contributor-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
+.contributor-copy { min-width: 0; min-height: 9.4vh; padding: 1.25vh .8vw 1.1vh; display: flex; flex-direction: column; }
+.contributor-copy strong { overflow: hidden; font-size: 1.08vw; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.contributor-copy small { margin-top: .65vh; overflow: hidden; color: #999; font-size: .85vw; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.contributor-strip > button.is-focused,
+.contributor-strip > button:hover { outline: 0; background: #232323; box-shadow: 0 0 0 .24vw #f4f4f1, 0 18px 42px rgba(0,0,0,.58); transform: translateY(-.7vh); }
+.contributor-hint { margin: .4vh 0 0; display: flex; align-items: center; gap: .5vw; color: #a8a8a8; font-size: .92vw; }
+.contributor-entry-hint { margin: 1.8vh 0 0; display: flex; align-items: center; gap: .5vw; color: #aaa; font-size: .92vw; font-weight: 650; }
+
+.detail-screen.is-people .detail-copy { visibility: hidden; }
+.detail-screen.is-people .detail-poster { opacity: 0; }
+.detail-screen.is-people .detail-art img { filter: brightness(.31) saturate(.52); }
 
 .series-back-hint {
   position: absolute;
@@ -5227,6 +5315,10 @@ body,
 .series-trailer-hud header > * + * { margin-left: .8vw; }
 .detail-actions button > * + *,
 .series-trailer-action > * + * { margin-left: .65vw; }
+.detail-actions button > * + * { margin-left: 1vw; }
+.contributor-strip > button + button { margin-left: .78vw; }
+.contributor-hint > * + * { margin-left: .5vw; }
+.contributor-entry-hint > * + * { margin-left: .5vw; }
 .series-current > * + *,
 .loading-rating-copy > * + * { margin-top: .25vh; }
 .season-options > * + * { margin-left: .35vw; }
@@ -5325,6 +5417,9 @@ body,
   .detail-actions > * + *,
   .series-trailer-hud header > * + *,
   .detail-actions button > * + *,
+  .contributor-strip > button + button,
+  .contributor-hint > * + *,
+  .contributor-entry-hint > * + *,
   .series-trailer-action > * + *,
   .series-current > * + *,
   .loading-rating-copy > * + *,

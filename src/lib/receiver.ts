@@ -4,6 +4,7 @@ import type {
   CompanionHomeSnapshot,
   CompanionCloudflareTransport,
   CompanionMedia,
+  CompanionPersonFilter,
   PairingInfo,
   PlaybackSnapshot,
   PlaybackSourceChoice,
@@ -44,7 +45,7 @@ export interface ReceiverEvents {
   onPairingInfo(info: PairingInfo): void
   onSnapshot(snapshot: CompanionHomeSnapshot): void
   onCatalogError?(screen: string, message: string): void
-  onSearchResults(query: string, items: CompanionMedia[], error?: string): void
+  onSearchResults(query: string, items: CompanionMedia[], error?: string, person?: CompanionPersonFilter): void
   onLoad(request: CastLoadRequest, senderId: string): void
   onControl(request: CastControlRequest, senderId: string): void
   onDeviceSourceAvailability?(available: boolean): void
@@ -485,7 +486,18 @@ export class CompanionReceiver {
       const input = message as Record<string, unknown>
       if (!this.credential || input.credential !== this.credential || typeof input.query !== 'string') return
       const items = Array.isArray(input.items) ? input.items.slice(0, 40).filter(validCompanionMedia) : []
-      this.events.onSearchResults(input.query.slice(0, 80), items, typeof input.error === 'string' ? input.error.slice(0, 240) : undefined)
+      const candidate = input.person && typeof input.person === 'object' ? input.person as Record<string, unknown> : undefined
+      const person: CompanionPersonFilter | undefined = candidate
+        && typeof candidate.id === 'string' && typeof candidate.provider === 'string' && typeof candidate.name === 'string'
+        && (candidate.credit === 'cast' || candidate.credit === 'crew')
+        ? { id: candidate.id, provider: candidate.provider, name: candidate.name, credit: candidate.credit }
+        : undefined
+      this.events.onSearchResults(
+        input.query.slice(0, 80),
+        items,
+        typeof input.error === 'string' ? input.error.slice(0, 240) : undefined,
+        person,
+      )
     })
     this.channel.on('izumi.companion.details-result', (value) => {
       const message = parseMessage(value)
@@ -748,11 +760,12 @@ export class CompanionReceiver {
     return true
   }
 
-  requestSearch(query: string): boolean {
+  requestSearch(query: string, person?: CompanionPersonFilter): boolean {
     const normalized = query.trim().slice(0, 80)
     if (!this.credential || !normalized) return false
     this.publish('izumi.companion.search', {
       query: normalized,
+      person,
       requestId: randomHex(12),
       pairingId: this.credential.slice(0, 16),
     }, 'broadcast')

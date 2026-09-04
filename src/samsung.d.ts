@@ -32,6 +32,7 @@ interface SamsungAvPlay {
   getDuration(): number
   getCurrentTime(): number
   getTotalTrackInfo(): { type: 'VIDEO' | 'AUDIO' | 'TEXT'; index: number; extra_info?: string }[]
+  getCurrentStreamInfo?(): { type: 'VIDEO' | 'AUDIO' | 'TEXT'; index: number; extra_info?: string }[]
   setSelectTrack(type: 'AUDIO' | 'TEXT', index: number): void
   setSilentSubtitle?(silent: boolean): void
   setSubtitlePosition?(milliseconds: number): void

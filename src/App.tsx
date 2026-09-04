@@ -10,6 +10,7 @@ import {
   SeriesScreen,
   SettingsScreen,
   adjacentSearchKey,
+  contributorsFor,
   detailActionsFor,
   nearestSearchKey,
   seriesOverviewActionsFor,
@@ -64,6 +65,7 @@ import type {
   CompanionCatalogOption,
   CompanionHomeSnapshot,
   CompanionMedia,
+  CompanionPerson,
   CompanionSkipSegment,
   FocusLocation,
   LinkedDeviceSourceChoice,
@@ -210,7 +212,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const initialPreviewSnapshot = useMemo(() => previewSnapshotForCatalog(requestedPreviewCatalog), [requestedPreviewCatalog])
   const [screen, setScreen] = useState<ScreenName>(initialDestination)
   const [snapshot, setSnapshot] = useState<CompanionHomeSnapshot>(initialPreviewSnapshot)
-  const [selected, setSelected] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
+  const [selected, setSelected] = useState<CompanionMedia>(() => {
+    const media = initialPreviewSnapshot.hero ?? fallbackMedia
+    return showPreviewTools && (initialDestination === 'series' || initialDestination === 'details')
+      ? previewDetailsFor(media)
+      : media
+  })
   const [heroIndex, setHeroIndex] = useState(0)
   const [focus, setFocus] = useState<FocusLocation>(initialDestination === 'details'
     ? { zone: 'detail', index: 0 }
@@ -280,6 +287,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [subtitleText, setSubtitleText] = useState(showPreviewTools ? 'Even the smallest journey can change the world.' : '')
   const [subtitlePreferences, setSubtitlePreferences] = useState<SubtitlePreferences>(sourceSubtitlePreferences)
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchPerson, setSearchPerson] = useState<CompanionPerson>()
   const [remoteSearchResults, setRemoteSearchResults] = useState<CompanionMedia[]>()
   const [searchPending, setSearchPending] = useState(false)
   const [searchError, setSearchError] = useState('')
@@ -315,6 +323,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const startupSettleFrameRef = useRef<number>()
   const startupFallbackTimerRef = useRef<number>()
   const searchQueryRef = useRef(searchQuery)
+  const searchPersonRef = useRef<CompanionPerson>()
   const searchKeyboardColumnRef = useRef(0)
   const playerControlsTimerRef = useRef<number>()
   const seekFeedbackTimerRef = useRef<number>()
@@ -338,6 +347,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const subtitleErrorRef = useRef('')
   const subtitleLoadGenerationRef = useRef(0)
   const appliedAudioPreferenceRef = useRef('')
+  const audioSelectionGenerationRef = useRef(0)
   const appliedSubtitlePreferenceRef = useRef('')
   const subtitlePreferencesRef = useRef(subtitlePreferences)
   const trailerSourceRef = useRef<{ requestId?: string; url: string }>()
@@ -369,6 +379,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const currentSourceLabelRef = useRef('')
 
   screenRef.current = screen
+  searchPersonRef.current = searchPerson
 
   const setFocusLocation = (next: FocusLocation) => {
     focusRef.current = next
@@ -446,11 +457,27 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const selectAudioTrack = (track: PlaybackTrack) => {
-    try { if (avplayRef.current.available) avplayRef.current.selectTrack('AUDIO', track.index) } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'This audio track is unavailable.')
-    }
-    setActiveAudio(track.index)
+    const generation = ++audioSelectionGenerationRef.current
     setPlayerMenu(null)
+    if (!avplayRef.current.available) {
+      setActiveAudio(track.index)
+      return
+    }
+    void avplayRef.current.selectTrack('AUDIO', track.index).then((selected) => {
+      if (generation !== audioSelectionGenerationRef.current) return
+      if (selected) {
+        setActiveAudio(track.index)
+        showNotice(`${track.label} selected`)
+      } else {
+        const current = avplayRef.current.currentTrackIndex('AUDIO')
+        if (current !== undefined) setActiveAudio(current)
+        showNotice('The player could not switch to that audio track.')
+      }
+    }).catch((error) => {
+      if (generation !== audioSelectionGenerationRef.current) return
+      setErrorMessage(error instanceof Error ? error.message : 'This audio track is unavailable.')
+      showNotice('This audio track is unavailable.')
+    })
   }
 
   const selectSubtitleChoice = (choice: SubtitleChoice) => {
@@ -465,9 +492,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (choice.kind === 'off') avplayRef.current.hideSubtitles(true)
     else if (choice.kind === 'embedded' && choice.index != null) {
       avplayRef.current.hideSubtitles(hasSubtitleAppearanceOverride(subtitlePreferencesRef.current))
-      try { if (avplayRef.current.available) avplayRef.current.selectTrack('TEXT', choice.index) } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'This subtitle track is unavailable.')
-      }
+      if (avplayRef.current.available) void avplayRef.current.selectTrack('TEXT', choice.index).then((selected) => {
+        if (!selected) showNotice('The player could not switch to that subtitle track.')
+      }).catch((error) => setErrorMessage(error instanceof Error ? error.message : 'This subtitle track is unavailable.'))
       if (showPreviewTools && !activeLoadRef.current) setSubtitleText('Even the smallest journey can change the world.')
     } else if (choice.kind === 'external' && choice.url) {
       avplayRef.current.hideSubtitles(true)
@@ -640,8 +667,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           setSubtitleChoices([offSubtitle, ...externalChoices, ...embedded])
           if (audio.length && appliedAudioPreferenceRef.current !== request.sessionId) {
             const selected = preferredTrack(audio, request.trackPreferences?.audio) ?? audio[0]
-            try { avplayRef.current.selectTrack('AUDIO', selected.index) } catch { /* AVPlay retains its default track. */ }
-            setActiveAudio(selected.index)
+            void avplayRef.current.selectTrack('AUDIO', selected.index).then((confirmed) => {
+              setActiveAudio(confirmed ? selected.index : avplayRef.current.currentTrackIndex('AUDIO') ?? selected.index)
+            }).catch(() => { /* AVPlay retains its default track. */ })
             appliedAudioPreferenceRef.current = request.sessionId
           }
           if (appliedSubtitlePreferenceRef.current !== request.sessionId) {
@@ -778,12 +806,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         setFocusLocation({ zone: 'catalog', index: pendingCatalog.previousIndex })
         showNotice(message)
       },
-      onSearchResults: (query, items, error) => {
+      onSearchResults: (query, items, error, person) => {
         if (query.trim().toLowerCase() !== searchQueryRef.current.trim().toLowerCase()) return
+        const expected = searchPersonRef.current
+        if (Boolean(expected) !== Boolean(person)
+          || expected && person && (expected.provider !== person.provider || expected.id !== person.id || expected.credit !== person.credit)) return
         if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
         setRemoteSearchResults(items)
         setSearchPending(false)
         setSearchError(error ?? '')
+        if (searchPersonRef.current && items.length) setFocusLocation({ zone: 'grid', index: 0 })
       },
       onLoad: (request) => {
         setSourceChoices([])
@@ -882,7 +914,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSearchPending(true)
     const requestedQuery = searchQuery.trim()
     searchTimerRef.current = window.setTimeout(() => {
-      if (!receiverRef.current?.requestSearch(requestedQuery)) {
+      if (!receiverRef.current?.requestSearch(requestedQuery, searchPerson)) {
         setSearchPending(false)
         setSearchError('Open izumi on the paired device to search this catalogue.')
         return
@@ -897,7 +929,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current)
       if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
     }
-  }, [searchQuery, screen, showPreviewTools])
+  }, [searchQuery, searchPerson, screen, showPreviewTools])
 
   useEffect(() => {
     const playerController = avplayRef.current
@@ -1568,6 +1600,21 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }, delay)
   }
 
+  const openPersonSearch = (person: CompanionPerson) => {
+    closeTrailer()
+    const query = person.name.trim().slice(0, 80)
+    searchPersonRef.current = person
+    searchQueryRef.current = query
+    setSearchPerson(person)
+    setSearchQuery(query)
+    setRemoteSearchResults(undefined)
+    setSearchError('')
+    setSearchPending(true)
+    setActiveNav(1)
+    setScreen('search')
+    changeFocus({ zone: 'search-input', index: 0 })
+  }
+
   const beginNavigationTransition = (waitForData = false) => {
     if (navigationTimerRef.current) window.clearTimeout(navigationTimerRef.current)
     if (navigationExitTimerRef.current) window.clearTimeout(navigationExitTimerRef.current)
@@ -1599,7 +1646,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setSelected(snapshot.hero ?? snapshot.rows[0]?.items[0] ?? fallbackMedia)
       lastHomeContentFocusRef.current = { zone: 'hero', index: 0 }
       changeFocus({ zone: 'hero', index: 0 })
-    } else if (destination === 'search') changeSearchKeyFocus(0)
+    } else if (destination === 'search') {
+      setSearchPerson(undefined)
+      changeSearchKeyFocus(0)
+    }
     else if (destination === 'series') {
       const firstSeries = seriesItems[0] ?? fallbackMedia
       setSeriesSeason(0)
@@ -1624,6 +1674,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (screenRef.current !== 'search') beginNavigationTransition()
     setActiveNav(1)
     setScreen('search')
+    setSearchPerson(undefined)
     if (nextQuery) {
       searchQueryRef.current = nextQuery
       setSearchQuery(nextQuery)
@@ -1942,7 +1993,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const overviewActions = seriesOverviewActionsFor(selected)
     if (focus.zone === 'series-action') {
       if (action === 'up') changeFocus({ zone: 'series-action', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'series-action', index: Math.min(overviewActions.length - 1, focus.index + 1) })
+      else if (action === 'down') {
+        if (focus.index >= overviewActions.length - 1 && contributorsFor(selected).length) changeFocus({ zone: 'person', index: 0 })
+        else changeFocus({ zone: 'series-action', index: Math.min(overviewActions.length - 1, focus.index + 1) })
+      }
+      return
+    }
+    if (focus.zone === 'person') {
+      const contributors = contributorsFor(selected)
+      if (action === 'left') return changeFocus({ zone: 'person', index: Math.max(0, focus.index - 1) })
+      if (action === 'right') return changeFocus({ zone: 'person', index: Math.min(contributors.length - 1, focus.index + 1) })
+      if (action === 'up') return changeFocus({ zone: 'series-action', index: overviewActions.length - 1 })
       return
     }
     if (!counts.length && focus.zone !== 'relation') return
@@ -2004,6 +2065,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const applySearchKey = (index: number) => {
     const key = SEARCH_KEYS[index]?.value
     if (!key) return
+    setSearchPerson(undefined)
     if (key === 'DELETE') setSearchQuery((value) => value.slice(0, -1))
     else if (key === 'SPACE') setSearchQuery((value) => `${value} `)
     else if (key === 'VOICE') changeFocus({ zone: 'search-input', index: 0 })
@@ -2013,6 +2075,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const applySearchSuggestion = (index: number) => {
     const suggestion = searchSuggestions[index]
     if (!suggestion) return
+    setSearchPerson(undefined)
     setSearchQuery(suggestion)
   }
 
@@ -2210,10 +2273,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           const relation = selected.relations?.[focus.index]
           if (relation) selectRelatedMedia(relation.media)
         }
+        else if (focus.zone === 'person') {
+          const person = contributorsFor(selected)[focus.index]
+          if (person) openPersonSearch(person)
+        }
       } else if (action === 'back') {
         const actions = seriesOverviewActionsFor(selected)
         if (focus.zone === 'series-season' || focus.zone === 'episode') changeFocus({ zone: 'series-action', index: Math.max(0, actions.indexOf('episodes')) })
         else if (focus.zone === 'relation') changeFocus({ zone: 'series-action', index: Math.max(0, actions.indexOf('relations')) })
+        else if (focus.zone === 'person') changeFocus({ zone: 'series-action', index: actions.length - 1 })
         else selectNav(0)
       }
       return
@@ -2239,8 +2307,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (screen === 'details') {
       const actions = detailActionsFor(selected)
+      const contributors = contributorsFor(selected)
+      if (focus.zone === 'person') {
+        if (action === 'left') changeFocus({ zone: 'person', index: Math.max(0, focus.index - 1) })
+        else if (action === 'right') changeFocus({ zone: 'person', index: Math.min(contributors.length - 1, focus.index + 1) })
+        else if (action === 'up' || action === 'back') changeFocus({ zone: 'detail', index: 0 })
+        else if (action === 'select' && contributors[focus.index]) openPersonSearch(contributors[focus.index])
+        return
+      }
       if (action === 'left') changeFocus({ zone: 'detail', index: Math.max(0, focus.index - 1) })
       else if (action === 'right') changeFocus({ zone: 'detail', index: Math.min(actions.length - 1, focus.index + 1) })
+      else if (action === 'down' && contributors.length) changeFocus({ zone: 'person', index: 0 })
       else if (action === 'select' && focus.zone === 'detail') {
         const selectedAction = actions[focus.index] ?? 'play'
         if (selectedAction === 'play') playMedia(selected)
@@ -2487,6 +2564,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           trailerSource={trailerSource?.url}
           trailerError={trailerError}
           onTrailerClose={closeTrailer}
+          onPersonFocus={(index) => changeFocus({ zone: 'person', index })}
+          onPersonSelect={openPersonSearch}
         />
       )}
       {screen === 'search' && (
@@ -2509,9 +2588,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
             if (searchResults[index]) setSelected(searchResults[index])
           }}
           onResultSelect={selectCatalogMedia}
-          onQueryChange={setSearchQuery}
+          onQueryChange={(value) => {
+            setSearchPerson(undefined)
+            setSearchQuery(value)
+          }}
           onQueryFocus={() => changeFocus({ zone: 'search-input', index: 0 })}
           onQueryDone={() => changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)}
+          resultTitle={searchPerson
+            ? `Results for ${searchPerson.credit === 'cast' ? 'actor ' : ''}${searchPerson.name}`
+            : undefined}
         />
       )}
       {screen === 'series' && (
@@ -2534,6 +2619,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onEpisodePlay={playSeriesEpisode}
           onRelationFocus={(index) => changeFocus({ zone: 'relation', index })}
           onRelationSelect={selectRelatedMedia}
+          onPersonFocus={(index) => changeFocus({ zone: 'person', index })}
+          onPersonSelect={openPersonSearch}
           trailerOpen={trailerOpen}
           trailerSource={trailerSource?.url}
           trailerError={trailerError}

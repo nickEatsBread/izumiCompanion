@@ -3,6 +3,7 @@ import {
   SEARCH_KEYS,
   TRAILER_LISTENING_MESSAGE,
   adjacentSearchKey,
+  contributorsFor,
   detailActionsFor,
   nearestSearchKey,
   seriesOverviewActionsFor,
@@ -75,6 +76,17 @@ describe('series overview actions', () => {
       trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
       relations: [{ relationType: 'SEQUEL', media }],
     })).toEqual(['play', 'episodes', 'trailer', 'relations'])
+  })
+
+  it('keeps cast and crew identities available for filtered discovery', () => {
+    expect(contributorsFor({
+      ...media,
+      cast: [{ id: '10', provider: 'tmdb', name: 'Actor One', role: 'Detective', credit: 'cast' }],
+      crew: [{ id: '20', provider: 'tmdb', name: 'Director Two', role: 'Director', credit: 'crew' }],
+    })).toEqual([
+      { id: '10', provider: 'tmdb', name: 'Actor One', role: 'Detective', credit: 'cast' },
+      { id: '20', provider: 'tmdb', name: 'Director Two', role: 'Director', credit: 'crew' },
+    ])
   })
 
   it('does not expose unsupported trailer providers', () => {

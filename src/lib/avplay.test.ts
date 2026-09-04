@@ -151,6 +151,38 @@ describe('AVPlay setup', () => {
     ])
   })
 
+  it('uses embedded subtitle handler names when Samsung omits a title field', () => {
+    const player = {
+      getTotalTrackInfo: vi.fn(() => [
+        { type: 'TEXT' as const, index: 3, extra_info: JSON.stringify({ track_lang: 'spa', handler_name: 'Latin American' }) },
+      ]),
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player } } })
+
+    expect(new AvPlayController().tracks()).toEqual([
+      { type: 'TEXT', index: 3, language: 'spa', codec: '', label: 'Spanish · Latin American' },
+    ])
+  })
+
+  it('confirms the native current audio stream before reporting a switch', async () => {
+    let current = 1
+    const player = {
+      getTotalTrackInfo: vi.fn(() => [
+        { type: 'AUDIO' as const, index: 1, extra_info: '{}' },
+        { type: 'AUDIO' as const, index: 4, extra_info: '{}' },
+      ]),
+      getCurrentStreamInfo: vi.fn(() => [{ type: 'AUDIO' as const, index: current, extra_info: '{}' }]),
+      setSelectTrack: vi.fn((_type: string, index: number) => { current = index }),
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player }, setTimeout } })
+    const controller = new AvPlayController()
+
+    await expect(controller.selectTrack('AUDIO', 4)).resolves.toBe(true)
+    expect(controller.currentTrackIndex('AUDIO')).toBe(4)
+    expect(player.setSelectTrack).toHaveBeenCalledWith('AUDIO', 4)
+    await expect(controller.selectTrack('AUDIO', 9)).resolves.toBe(false)
+  })
+
   it('returns from runtime buffering to the intended playback state', async () => {
     let listener: {
       onbufferingstart(): void

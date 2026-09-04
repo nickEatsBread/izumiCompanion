@@ -71,6 +71,9 @@ export interface CompanionMedia {
   relations?: CompanionRelation[]
   /** Provider-authored recommendations kept shallow for the post-play experience. */
   recommendations?: CompanionMedia[]
+  /** On-demand contributor metadata supplied by the paired catalogue. */
+  cast?: CompanionPerson[]
+  crew?: CompanionPerson[]
   placement?: {
     label: string
     position?: number
@@ -93,6 +96,17 @@ export interface CompanionEpisode {
   /** ISO release timestamp when the catalogue supplies one. */
   releasedAt?: string
 }
+
+export interface CompanionPerson {
+  id: string
+  provider: string
+  name: string
+  role?: string
+  image?: string
+  credit: 'cast' | 'crew'
+}
+
+export interface CompanionPersonFilter extends Pick<CompanionPerson, 'id' | 'provider' | 'name' | 'credit'> {}
 
 export type CompanionSkipSegmentType =
   | 'intro'
@@ -319,6 +333,7 @@ export type FocusLocation =
   | { zone: 'series-action'; index: number }
   | { zone: 'episode'; index: number }
   | { zone: 'relation'; index: number }
+  | { zone: 'person'; index: number }
   | { zone: 'setting'; index: number }
   | { zone: 'detail'; index: number }
 

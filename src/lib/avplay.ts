@@ -324,8 +324,8 @@ export class AvPlayController {
         if (track.type !== 'AUDIO' && track.type !== 'TEXT') return
         let details: Record<string, unknown> = {}
         try { details = JSON.parse(track.extra_info || '{}') as Record<string, unknown> } catch { /* malformed metadata */ }
-        const language = trackMetadata(details, ['language', 'track_lang', 'lang', 'track_language'])
-        const title = trackMetadata(details, ['title', 'track_title', 'track_name', 'name', 'label'])
+        const language = trackMetadata(details, ['language', 'track_lang', 'lang', 'track_language', 'trackLanguage'])
+        const title = trackMetadata(details, ['title', 'track_title', 'track_name', 'name', 'label', 'stream_title', 'handler_name'])
         const channels = Number(trackMetadata(details, ['channels', 'channel_count'])) || 0
         const codec = trackMetadata(details, ['fourCC', 'codec', 'codec_type'])
         if (track.type === 'TEXT') {
@@ -364,9 +364,29 @@ export class AvPlayController {
     this.events.onTracks(tracks)
   }
 
-  selectTrack(type: 'AUDIO' | 'TEXT', index: number): void {
-    window.webapis?.avplay?.setSelectTrack(type, index)
-    if (type === 'TEXT') window.webapis?.avplay?.setSilentSubtitle?.(false)
+  currentTrackIndex(type: 'AUDIO' | 'TEXT'): number | undefined {
+    const player = window.webapis?.avplay
+    if (!player?.getCurrentStreamInfo) return undefined
+    try {
+      const track = player.getCurrentStreamInfo().find((item) => item.type === type && item.index >= 0)
+      return track?.index
+    } catch { return undefined }
+  }
+
+  async selectTrack(type: 'AUDIO' | 'TEXT', index: number): Promise<boolean> {
+    const player = window.webapis?.avplay
+    if (!player) return false
+    const available = player.getTotalTrackInfo().some((track) => track.type === type && track.index === index)
+    if (!available) return false
+    player.setSelectTrack(type, index)
+    if (type === 'TEXT') player.setSilentSubtitle?.(false)
+    if (!player.getCurrentStreamInfo) return true
+    for (const wait of [0, 90, 180, 300]) {
+      if (wait) await new Promise<void>((resolve) => window.setTimeout(resolve, wait))
+      if (this.currentTrackIndex(type) === index) return true
+      if (wait === 90) player.setSelectTrack(type, index)
+    }
+    return false
   }
 
   hideSubtitles(hidden: boolean): void {
