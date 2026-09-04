@@ -3044,6 +3044,34 @@ body.avplay-visible #av-player {
   line-height: 1.2;
 }
 
+.loading-status {
+  position: absolute;
+  top: 47%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  color: #f7f7f7;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.loading-status strong {
+  font-size: 58px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.035em;
+  line-height: 1;
+}
+
+.loading-status small {
+  margin-top: 13px;
+  color: #a9a9a9;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: .015em;
+}
+
 .loading-footer {
   position: absolute;
   right: 0;
@@ -3058,18 +3086,25 @@ body.avplay-visible #av-player {
   height: 5px;
   display: block;
   overflow: hidden;
-  background: transparent;
+  background: rgba(255, 255, 255, .16);
 }
 
 .loading-progress-indicator {
   position: absolute;
   top: 0;
   bottom: 0;
+  left: 0;
+  width: 0;
+  display: block;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 0 18px rgba(255, 255, 255, .26);
+  transition: width 180ms linear;
+}
+
+.loading-track.is-indeterminate .loading-progress-indicator {
   left: -22vw;
   width: 22vw;
-  display: block;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .96) 62%, rgba(255, 255, 255, .08));
-  box-shadow: 0 0 18px rgba(255, 255, 255, .26);
   animation: loading-progress-sweep 1.45s cubic-bezier(.4, 0, .2, 1) infinite;
   transform: translate3d(0, 0, 0);
   will-change: transform;
@@ -3148,7 +3183,7 @@ body.avplay-visible #av-player {
   z-index: 11;
   top: 44%;
   left: 50%;
-  min-width: 210px;
+  min-width: 280px;
   padding: 16px 22px;
   border: 1px solid rgba(255, 255, 255, .22);
   display: flex;
@@ -3160,9 +3195,25 @@ body.avplay-visible #av-player {
   transform: translate(-50%, -50%);
 }
 
-.player-buffering-status > span:last-child { display: flex; flex-direction: column; gap: 3px; }
+.player-buffering-copy { width: 190px; display: flex; flex-direction: column; gap: 3px; }
 .player-buffering-status strong { font-size: 20px; }
 .player-buffering-status small { color: #bdbdbd; font-size: 14px; font-weight: 700; }
+
+.player-buffering-meter {
+  width: 100%;
+  height: 3px;
+  margin-top: 7px;
+  display: block;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .18);
+}
+
+.player-buffering-meter i {
+  height: 100%;
+  display: block;
+  background: #fff;
+  transition: width 160ms linear;
+}
 
 .player-buffering-spinner {
   width: 38px;
@@ -4205,15 +4256,6 @@ body,
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, .82));
 }
 
-.hero-title-pending {
-  width: 360px;
-  height: 82px;
-  display: block;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, .13);
-  animation: skeleton-pulse 900ms ease-in-out infinite;
-}
-
 .hero-meta {
   margin-top: 16px;
   color: #f0f1f3;
@@ -4924,23 +4966,8 @@ body,
   transition: opacity 180ms ease, transform 220ms cubic-bezier(.2, .78, .2, 1);
 }
 
-.home-focus-title-pending {
-  position: absolute;
-  z-index: 2;
-  bottom: 29px;
-  left: 28px;
-  width: 265px;
-  height: 55px;
-  display: block;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, .14);
-  animation: skeleton-pulse 900ms ease-in-out infinite;
-  transition: opacity 180ms ease, transform 220ms cubic-bezier(.2, .78, .2, 1);
-}
-
 .home-focus-card.is-trailer-playing .home-focus-title,
-.home-focus-card.is-trailer-playing .home-focus-logo,
-.home-focus-card.is-trailer-playing .home-focus-title-pending {
+.home-focus-card.is-trailer-playing .home-focus-logo {
   opacity: 0;
   animation: none;
   transform: translate3d(0, 18px, 0);

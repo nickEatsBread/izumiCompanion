@@ -752,6 +752,7 @@ async function main() {
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=carousel` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.home-screen.mode-carousel')")
     await waitFor("!document.getElementById('startup-splash')")
+    await waitFor("document.querySelector('.hero-carousel-status')")
     const carouselIndicators = await evaluate(`(() => ({
       text: document.querySelector('.hero-carousel-status').textContent.trim(),
       sizes: Array.from(document.querySelectorAll('.hero-carousel-pips > i')).map(function (pip) {
@@ -919,6 +920,20 @@ async function main() {
      })()`)
     assert(homeSkeleton.blocks >= 12 && homeSkeleton.blockAnimation === 'none' && homeSkeleton.sweepAnimation.includes('skeleton-page-sweep'), `Home skeleton is not using its single M56 compositor sweep: ${JSON.stringify(homeSkeleton)}.`)
 
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=loading` })
+    await waitFor("document.readyState === 'complete' && document.querySelector('.loading-status')")
+    await waitFor("!document.getElementById('startup-splash')")
+    const loadingVideo = await evaluate(`(() => ({
+      status: document.querySelector('.loading-status').textContent,
+      valueText: document.querySelector('.loading-track').getAttribute('aria-valuetext'),
+      width: document.querySelector('.loading-progress-indicator').getBoundingClientRect().width,
+      animation: getComputedStyle(document.querySelector('.loading-progress-indicator')).animationName
+    }))()`)
+    assert(loadingVideo.status.includes('34%') && loadingVideo.status.includes('Buffered for playback'), `Video loading progress is unclear: ${JSON.stringify(loadingVideo)}.`)
+    assert(loadingVideo.valueText === '34% buffered for playback' && loadingVideo.width > 640 && loadingVideo.width < 670,
+      `Video loading progress does not match its rail: ${JSON.stringify(loadingVideo)}.`)
+    assert(loadingVideo.animation === 'none', `Determinate video progress still uses an indeterminate animation: ${loadingVideo.animation}.`)
+
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=buffering` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.player-buffering-status')")
     await waitFor("document.querySelector('.player-state-icon.is-focused')")
@@ -932,7 +947,7 @@ async function main() {
       bufferedWidth: document.querySelector('.player-timeline-buffered').getBoundingClientRect().width,
       valueText: document.querySelector('.player-timeline-control').getAttribute('aria-valuetext')
     }))()`)
-    assert(bufferingPlayer.status.includes('Buffering') && bufferingPlayer.status.includes('46%'), `Buffering indicator is incomplete: ${bufferingPlayer.status}.`)
+    assert(bufferingPlayer.status.includes('Buffering') && bufferingPlayer.status.includes('46% buffered'), `Buffering indicator is incomplete: ${bufferingPlayer.status}.`)
     assert(bufferingPlayer.transport === 'Pause' && bufferingPlayer.transportFocused, `Playing transport is not a focused Pause action: ${JSON.stringify(bufferingPlayer)}.`)
     assert(bufferingPlayer.bufferedWidth > bufferingPlayer.playedWidth && bufferingPlayer.valueText.includes('buffered to'), `Buffered extent is missing from the player rail: ${JSON.stringify(bufferingPlayer)}.`)
     await press('ArrowDown')

@@ -23,6 +23,7 @@ interface HomeScreenProps {
   catalogFocus: number
   notice?: string
   trailerPreview?: { mediaKey: string; url: string }
+  prefetchMedia: CompanionMedia[]
   onFocus(focus: FocusLocation): void
   onNav(index: number): void
   onPlay(media: CompanionMedia): void
@@ -292,20 +293,15 @@ interface StableTitleSelection {
 
 export function titleFallbackVisible(
   source?: string,
-  settled = false,
-  fallbackWhilePending = false,
   failed = false,
   ready = true,
 ): boolean {
-  return Boolean(source && (failed || fallbackWhilePending && !ready))
-    || (!source && (settled || fallbackWhilePending))
+  return !source || failed || !ready
 }
 
 function initialTitleSelection(
   identity: string,
   source?: string,
-  settled = false,
-  fallbackWhilePending = false,
 ): StableTitleSelection {
   const ready = Boolean(source && preloadedTitleImages[source] && !failedTitleImages[source])
   return {
@@ -314,34 +310,27 @@ function initialTitleSelection(
     // TV has downloaded the image. Keep readable copy in the slot until the detached preload has
     // completed, otherwise rapid D-pad navigation suppresses the text with an empty <img> layer.
     logo: ready ? source! : '',
-    showText: titleFallbackVisible(source, settled, fallbackWhilePending, Boolean(source && failedTitleImages[source]), ready),
+    showText: titleFallbackVisible(source, Boolean(source && failedTitleImages[source]), ready),
   }
 }
 
-/** A known logo receives an explicit paint layer immediately. Hero art can wait for its presentation
- * lookup, while a focused spotlight locks to readable text when prefetch has not settled yet. That
- * guarantees a title without swapping a late logo into the card while the viewer is reading it. */
+/** A confirmed, preloaded logo receives the image layer. Text is always present otherwise, while a
+ * focused spotlight keeps its first readable treatment for the current visit. That avoids blank
+ * slots, title skeletons, and late text-to-logo swaps while the viewer is reading the card. */
 function useStableTitleImage(
   identity: string,
   source?: string,
-  settled = false,
-  fallbackWhilePending = false,
+  lockFallbackForVisit = false,
 ): [string, boolean, () => void] {
-  const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source, settled, fallbackWhilePending))
-  const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source, settled, fallbackWhilePending)
+  const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source))
+  const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source)
   // The physical M56 runtime can paint the new card before it runs the passive effect below.
   // Derive a confirmed no-logo fallback from props in the render itself, so a completed metadata
   // response can never leave the focused card's title slot blank for an extra compositor cycle.
-  const showText = visible.showText || (settled && !source && !visible.logo)
+  const showText = visible.showText || !visible.logo
   useEffect(() => {
-    setSelection(initialTitleSelection(identity, source, settled, fallbackWhilePending))
+    setSelection(initialTitleSelection(identity, source))
   }, [identity])
-  useEffect(() => {
-    if (!settled || source) return
-    setSelection((current) => current.identity === identity && !current.logo
-      ? { ...current, showText: true }
-      : current)
-  }, [identity, settled, source])
   useEffect(() => {
     if (!source) return
     let active = true
@@ -351,12 +340,12 @@ function useStableTitleImage(
         if (current.identity !== identity) return current
         // Focused tiles intentionally keep the text selected for the current visit; their warmed
         // logo is used when navigation reaches/revisits them. Hero artwork can reveal immediately.
-        if (loaded) return current.showText ? current : { ...current, logo: source }
+        if (loaded) return current.showText && lockFallbackForVisit ? current : { ...current, logo: source, showText: false }
         return failedTitleImages[source] ? { ...current, logo: '', showText: true } : current
       })
     })
     return () => { active = false }
-  }, [identity, source])
+  }, [identity, lockFallbackForVisit, source])
   return [visible.logo, showText, () => {
     if (visible.logo) failedTitleImages[visible.logo] = true
     setSelection((current) => current.identity === identity ? { ...current, logo: '', showText: true } : current)
@@ -592,10 +581,9 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
   const [trailerPlaying, setTrailerPlaying] = useState(false)
-  const [logoImage, showTextTitle, onLogoError] = useStableTitleImage(
+  const [logoImage, , onLogoError] = useStableTitleImage(
     mediaIdentity(item),
     item.logoImage,
-    item.titleArtSettled,
     true,
   )
   const image = artwork[artworkIndex]
@@ -617,7 +605,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
       class={`home-focus-card is-focused motion-${motion}${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${index > 0 ? ' has-previous' : ''}${trailerSource && trailerPlaying ? ' is-trailer-playing' : ''}`}
       data-focus-id={`row-${rowIndex}-${index}`}
       data-media-index={index}
-      data-title-treatment={logoImage ? 'logo' : showTextTitle ? 'text' : 'pending'}
+      data-title-treatment={logoImage ? 'logo' : 'text'}
       tabIndex={0}
       aria-label={`${rank ? `Number ${rank}, ` : ''}${item.title}${item.episode ? `, episode ${item.episode}` : ''}`}
       onClick={onActivate}
@@ -643,9 +631,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
           ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={410} height={116} decoding="async" onError={onLogoError} />
-          : showTextTitle
-            ? <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>
-            : <span class="home-focus-title-pending" aria-hidden="true" />}
+          : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
           <span>{item.title}</span>
         </span>}
@@ -683,6 +669,7 @@ export function HomeScreen({
   catalogFocus,
   notice,
   trailerPreview,
+  prefetchMedia,
   onFocus,
   onNav,
   onPlay,
@@ -707,7 +694,7 @@ export function HomeScreen({
   const heroImage = hero.episodeImage || hero.backdrop || hero.poster
   const heroTrailerSource = trailerPreview?.mediaKey === mediaIdentity(hero) ? trailerPreview.url : undefined
   const [heroTrailerPlaying, setHeroTrailerPlaying] = useState(false)
-  const [heroLogoImage, showHeroTextTitle, onHeroLogoError] = useStableTitleImage(mediaIdentity(hero), hero.logoImage, hero.titleArtSettled)
+  const [heroLogoImage, , onHeroLogoError] = useStableTitleImage(mediaIdentity(hero), hero.logoImage)
   const homeTrackRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<FocusLocation>(focus)
   const focusMotionRef = useRef<HomeFocusMotion>('still')
@@ -731,8 +718,12 @@ export function HomeScreen({
 
   useEffect(() => {
     void preloadTitleImage(snapshot.hero?.logoImage)
-    snapshot.rows.slice(0, 2).forEach((row) => row.items.slice(0, 8).forEach((item) => { void preloadTitleImage(item.logoImage) }))
+    snapshot.rows.slice(0, 2).forEach((row) => row.items.slice(0, 6).forEach((item) => { void preloadTitleImage(item.logoImage) }))
   }, [snapshot.hero?.logoImage, snapshot.rows])
+
+  useEffect(() => {
+    prefetchMedia.forEach((item) => preloadFocusArtwork(item, item.placement?.kind === 'continue'))
+  }, [prefetchMedia])
 
   useEffect(() => {
     previousFocusRef.current = focus
@@ -846,9 +837,7 @@ export function HomeScreen({
         <div class="hero-copy" key={`${hero.ref.provider}-${hero.ref.type}-${hero.ref.id}`}>
           {heroLogoImage
             ? <img class="hero-title-logo" src={heroLogoImage} alt={hero.title} decoding="async" onError={onHeroLogoError} />
-            : showHeroTextTitle
-              ? <h1>{hero.title}</h1>
-              : <span class="hero-title-pending" aria-hidden="true" />}
+            : <h1>{hero.title}</h1>}
           {isContinueHero && hero.episode && (
             <div class="hero-resume">
               <p><strong>{episodeLabel(hero)}</strong>{hero.episodeTitle && <span>{hero.episodeTitle}</span>}</p>

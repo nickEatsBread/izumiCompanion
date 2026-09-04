@@ -114,12 +114,10 @@ describe('TV home presentation', () => {
     expect(homeFocusMotion({ zone: 'row', row: 0, index: 2 }, { zone: 'row', row: 1, index: 0 })).toBe('vertical')
   })
 
-  it('never leaves a focused spotlight title blank while provider artwork is pending', () => {
-    expect(titleFallbackVisible(undefined, false, true)).toBe(true)
-    expect(titleFallbackVisible(undefined, false, false)).toBe(false)
-    expect(titleFallbackVisible(undefined, true, false)).toBe(true)
-    expect(titleFallbackVisible('logo.png', false, true)).toBe(false)
-    expect(titleFallbackVisible('logo.png', false, true, false, false)).toBe(true)
-    expect(titleFallbackVisible('logo.png', false, true, true)).toBe(true)
+  it('always uses readable text until matching logo artwork has loaded', () => {
+    expect(titleFallbackVisible()).toBe(true)
+    expect(titleFallbackVisible('logo.png')).toBe(false)
+    expect(titleFallbackVisible('logo.png', false, false)).toBe(true)
+    expect(titleFallbackVisible('logo.png', true, true)).toBe(true)
   })
 })

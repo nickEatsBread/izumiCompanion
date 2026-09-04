@@ -619,16 +619,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setNextSourceReady(false)
     setStillWatching(false)
     setPlayerPromptFocus('transport')
-    setLoadingProgress(12)
+    setLoadingProgress(0)
     updatePlayer({ title: request.title, state: 'buffering', position: request.positionSeconds, duration: 0, bufferedPosition: request.positionSeconds, isLive: false })
     setScreen('loading')
     publishStatus(true)
     try {
       await avplayRef.current.load(request, {
         onBuffering: (percent) => {
-          setLoadingProgress(Math.max(12, Number(percent) || 12))
+          const reported = typeof percent === 'number' && Number.isFinite(percent)
+            ? Math.max(0, Math.min(100, percent))
+            : 0
+          setLoadingProgress(reported)
           const current = playerRef.current
-          const amount = Math.max(0, Math.min(100, Number(percent) || 0)) / 100
+          const amount = reported / 100
           const bufferedPosition = current.position + amount * (current.position > 0 ? 3 : 5)
           updatePlayer({ state: 'buffering', bufferedPosition: Math.min(current.duration || bufferedPosition, bufferedPosition) })
           publishStatus()
@@ -1118,6 +1121,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const homePreviewMediaKey = homePreviewMedia
     ? `${homePreviewMedia.ref.provider}:${homePreviewMedia.ref.type}:${homePreviewMedia.ref.id}`
     : ''
+  const homePrefetchMedia = useMemo(
+    () => cinematicScreen ? homeDetailPrefetchTargets(cinematicRows, focus, homeRowIndexesRef.current) : [],
+    [cinematicRows, cinematicScreen, focus],
+  )
 
   const warmHomeArtwork = (media: CompanionMedia) => {
     if (typeof Image === 'undefined') return
@@ -1135,7 +1142,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       image.decoding = 'async'
       image.src = source
       cache.set(source, image)
-      while (cache.size > 12) cache.delete(cache.keys().next().value!)
+      // Six nearby cards at up to three assets each is a useful M56-era TV budget: enough for
+      // immediate horizontal/vertical movement without retaining an entire catalogue in memory.
+      while (cache.size > 18) cache.delete(cache.keys().next().value!)
     }
   }
 
@@ -1207,9 +1216,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     if (!cinematicScreen) return
-    const targets = homeDetailPrefetchTargets(cinematicRows, focus, homeRowIndexesRef.current)
-    queueHomeDetails(homePreviewMedia ? [homePreviewMedia, ...targets] : targets)
-  }, [cinematicRows, cinematicScreen, focus, homePreviewMediaKey, showPreviewTools])
+    queueHomeDetails(homePreviewMedia ? [homePreviewMedia, ...homePrefetchMedia] : homePrefetchMedia)
+  }, [cinematicScreen, homePrefetchMedia, homePreviewMediaKey, showPreviewTools])
 
   useEffect(() => {
     const generation = ++homeTrailerGenerationRef.current
@@ -1488,7 +1496,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (autoplay) autoplayCountRef.current += 1
     setSourceChoices([])
     setActiveSourceId(undefined)
-    setLoadingProgress(18)
+    setLoadingProgress(0)
     updatePlayer({ title: media.title, state: 'buffering', position: media.progress ? 523 : 0, duration: 1_422, isLive: false })
     setScreen('loading')
     if (showPreviewTools) {
@@ -2528,6 +2536,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           catalogFocus={catalogMenuFocus}
           notice={notice}
           trailerPreview={homeTrailerPreview}
+          prefetchMedia={homePrefetchMedia}
           onFocus={changeFocus}
           onNav={selectNav}
           onPlay={playMedia}

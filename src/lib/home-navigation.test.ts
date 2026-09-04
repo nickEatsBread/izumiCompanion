@@ -111,7 +111,7 @@ describe('TV home navigation model', () => {
     expect(rememberedHomeRowIndex(continueRow, { continue: 20 })).toBe(1)
   })
 
-  it('prefetches the next two tiles and remembered vertical destinations in navigation order', () => {
+  it('prefetches the immediate right and vertical destinations before a bounded look-ahead', () => {
     const rows = [
       row('first', 'First', 'catalog', [media('a'), media('b'), media('c'), media('d')]),
       row('second', 'Second', 'catalog', [media('e'), media('f'), media('g')]),
@@ -119,7 +119,7 @@ describe('TV home navigation model', () => {
     ]
 
     expect(homeDetailPrefetchTargets(rows, { zone: 'row', row: 1, index: 1 }, { first: 3, third: 1 })
-      .map(({ ref }) => ref.id)).toEqual(['f', 'g', 'e', 'd', 'i'])
+      .map(({ ref }) => ref.id)).toEqual(['f', 'g', 'i', 'h', 'd', 'e'])
   })
 
   it('warms the first shelf before leaving the hero', () => {
@@ -128,7 +128,7 @@ describe('TV home navigation model', () => {
       row('second', 'Second', 'catalog', [media('e'), media('f')]),
     ]
     expect(homeDetailPrefetchTargets(rows, { zone: 'hero', index: 0 }, { first: 1, second: 1 })
-      .map(({ ref }) => ref.id)).toEqual(['b', 'c', 'd', 'f'])
+      .map(({ ref }) => ref.id)).toEqual(['b', 'c', 'f', 'e', 'd', 'a'])
   })
 
   it('resolves Browse to the linked client merged catalogue', () => {

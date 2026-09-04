@@ -144,6 +144,7 @@ export function LoadingScreen({
 }) {
   const rating = contentRating?.trim() || 'NR'
   const clampedProgress = Math.min(100, Math.max(0, progress))
+  const progressKnown = clampedProgress > 0
   return (
     <main class="state-screen loading-screen">
       <header class="loading-title-lockup">
@@ -156,16 +157,21 @@ export function LoadingScreen({
           <strong>{ratingGuidance(rating)}</strong>
         </span>
       </aside>
+      <div class="loading-status" role="status" aria-live="polite">
+        <strong>{progressKnown ? `${Math.round(clampedProgress)}%` : 'Preparing stream'}</strong>
+        <small>{progressKnown ? 'Buffered for playback' : 'Connecting to the video source'}</small>
+      </div>
       <div class="loading-footer">
         <span
-          class="loading-track"
+          class={`loading-track${progressKnown ? ' is-determinate' : ' is-indeterminate'}`}
           role="progressbar"
           aria-label={`Loading ${title}`}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={Math.round(clampedProgress)}
+          aria-valuenow={progressKnown ? Math.round(clampedProgress) : undefined}
+          aria-valuetext={progressKnown ? `${Math.round(clampedProgress)}% buffered for playback` : 'Preparing stream'}
         >
-          <i class="loading-progress-indicator" aria-hidden="true" />
+          <i class="loading-progress-indicator" style={progressKnown ? { width: `${clampedProgress}%` } : undefined} aria-hidden="true" />
         </span>
       </div>
       <p class="back-hint"><RotateCcw size={19} /> Back to cancel</p>
@@ -313,6 +319,7 @@ export function PlayerScreen({
 }) {
   const progress = isLive ? 100 : duration ? Math.min(100, position / duration * 100) : 0
   const bufferedProgress = isLive ? 100 : duration ? Math.min(100, Math.max(position, bufferedPosition) / duration * 100) : 0
+  const bufferingProgressKnown = bufferingProgress > 0 && bufferingProgress < 100
   const showPause = state === 'playing' || state === 'buffering'
   const selectedAudio = audioTracks.find((track) => track.index === activeAudio)?.label ?? 'Default'
   const selectedSubtitle = subtitleChoices.find((track) => track.id === activeSubtitle)?.label ?? 'Off'
@@ -346,9 +353,12 @@ export function PlayerScreen({
       {state === 'buffering' && (
         <div class="player-buffering-status" role="status" aria-live="polite">
           <span class="player-buffering-spinner" aria-hidden="true" />
-          <span>
+          <span class="player-buffering-copy">
             <strong>Buffering</strong>
-            <small>{bufferingProgress > 0 && bufferingProgress < 100 ? `${Math.round(bufferingProgress)}%` : 'Loading video'}</small>
+            <small>{bufferingProgressKnown ? `${Math.round(bufferingProgress)}% buffered` : 'Preparing stream'}</small>
+            <span class={`player-buffering-meter${bufferingProgressKnown ? ' is-determinate' : ''}`} aria-hidden="true">
+              <i style={{ width: `${bufferingProgressKnown ? bufferingProgress : 0}%` }} />
+            </span>
           </span>
         </div>
       )}

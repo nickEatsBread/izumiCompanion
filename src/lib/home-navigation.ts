@@ -16,10 +16,9 @@ function mediaKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
 }
 
-/** Return detail requests in remote-navigation priority order. Horizontal neighbours are warmed
- * before a right/left press, while each adjacent shelf's remembered destination is warmed before
- * an up/down press. Keeping this list small prevents metadata traffic from contending with D-pad
- * painting on memory-constrained TVs. */
+/** Return detail requests in remote-navigation priority order. The immediate right and vertical
+ * destinations are warmed first, followed by a small look-ahead window. Keeping the window bounded
+ * prevents artwork traffic from competing with D-pad painting on memory-constrained TVs. */
 export function homeDetailPrefetchTargets(
   rows: CompanionHomeRow[],
   focus: FocusLocation,
@@ -34,9 +33,11 @@ export function homeDetailPrefetchTargets(
     seen.add(key)
     targets.push(media)
   }
-  const addRowDestination = (rowIndex: number) => {
+  const addRowDestination = (rowIndex: number, includeNext = false) => {
     const row = rows[rowIndex]
-    add(row?.items[rememberedHomeRowIndex(row, remembered)])
+    const index = rememberedHomeRowIndex(row, remembered)
+    add(row?.items[index])
+    if (includeNext && row?.items.length && row.items.length > 1) add(row.items[(index + 1) % row.items.length])
   }
 
   if (focus.zone === 'row') {
@@ -44,12 +45,11 @@ export function homeDetailPrefetchTargets(
     const length = row?.items.length ?? 0
     if (!length) return targets
     add(row.items[focus.index])
-    for (let offset = 1; offset <= Math.min(2, length - 1); offset += 1) {
-      add(row.items[(focus.index + offset) % length])
-    }
-    if (length > 1) add(row.items[(focus.index - 1 + length) % length])
+    if (length > 1) add(row.items[(focus.index + 1) % length])
+    addRowDestination(focus.row + 1, true)
     addRowDestination(focus.row - 1)
-    addRowDestination(focus.row + 1)
+    for (let offset = 2; offset <= Math.min(3, length - 1); offset += 1) add(row.items[(focus.index + offset) % length])
+    if (length > 1) add(row.items[(focus.index - 1 + length) % length])
     return targets
   }
 
@@ -59,11 +59,12 @@ export function homeDetailPrefetchTargets(
   const firstIndex = rememberedHomeRowIndex(firstRow, remembered)
   if (firstRow?.items.length) {
     add(firstRow.items[firstIndex])
-    for (let offset = 1; offset <= Math.min(2, firstRow.items.length - 1); offset += 1) {
-      add(firstRow.items[(firstIndex + offset) % firstRow.items.length])
-    }
+    if (firstRow.items.length > 1) add(firstRow.items[(firstIndex + 1) % firstRow.items.length])
   }
-  addRowDestination(1)
+  addRowDestination(1, true)
+  for (let offset = 2; offset <= Math.min(3, (firstRow?.items.length ?? 0) - 1); offset += 1) {
+    add(firstRow?.items[(firstIndex + offset) % firstRow.items.length])
+  }
   return targets
 }
 
