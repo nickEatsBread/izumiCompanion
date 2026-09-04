@@ -29,6 +29,7 @@ import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from '.
 import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
 import { catalogCollections, episodeCountsFor } from './lib/catalog'
+import { preloadHomeMedia } from './lib/home-image-cache'
 import {
   catalogMediaDestination,
   homeDetailPrefetchTargets,
@@ -365,7 +366,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const homeDetailGenerationRef = useRef(0)
   const homeDetailResultsRef = useRef<CompanionMedia[]>([])
   const homeDetailFlushFrameRef = useRef<number>()
-  const homeArtworkCacheRef = useRef(new Map<string, HTMLImageElement>())
   const detailReturnScreenRef = useRef<ScreenName>('home')
   const detailReturnFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 1 })
   const lastHomeContentFocusRef = useRef<FocusLocation>({ zone: 'hero', index: 0 })
@@ -1037,7 +1037,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (right > strip.scrollLeft + strip.clientWidth) animateScroll(strip, 'scrollLeft', right - strip.clientWidth + 24, 220)
       }
     }
-  }, [focus, focusRestoreEpoch, screen, snapshot.rows])
+  // Presentation-only replies replace row arrays while the viewer remains on the same tile. They
+  // must not retrigger DOM focus, layout reads, and Chromium 56's scroll correction four times per
+  // prefetch batch. A catalogue revision still restores focus when the actual DOM is replaced.
+  }, [focus, focusRestoreEpoch, screen, snapshot.revision])
 
   useEffect(() => {
     if (!showPreviewTools || screen !== 'player' || player.state !== 'playing' || activeLoadRef.current) return
@@ -1169,25 +1172,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   )
 
   const warmHomeArtwork = (media: CompanionMedia) => {
-    if (typeof Image === 'undefined') return
-    const sources = [media.logoImage, media.episodeImage || media.backdrop || media.poster]
-      .filter((source): source is string => Boolean(source))
-    for (const source of sources) {
-      const cache = homeArtworkCacheRef.current
-      if (cache.has(source)) {
-        const image = cache.get(source)!
-        cache.delete(source)
-        cache.set(source, image)
-        continue
-      }
-      const image = new Image()
-      image.decoding = 'async'
-      image.src = source
-      cache.set(source, image)
-      // Fourteen decoded images cover the ten-item navigation window plus the current transition.
-      // The dedicated title-art cache retains its own bounded set, so posters are not duplicated.
-      while (cache.size > 14) cache.delete(cache.keys().next().value!)
-    }
+    // App-level detail requests prioritize the lightweight title treatment. HomeScreen separately
+    // budgets the expensive backdrop decodes according to actual D-pad destinations.
+    preloadHomeMedia(media, media.placement?.kind === 'continue')
   }
 
   const flushHomeDetailResults = () => {

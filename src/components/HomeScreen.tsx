@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
 import anilistLogo from '../assets/anilist-logo.svg'
 import tmdbLogo from '../assets/tmdb-logo.svg'
+import {
+  focusArtworkSources,
+  isHomeImageFailed,
+  isHomeImageReady,
+  markHomeImageFailed,
+  preloadHomeImage,
+  preloadHomeMedia,
+} from '../lib/home-image-cache'
 import { cyclicRailIndexes } from '../lib/home-navigation'
 import { tvMotionValue } from '../lib/tv-motion'
 import { linearWindow } from '../lib/windowing'
@@ -263,72 +271,9 @@ export function homeFocusMotion(previous: FocusLocation, current: FocusLocation,
 }
 
 const railScrollAnimations = new WeakMap<HTMLElement, number>()
-const preloadedHomeArtwork: Record<string, boolean> = {}
-const preloadedTitleImages: Record<string, boolean> = {}
-const failedTitleImages: Record<string, boolean> = {}
-const titleImageLoads: Partial<Record<string, Promise<boolean>>> = {}
-const preloadedTitleImageOrder: string[] = []
-const failedTitleImageOrder: string[] = []
-const MAX_PRELOADED_TITLE_IMAGES = 32
-
-function preloadTitleImage(source?: string): Promise<boolean> {
-  if (!source || failedTitleImages[source]) return Promise.resolve(false)
-  if (preloadedTitleImages[source]) return Promise.resolve(true)
-  if (titleImageLoads[source]) return titleImageLoads[source]
-  const request = new Promise<boolean>((resolve) => {
-    const image = new Image()
-    const timeout = window.setTimeout(() => {
-      image.onload = null
-      image.onerror = null
-      delete titleImageLoads[source]
-      resolve(false)
-    }, 3_000)
-    image.onload = () => {
-      window.clearTimeout(timeout)
-      preloadedTitleImages[source] = true
-      preloadedTitleImageOrder.push(source)
-      while (preloadedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
-        const expired = preloadedTitleImageOrder.shift()
-        if (expired) {
-          delete preloadedTitleImages[expired]
-          delete titleImageLoads[expired]
-        }
-      }
-      resolve(true)
-    }
-    image.onerror = () => {
-      window.clearTimeout(timeout)
-      failedTitleImages[source] = true
-      failedTitleImageOrder.push(source)
-      while (failedTitleImageOrder.length > MAX_PRELOADED_TITLE_IMAGES) {
-        const expired = failedTitleImageOrder.shift()
-        if (expired) delete failedTitleImages[expired]
-      }
-      delete titleImageLoads[source]
-      resolve(false)
-    }
-    image.src = source
-  })
-  titleImageLoads[source] = request
-  return request
-}
 
 function focusArtwork(media: CompanionMedia, episodeCard: boolean): string[] {
-  return Array.from(new Set([
-    episodeCard ? media.episodeImage : media.backdrop,
-    media.backdrop,
-    media.episodeImage,
-    media.poster,
-  ].filter((value): value is string => Boolean(value))))
-}
-
-function preloadFocusArtwork(media: CompanionMedia, episodeCard: boolean): void {
-  void preloadTitleImage(media.logoImage)
-  const source = focusArtwork(media, episodeCard)[0]
-  if (!source || preloadedHomeArtwork[source]) return
-  const image = new Image()
-  image.onload = () => { preloadedHomeArtwork[source] = true }
-  image.src = source
+  return focusArtworkSources(media, episodeCard)
 }
 
 interface StableTitleSelection {
@@ -349,14 +294,14 @@ function initialTitleSelection(
   identity: string,
   source?: string,
 ): StableTitleSelection {
-  const ready = Boolean(source && preloadedTitleImages[source] && !failedTitleImages[source])
+  const ready = Boolean(source && isHomeImageReady(source, 'title') && !isHomeImageFailed(source, 'title'))
   return {
     identity,
     // A returned URL only proves the metadata reply arrived; it does not prove that the physical
     // TV has downloaded the image. Keep readable copy in the slot until the detached preload has
     // completed, otherwise rapid D-pad navigation suppresses the text with an empty <img> layer.
     logo: ready ? source! : '',
-    showText: titleFallbackVisible(source, Boolean(source && failedTitleImages[source]), ready),
+    showText: titleFallbackVisible(source, isHomeImageFailed(source, 'title'), ready),
   }
 }
 
@@ -380,20 +325,20 @@ function useStableTitleImage(
   useEffect(() => {
     if (!source) return
     let active = true
-    void preloadTitleImage(source).then((loaded) => {
+    void preloadHomeImage(source, 'title').then((loaded) => {
       if (!active) return
       setSelection((current) => {
         if (current.identity !== identity) return current
         // Focused tiles intentionally keep the text selected for the current visit; their warmed
         // logo is used when navigation reaches/revisits them. Hero artwork can reveal immediately.
         if (loaded) return current.showText && lockFallbackForVisit ? current : { ...current, logo: source, showText: false }
-        return failedTitleImages[source] ? { ...current, logo: '', showText: true } : current
+        return isHomeImageFailed(source, 'title') ? { ...current, logo: '', showText: true } : current
       })
     })
     return () => { active = false }
   }, [identity, lockFallbackForVisit, source])
   return [visible.logo, showText, () => {
-    if (visible.logo) failedTitleImages[visible.logo] = true
+    if (visible.logo) markHomeImageFailed(visible.logo, 'title')
     setSelection((current) => current.identity === identity ? { ...current, logo: '', showText: true } : current)
   }]
 }
@@ -682,7 +627,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
                 alt=""
                 width={1112}
                 height={626}
-                decoding="async"
+                decoding={isHomeImageReady(image, 'artwork') ? 'sync' : 'async'}
                 onError={() => {
                   setArtworkIndex((current) => current + 1)
                 }}
@@ -692,7 +637,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
         {trailerSource && <HeroTrailer source={trailerSource} title={item.title} captions={trailerNeedsEnglishCaptions(item.trailer?.language)} onPlayingChange={setTrailerPlaying} />}
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
-          ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={460} height={130} decoding="async" onError={onLogoError} />
+          ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={460} height={130} decoding="sync" onError={onLogoError} />
           : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
           <span>{item.title}</span>
@@ -781,12 +726,18 @@ export function HomeScreen({
   }
 
   useEffect(() => {
-    void preloadTitleImage(snapshot.hero?.logoImage)
-    snapshot.rows.slice(0, 2).forEach((row) => row.items.slice(0, 6).forEach((item) => { void preloadTitleImage(item.logoImage) }))
+    void preloadHomeImage(snapshot.hero?.logoImage, 'title')
+    snapshot.rows.slice(0, 2).forEach((row) => row.items.slice(0, 6).forEach((item) => { void preloadHomeImage(item.logoImage, 'title') }))
   }, [snapshot.hero?.logoImage, snapshot.rows])
 
   useEffect(() => {
-    prefetchMedia.forEach((item) => preloadFocusArtwork(item, item.placement?.kind === 'continue'))
+    // Resolve title art for all ten likely destinations. Decode only the current/next two large
+    // images plus the first landing item above and below; full backdrops are far costlier than logos.
+    prefetchMedia.forEach((item, index) => preloadHomeMedia(
+      item,
+      item.placement?.kind === 'continue',
+      index < 3 || index === 6 || index === 8,
+    ))
   }, [prefetchMedia])
 
   useEffect(() => {
@@ -835,7 +786,7 @@ export function HomeScreen({
     const warmed = new Set<number>()
     for (let offset = -1; offset <= 5; offset += 1) {
       const index = (focus.index + offset + row.items.length) % row.items.length
-      if (!warmed.has(index)) preloadFocusArtwork(row.items[index], episodeCard)
+      if (!warmed.has(index)) preloadHomeMedia(row.items[index], episodeCard, offset >= -1 && offset <= 2)
       warmed.add(index)
     }
   }, [focus, snapshot.rows])

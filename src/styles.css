@@ -5152,7 +5152,7 @@ body,
   text-overflow: ellipsis;
   text-shadow: 0 2px 7px #000;
   white-space: nowrap;
-  animation: home-focus-copy-change 180ms ease both;
+  animation: none;
   transition: opacity 180ms ease, transform 220ms cubic-bezier(.2, .78, .2, 1);
 }
 
@@ -5169,7 +5169,7 @@ body,
   object-fit: contain;
   object-position: left bottom;
   filter: drop-shadow(0 3px 9px rgba(0, 0, 0, .9));
-  animation: home-focus-copy-change 180ms ease both;
+  animation: none;
   transition: opacity 180ms ease, transform 220ms cubic-bezier(.2, .78, .2, 1);
 }
 

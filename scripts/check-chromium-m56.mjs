@@ -198,7 +198,7 @@ async function main() {
   const profile = await mkdtemp(join(runtime, 'profile-'))
   const { server, port } = await startServer()
   const debugPort = await freePort()
-  const url = `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home`
+  const url = `http://127.0.0.1:${port}/?preview=1&capture=1&profile=1&screen=home`
   const browser = spawn(executable, [
     `--user-data-dir=${profile}`,
     `--remote-debugging-port=${debugPort}`,
@@ -479,7 +479,7 @@ async function main() {
     assert(verticalDestination.copy[0] >= verticalDestination.frame[1] && verticalDestination.copy[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title treatment is clipped outside its frame: ${verticalDestination.copy}.`)
     assert(verticalDestination.logo === 'Chainsaw Man' && !verticalDestination.plainTitle, `Focused card did not prefer its source logo: ${JSON.stringify(verticalDestination)}.`)
     assert(JSON.stringify(verticalDestination.copySize) === '[460,130]', `Focused title logo has no stable M56 paint box: ${verticalDestination.copySize}.`)
-    assert(verticalDestination.copyAnimation === 'home-focus-copy-change', `Focused title treatment uses the wrong animation: ${verticalDestination.copyAnimation}.`)
+    assert(verticalDestination.copyAnimation === 'none', `Focused title treatment is delayed by an opacity animation: ${verticalDestination.copyAnimation}.`)
     assert(verticalDestination.achievements.length === 2 && verticalDestination.achievementIcons === 2, `Focused achievements are incomplete: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.achievementParts[1].lead === '#31' && verticalDestination.achievementParts[1].context === 'Highest rated 2022' && verticalDestination.achievementParts[1].contextColor.includes('0.72'), `Achievement hierarchy is not split or capitalized: ${JSON.stringify(verticalDestination.achievementParts)}.`)
     assert(JSON.stringify(verticalDestination.facts) === '["Show","Action","2022","12 episodes"]', `Focused facts repeat shelf copy or omit metadata: ${JSON.stringify(verticalDestination.facts)}.`)
@@ -551,6 +551,7 @@ async function main() {
     })()`)
     assert(JSON.stringify(restoredTrailerPresentation) === '{"shade":"1","title":"1","footer":"0","achievements":"1"}', `Trailer end-state did not restore the tile treatment: ${JSON.stringify(restoredTrailerPresentation)}.`)
     await capture('m56-focused-rail.png')
+    await evaluate("window.__IZUMI_TV_PROFILE__.clear()")
     await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-card.is-focused .home-focus-logo[alt=\"Solo Leveling\"]')")
     const soloLevelingLogo = await evaluate(`(() => {
@@ -613,6 +614,18 @@ async function main() {
     assert(horizontal.artworkTransition === '0s' && horizontal.artworkLayers === 1, `Focused tile crossfades multiple photos: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
+    const focusPerformance = await evaluate(`(() => {
+      var values = window.__IZUMI_TV_PROFILE__.read().filter(function (entry) {
+        return entry.name === 'focus-applied' && typeof entry.duration === 'number';
+      }).map(function (entry) { return entry.duration; });
+      return {
+        count: values.length,
+        maximum: values.length ? Math.max.apply(Math, values) : 0,
+        average: values.length ? values.reduce(function (total, value) { return total + value; }, 0) / values.length : 0
+      };
+    })()`)
+    assert(focusPerformance.count >= 10, `The M56 focus profiler missed navigation events: ${JSON.stringify(focusPerformance)}.`)
+    assert(focusPerformance.maximum < 100, `A D-pad focus update exceeded the 100ms response budget: ${JSON.stringify(focusPerformance)}.`)
     await waitFor("document.querySelector('.home-focus-logo').complete && document.querySelector('.home-focus-logo').naturalWidth > 0")
     const verifiedTitleLogo = await evaluate(`(() => {
       var image = document.querySelector('.home-focus-logo');
@@ -1077,7 +1090,7 @@ async function main() {
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write('Chromium 56 check passed: Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, and no application runtime errors.\n')
+    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, and no application runtime errors.\n`)
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()
