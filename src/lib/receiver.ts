@@ -39,6 +39,7 @@ export type CompanionPlayResult =
   | 'open-client'
   | 'worker-error'
   | 'no-source'
+  | { kind: 'failed'; message: string }
   | { kind: 'resolved'; request: CastLoadRequest; sources: PlaybackSourceChoice[]; selectedId: string }
 
 export interface ReceiverEvents {
@@ -136,6 +137,14 @@ function storedSnapshot(): CompanionHomeSnapshot | null {
   return null
 }
 
+function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)
+  const binary = atob(padded)
+  const result = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) result[index] = binary.charCodeAt(index)
+  return result
+}
+
 function storeSnapshot(snapshot: CompanionHomeSnapshot): void {
   try { localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot)) } catch { /* TV storage is best-effort. */ }
 }
@@ -149,7 +158,7 @@ class WorkerRequestError extends Error {
 function workerRequest(
   transport: CompanionCloudflareTransport,
   path: string,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   payload?: unknown,
   timeoutMs = 10_000,
 ): Promise<Record<string, unknown>> {
@@ -219,6 +228,38 @@ function validCompanionMedia(value: unknown): value is CompanionMedia {
     && typeof media.ref?.id === 'string'
 }
 
+async function tvEncryptionKey(transport: CompanionCloudflareTransport, usages: KeyUsage[]): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', base64UrlToBytes(transport.tvToken), { name: 'AES-GCM' }, false, usages)
+}
+
+async function encryptTvPayload(transport: CompanionCloudflareTransport, context: string, value: unknown): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const plain = new TextEncoder().encode(JSON.stringify(value))
+  const encrypted = await crypto.subtle.encrypt({
+    name: 'AES-GCM', iv,
+    additionalData: new TextEncoder().encode(`izumi-companion:${transport.pairingId}:${context}`),
+  }, await tvEncryptionKey(transport, ['encrypt']), plain)
+  return JSON.stringify({ v: 1, iv: bytesToBase64Url(iv), data: bytesToBase64Url(new Uint8Array(encrypted)) })
+}
+
+async function decryptTvPayload<T>(transport: CompanionCloudflareTransport, context: string, payload: unknown): Promise<T | null> {
+  if (typeof payload !== 'string') return null
+  try {
+    const envelope = JSON.parse(payload) as { v?: unknown; iv?: unknown; data?: unknown }
+    if (envelope.v !== 1 || typeof envelope.iv !== 'string' || typeof envelope.data !== 'string') return null
+    const plain = await crypto.subtle.decrypt({
+      name: 'AES-GCM', iv: base64UrlToBytes(envelope.iv),
+      additionalData: new TextEncoder().encode(`izumi-companion:${transport.pairingId}:${context}`),
+    }, await tvEncryptionKey(transport, ['decrypt']), base64UrlToBytes(envelope.data))
+    return JSON.parse(new TextDecoder().decode(plain)) as T
+  } catch { return null }
+}
+
+async function progressKey(media: CompanionMedia): Promise<string> {
+  const identity = `${media.ref.provider}:${media.ref.type}:${media.ref.id}:${media.season ?? ''}:${media.episode ?? ''}`
+  return bytesToBase64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity))))
+}
+
 function focusedHomeTitleDiagnostics(): Record<string, unknown> {
   const card = document.querySelector<HTMLElement>('.home-focus-card.is-focused')
   if (!card) return { available: false }
@@ -258,11 +299,11 @@ function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedi
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   const details = input.details && typeof input.details === 'object' ? input.details as Record<string, unknown> : null
-  if (!details || !Array.isArray(details.episodes)) return null
+  if (!details) return null
   const watchedThrough = Math.max(0, (media.episode ?? 1) - 1)
   let absolute = 0
   const hideSpoilers = storedSnapshot()?.spoilersHidden === true
-  const episodes = details.episodes.slice(0, 2_000).flatMap((entry) => {
+  const episodes = (Array.isArray(details.episodes) ? details.episodes : []).slice(0, 2_000).flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return []
     const episode = entry as Record<string, unknown>
     const seasonNumber = Number(episode.season)
@@ -279,12 +320,12 @@ function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedi
       description: typeof episode.description === 'string' ? episode.description.slice(0, 1_500) : undefined,
       image: validUrl(episode.image) ? episode.image : undefined,
       runtimeMinutes: Number.isFinite(runtime) && runtime > 0 ? Math.max(1, Math.round(runtime)) : undefined,
+      releasedAt: typeof episode.releasedAt === 'string' ? episode.releasedAt.slice(0, 40) : undefined,
       progress: watched ? 1 : absolute === media.episode ? media.episodeProgress : undefined,
       watched,
       spoiler: hideSpoilers && !watched,
     }]
   })
-  if (!episodes.length) return null
   const suppliedCounts = Array.isArray(details.seasonEpisodeCounts)
     ? details.seasonEpisodeCounts.slice(0, 100).map(Number).filter((count) => Number.isInteger(count) && count > 0)
     : []
@@ -293,12 +334,69 @@ function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedi
   const labels = Array.isArray(details.seasonLabels)
     ? details.seasonLabels.slice(0, suppliedCounts.length).map((label) => typeof label === 'string' ? label.slice(0, 80) : '')
     : undefined
+  const ratings = (Array.isArray(details.ratings) ? details.ratings : []).slice(0, 8).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const rating = entry as Record<string, unknown>
+    const source = typeof rating.source === 'string' ? rating.source.slice(0, 80) : ''
+    const score = Number(rating.score)
+    const scale = Number(rating.scale)
+    const votes = Number(rating.votes)
+    if (!source || !Number.isFinite(score) || ![5, 10, 100].includes(scale)) return []
+    return [{ source, score, scale: scale as 5 | 10 | 100, votes: Number.isFinite(votes) && votes >= 0 ? votes : undefined }]
+  })
+  const people = (value: unknown, credit: 'cast' | 'crew') => (Array.isArray(value) ? value : []).slice(0, 30).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const person = entry as Record<string, unknown>
+    if (typeof person.id !== 'string' || typeof person.provider !== 'string' || typeof person.name !== 'string') return []
+    return [{
+      id: person.id.slice(0, 80),
+      provider: person.provider.slice(0, 40),
+      name: person.name.slice(0, 160),
+      role: typeof person.role === 'string' ? person.role.slice(0, 160) : undefined,
+      image: validUrl(person.image) ? person.image : undefined,
+      credit,
+    }]
+  })
+  const cast = people(details.cast, 'cast')
+  const crew = people(details.crew, 'crew')
+  const relations = (Array.isArray(details.relations) ? details.relations : []).slice(0, 12).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const relation = entry as Record<string, unknown>
+    return typeof relation.relationType === 'string' && validCompanionMedia(relation.media)
+      ? [{ relationType: relation.relationType.slice(0, 80), media: relation.media }]
+      : []
+  })
+  const recommendations = (Array.isArray(details.recommendations) ? details.recommendations : [])
+    .slice(0, 12).filter(validCompanionMedia)
   return {
     ...media,
-    episodes,
+    description: typeof details.description === 'string' ? details.description.slice(0, 1_500) : media.description,
+    poster: validUrl(details.poster) ? details.poster : media.poster,
+    backdrop: validUrl(details.backdrop) ? details.backdrop : media.backdrop,
+    logoImage: validUrl(details.logoImage) ? details.logoImage : media.logoImage,
+    genres: Array.isArray(details.genres)
+      ? details.genres.slice(0, 20).flatMap((entry) => typeof entry === 'string' ? [entry.slice(0, 80)] : [])
+      : media.genres,
+    runtimeMinutes: Number.isFinite(Number(details.runtimeMinutes)) ? Number(details.runtimeMinutes) : media.runtimeMinutes,
+    ratings: ratings.length ? ratings : media.ratings,
+    cast: cast.length ? cast : media.cast,
+    crew: crew.length ? crew : media.crew,
+    relations: relations.length ? relations : media.relations,
+    recommendations: recommendations.length ? recommendations : media.recommendations,
+    trailer: details.trailer && typeof details.trailer === 'object'
+      && typeof (details.trailer as Record<string, unknown>).id === 'string'
+      ? {
+          id: String((details.trailer as Record<string, unknown>).id).slice(0, 40),
+          site: 'youtube',
+          language: typeof (details.trailer as Record<string, unknown>).language === 'string'
+            ? String((details.trailer as Record<string, unknown>).language).slice(0, 24)
+            : undefined,
+        }
+      : media.trailer,
+    episodes: episodes.length ? episodes : media.episodes,
     seasonEpisodeCounts: suppliedCounts.length
       ? suppliedCounts
-      : [...derivedCounts.entries()].sort(([left], [right]) => left - right).map(([, count]) => count),
+      : derivedCounts.size ? [...derivedCounts.entries()].sort(([left], [right]) => left - right).map(([, count]) => count) : media.seasonEpisodeCounts,
     seasonLabels: labels?.every(Boolean) ? labels : undefined,
   }
 }
@@ -470,6 +568,10 @@ export class CompanionReceiver {
   private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
   private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
   private workerSetupRequestId = ''
+  private cloudPlayback?: { sessionId: string; media: CompanionMedia }
+  private cloudProgressAt = 0
+  private cloudProgressWriting = false
+  private pendingCloudProgress?: PlaybackSnapshot
 
   constructor(private readonly events: ReceiverEvents) {
     this.events.onPairingInfo(this.pairing)
@@ -486,11 +588,26 @@ export class CompanionReceiver {
 
   async connect(): Promise<void> {
     if (!window.msf?.local) {
+      // Once a TV has its Worker transport, the LAN receiver is an optional control/fallback
+      // channel. A missing Smart View library must not prevent the cloud snapshot from starting.
+      if (this.cloudflare && this.credential) {
+        await this.refreshCloudSnapshot()
+        return
+      }
       throw new Error('The Samsung Smart View receiver library did not load.')
     }
-    const service = await new Promise<SamsungSmartViewService>((resolve, reject) => {
-      window.msf!.local((error, value) => error || !value ? reject(error || new Error('Smart View is unavailable')) : resolve(value))
-    })
+    let service: SamsungSmartViewService
+    try {
+      service = await new Promise<SamsungSmartViewService>((resolve, reject) => {
+        window.msf!.local((error, value) => error || !value ? reject(error || new Error('Smart View is unavailable')) : resolve(value))
+      })
+    } catch (error) {
+      if (this.cloudflare && this.credential) {
+        await this.refreshCloudSnapshot()
+        return
+      }
+      throw error
+    }
     this.channel = service.channel(CHANNEL_ID)
     this.channel.on('izumi.load', (value, from) => {
       const request = normalizeLoad(value)
@@ -647,7 +764,94 @@ export class CompanionReceiver {
     this.pairingTimer = window.setInterval(() => this.sendChallenge('broadcast'), 10_000)
   }
 
+  private async cloudProgressRecords(): Promise<Array<{
+    media: CompanionMedia
+    positionSeconds: number
+    durationSeconds: number
+    completed: boolean
+    updatedAt: number
+  }>> {
+    if (!this.cloudflare || !crypto.subtle) return []
+    const result = await workerRequest(
+      this.cloudflare,
+      `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/progress`,
+      'GET',
+    )
+    const rows = Array.isArray(result.records) ? result.records.slice(0, 200) : []
+    const decrypted = await Promise.all(rows.map(async (entry) => {
+      if (!entry || typeof entry !== 'object') return null
+      const row = entry as Record<string, unknown>
+      if (typeof row.mediaKey !== 'string') return null
+      return decryptTvPayload<Record<string, unknown>>(this.cloudflare!, `progress:${row.mediaKey}`, row.payload)
+    }))
+    return decrypted.flatMap((value) => {
+      if (!value || !validCompanionMedia(value.media)) return []
+      const positionSeconds = Number(value.positionSeconds)
+      const durationSeconds = Number(value.durationSeconds)
+      const updatedAt = Number(value.updatedAt)
+      if (!Number.isFinite(positionSeconds) || !Number.isFinite(durationSeconds) || !Number.isFinite(updatedAt)) return []
+      return [{
+        media: value.media,
+        positionSeconds: Math.max(0, positionSeconds),
+        durationSeconds: Math.max(0, durationSeconds),
+        completed: value.completed === true,
+        updatedAt,
+      }]
+    })
+  }
+
+  private async withCloudProgress(snapshot: CompanionHomeSnapshot): Promise<CompanionHomeSnapshot> {
+    const records = await this.cloudProgressRecords().catch(() => [])
+    if (!records.length) return snapshot
+    const latest = new Map<string, typeof records[number]>()
+    for (const record of records) {
+      const key = `${record.media.ref.provider}:${record.media.ref.type}:${record.media.ref.id}`
+      if (!latest.has(key) || latest.get(key)!.updatedAt < record.updatedAt) latest.set(key, record)
+    }
+    const merge = (media: CompanionMedia): CompanionMedia => {
+      const record = latest.get(`${media.ref.provider}:${media.ref.type}:${media.ref.id}`)
+      if (!record) return media
+      const fraction = record.completed ? 1 : record.durationSeconds > 0
+        ? Math.max(0, Math.min(1, record.positionSeconds / record.durationSeconds)) : media.episodeProgress
+      return {
+        ...media,
+        episode: record.media.episode ?? media.episode,
+        season: record.media.season ?? media.season,
+        episodeProgress: fraction,
+      }
+    }
+    return {
+      ...snapshot,
+      hero: snapshot.hero ? merge(snapshot.hero) : undefined,
+      rows: snapshot.rows.map((row) => ({ ...row, items: row.items.map(merge) })),
+      views: snapshot.views ? Object.fromEntries(Object.entries(snapshot.views).map(([key, values]) => [key, values?.map(merge)])) as CompanionHomeSnapshot['views'] : undefined,
+    }
+  }
+
+  private async refreshCloudSnapshot(screen?: string): Promise<boolean> {
+    if (!this.cloudflare || !crypto.subtle) return false
+    const query = screen ? `?screen=${encodeURIComponent(screen)}` : ''
+    try {
+      const result = await workerRequest(
+        this.cloudflare,
+        `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/snapshots${query}`,
+        'GET',
+      )
+      if (typeof result.screen !== 'string') return false
+      const snapshot = await decryptTvPayload<CompanionHomeSnapshot>(
+        this.cloudflare, `snapshot:${result.screen}`, result.payload,
+      )
+      if (!isCompanionSnapshot(snapshot)) return false
+      const merged = await this.withCloudProgress(snapshot)
+      storeSnapshot(merged)
+      this.events.onSnapshot(merged)
+      return true
+    } catch { return false }
+  }
+
   requestRefresh(): void {
+    const screen = storedSnapshot()?.catalog.screen
+    void this.refreshCloudSnapshot(screen)
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
   }
 
@@ -668,7 +872,7 @@ export class CompanionReceiver {
   }
 
   async requestDetails(media: CompanionMedia, presentationOnly = false): Promise<CompanionMedia | null> {
-    if (!presentationOnly && this.cloudflare && media.ref.provider === 'anilist') {
+    if (!presentationOnly && this.cloudflare && media.ref.provider !== 'jvm') {
       try {
         const result = await workerRequest(
           this.cloudflare,
@@ -700,9 +904,36 @@ export class CompanionReceiver {
     })
   }
 
-  requestTrailer(videoId: string, title: string, muted = false, captions = false): Promise<CompanionTrailerSource> {
-    if (!this.credential || !this.connected) return Promise.reject(new Error('Open izumi on the paired device to play this trailer.'))
+  async requestTrailer(videoId: string, title: string, muted = false, captions = false): Promise<CompanionTrailerSource> {
+    if (!this.credential) throw new Error('Pair this TV with izumi to play trailers.')
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return Promise.reject(new Error('This trailer has an invalid YouTube ID.'))
+
+    let cloudError = ''
+    if (this.cloudflare) {
+      try {
+        const result = await workerRequest(
+          this.cloudflare,
+          `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/trailer`,
+          'POST',
+          { videoId, muted, captions },
+          TRAILER_TIMEOUT_MS,
+        )
+        if (typeof result.requestId !== 'string' || !/^cloud-[A-Za-z0-9_-]{12,64}$/.test(result.requestId)
+          || typeof result.url !== 'string') throw new Error('The private Worker returned an invalid trailer ticket.')
+        const ticket = new URL(result.url)
+        const endpoint = new URL(this.cloudflare.endpoint)
+        if (ticket.origin !== endpoint.origin || ticket.pathname !== '/v1/companion/trailer'
+          || ticket.username || ticket.password || ticket.hash
+          || !/^[A-Za-z0-9_-]{20,64}$/.test(ticket.searchParams.get('code') || '')) {
+          throw new Error('The private Worker returned an unsafe trailer URL.')
+        }
+        return { requestId: result.requestId, url: ticket.toString() }
+      } catch (error) {
+        cloudError = error instanceof Error ? error.message : 'The private Worker could not prepare this trailer.'
+      }
+    }
+
+    if (!this.connected) throw new Error(cloudError || 'Open izumi on the paired device to play this trailer.')
     const requestId = randomHex(12)
     return new Promise((resolve, reject) => {
       const finish = (source: CompanionTrailerSource | null, error?: string) => {
@@ -725,6 +956,7 @@ export class CompanionReceiver {
   }
 
   releaseTrailer(requestId: string): void {
+    if (requestId.startsWith('cloud-')) return
     if (!this.credential || !this.connected || !/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) return
     this.publish('izumi.companion.trailer-close', {
       pairingId: this.credential.slice(0, 16),
@@ -756,6 +988,9 @@ export class CompanionReceiver {
         )
         const selection = cloudResolveSelection(result, media, requestId)
         if (selection) return { kind: 'resolved', ...selection }
+        const failure = Array.isArray(result.failures) && typeof result.failures[0] === 'string'
+          ? result.failures[0].slice(0, 240) : ''
+        if (failure) return { kind: 'failed', message: failure }
         // A successful Worker response is authoritative. Cloudflare-only never wakes or contacts a
         // linked device; combined mode does so only when the saved profile explicitly requests it.
         if (result.fallback !== 'paired-device') return 'no-source'
@@ -863,23 +1098,60 @@ export class CompanionReceiver {
   }
 
   requestCatalog(screen: string): boolean {
-    if (!this.credential || !this.connected || !screen || screen.length > 40) return false
-    this.publish('izumi.companion.catalog', {
-      screen,
-      pairingId: this.credential.slice(0, 16),
-    }, 'broadcast')
+    if (!this.credential || !screen || screen.length > 40) return false
+    if (this.cloudflare) {
+      void (async () => {
+        if (await this.refreshCloudSnapshot(screen)) return
+        try {
+          const result = await workerRequest(
+            this.cloudflare!,
+            `/v1/companion/pairings/${encodeURIComponent(this.cloudflare!.pairingId)}/catalog`,
+            'POST', { screen }, 20_000,
+          )
+          if (isCompanionSnapshot(result.snapshot)) {
+            const snapshot = await this.withCloudProgress(result.snapshot)
+            storeSnapshot(snapshot)
+            this.events.onSnapshot(snapshot)
+            return
+          }
+        } catch (error) {
+          if (!this.connected) {
+            this.events.onCatalogError?.(screen, error instanceof Error ? error.message : 'The cloud catalogue is unavailable.')
+            return
+          }
+        }
+        this.publish('izumi.companion.catalog', { screen, pairingId: this.credential.slice(0, 16) }, 'broadcast')
+      })()
+      return true
+    }
+    if (!this.connected) return false
+    this.publish('izumi.companion.catalog', { screen, pairingId: this.credential.slice(0, 16) }, 'broadcast')
     return true
   }
 
   requestSearch(query: string, person?: CompanionPersonFilter): boolean {
     const normalized = query.trim().slice(0, 80)
     if (!this.credential || !normalized) return false
-    this.publish('izumi.companion.search', {
-      query: normalized,
-      person,
-      requestId: randomHex(12),
-      pairingId: this.credential.slice(0, 16),
+    const askLinked = () => this.publish('izumi.companion.search', {
+      query: normalized, person, requestId: randomHex(12), pairingId: this.credential.slice(0, 16),
     }, 'broadcast')
+    if (this.cloudflare) {
+      const screen = storedSnapshot()?.catalog.screen ?? 'auto'
+      void workerRequest(
+        this.cloudflare,
+        `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/search`,
+        'POST', { screen, query: normalized, person }, 20_000,
+      ).then((result) => {
+        const items = (Array.isArray(result.items) ? result.items : []).slice(0, 40).filter(validCompanionMedia)
+        this.events.onSearchResults(normalized, items, undefined, person)
+      }).catch((error) => {
+        if (this.connected) askLinked()
+        else this.events.onSearchResults(normalized, [], error instanceof Error ? error.message : 'Cloud search is unavailable.', person)
+      })
+      return true
+    }
+    if (!this.connected) return false
+    askLinked()
     return true
   }
 
@@ -904,14 +1176,70 @@ export class CompanionReceiver {
     return typeof senderId === 'string' && senderId.length > 0 && senderId.length <= 128 ? senderId : ''
   }
 
+  beginPlayback(request: CastLoadRequest): void {
+    if (request.sessionId.startsWith('cloud-') && request.media && this.cloudflare) {
+      this.cloudPlayback = { sessionId: request.sessionId, media: request.media }
+      this.activeSessionId = request.sessionId
+      this.cloudProgressAt = 0
+    } else if (!request.sessionId.startsWith('cloud-')) {
+      this.cloudPlayback = undefined
+    }
+  }
+
+  private async writeCloudProgress(snapshot: PlaybackSnapshot): Promise<void> {
+    const active = this.cloudPlayback
+    const transport = this.cloudflare
+    if (!active || !transport || active.sessionId !== snapshot.sessionId || !crypto.subtle) return
+    const mediaKey = await progressKey(active.media)
+    const positionSeconds = Math.max(0, Math.min(604_800, Number(snapshot.positionSeconds) || 0))
+    const durationSeconds = Math.max(0, Math.min(604_800, Number(snapshot.durationSeconds) || 0))
+    const completed = durationSeconds > 0 && positionSeconds / durationSeconds >= 0.85
+    const value = {
+      media: active.media,
+      sessionId: snapshot.sessionId,
+      positionSeconds,
+      durationSeconds,
+      state: snapshot.state,
+      completed,
+      updatedAt: Date.now(),
+    }
+    const payload = await encryptTvPayload(transport, `progress:${mediaKey}`, value)
+    await workerRequest(
+      transport,
+      `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/progress`,
+      'PUT', { mediaKey, payload }, 8_000,
+    )
+  }
+
   publishStatus(snapshot: PlaybackSnapshot): void {
-    if (!this.activeSenderId || snapshot.sessionId !== this.activeSessionId) return
-    this.publish('izumi.status', snapshot, this.activeSenderId)
+    if (this.activeSenderId && snapshot.sessionId === this.activeSessionId) {
+      this.publish('izumi.status', snapshot, this.activeSenderId)
+    }
+    if (!this.cloudPlayback || snapshot.sessionId !== this.cloudPlayback.sessionId) return
+    const now = Date.now()
+    if (!snapshot.forced && now - this.cloudProgressAt < 15_000) {
+      this.pendingCloudProgress = snapshot
+      return
+    }
+    this.cloudProgressAt = now
+    if (this.cloudProgressWriting) {
+      this.pendingCloudProgress = snapshot
+      return
+    }
+    this.cloudProgressWriting = true
+    void this.writeCloudProgress(snapshot).catch(() => {}).finally(() => {
+      this.cloudProgressWriting = false
+      const pending = this.pendingCloudProgress
+      this.pendingCloudProgress = undefined
+      if (pending?.forced) this.publishStatus(pending)
+    })
   }
 
   clearPlayback(): void {
     this.activeSenderId = ''
     this.activeSessionId = ''
+    this.cloudPlayback = undefined
+    this.pendingCloudProgress = undefined
   }
 
   unpair(revokeWorker = true): void {

@@ -18,9 +18,10 @@ interface DirectSourceCandidate {
   subtitles: CastSubtitleTrack[]
   cookies?: string
   userAgent?: string
+  lan?: boolean
 }
 
-function publicHttpUrl(value: unknown, maximum = 4096): string | undefined {
+function publicHttpUrl(value: unknown, maximum = 4096, allowPrivate = false): string | undefined {
   if (typeof value !== 'string' || !value || value.length > maximum) return undefined
   try {
     const url = new URL(value)
@@ -36,14 +37,10 @@ function publicHttpUrl(value: unknown, maximum = 4096): string | undefined {
       || octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31
       || octets[0] === 192 && octets[1] === 168
     )
-    if ((url.protocol !== 'https:' && url.protocol !== 'http:')
-      || !host
-      || host === 'localhost'
-      || host.endsWith('.localhost')
-      || host.endsWith('.local')
-      || host.endsWith('.internal')
-      || host.includes(':')
-      || privateIpv4) return undefined
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || !host || url.username || url.password) return undefined
+    if (host === 'localhost' || host.endsWith('.localhost') || octets[0] === 127) return undefined
+    const privateHost = host.endsWith('.local') || host.endsWith('.internal') || host.includes(':') || privateIpv4
+    if (privateHost && !allowPrivate) return undefined
     return url.toString()
   } catch { return undefined }
 }
@@ -70,12 +67,13 @@ function normalizeCandidate(value: unknown): DirectSourceCandidate | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   const id = boundedText(input.id, 160)
-  const url = publicHttpUrl(input.url, 8192)
+  const lan = input.lan === true
+  const url = publicHttpUrl(input.url, 8192, lan)
   if (!id || !url) return null
   const subtitles = (Array.isArray(input.subtitles) ? input.subtitles : []).slice(0, 8).flatMap((value, index) => {
     if (!value || typeof value !== 'object') return []
     const track = value as Record<string, unknown>
-    const trackUrl = publicHttpUrl(track.url, 8192)
+    const trackUrl = publicHttpUrl(track.url, 8192, lan)
     if (!trackUrl) return []
     return [{
       id: index + 1,
@@ -98,6 +96,7 @@ function normalizeCandidate(value: unknown): DirectSourceCandidate | null {
     subtitles,
     cookies: headerValue(input.cookies, 4096),
     userAgent: headerValue(input.userAgent, 512),
+    lan,
   }
 }
 
@@ -145,6 +144,22 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
   const selectedId = boundedText(input.selectedId, 160)
   const selected = candidates.find((candidate) => candidate.id === selectedId) ?? candidates[0]
   if (!selected) return null
+  const allowedSkipTypes = new Set(['intro', 'op', 'mixed-op', 'recap', 'outro', 'ed', 'mixed-ed', 'credits', 'ending'])
+  const skipSegments = (Array.isArray(input.skipSegments) ? input.skipSegments : []).slice(0, 16).flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const segment = value as Record<string, unknown>
+    const type = typeof segment.type === 'string' && allowedSkipTypes.has(segment.type) ? segment.type : ''
+    const startTime = Number(segment.startTime)
+    const endTime = Number(segment.endTime)
+    if (!type || !Number.isFinite(startTime) || !Number.isFinite(endTime)
+      || startTime < 0 || endTime <= startTime || endTime > 86_400) return []
+    return [{
+      type: type as NonNullable<CastLoadRequest['skipSegments']>[number]['type'],
+      startTime,
+      endTime,
+      label: boundedText(segment.label, 80),
+    }]
+  })
   const selectedCandidateId = selected.id
   const sources = candidates.map((candidate, index): PlaybackSourceChoice => ({
     id: candidate.id,
@@ -159,6 +174,7 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
       subtitles: candidate.subtitles,
       activeTrackIds: [],
       media,
+      skipSegments,
       cookies: candidate.cookies,
       userAgent: candidate.userAgent,
     },

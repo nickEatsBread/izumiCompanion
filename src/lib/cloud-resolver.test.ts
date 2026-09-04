@@ -93,6 +93,23 @@ describe('private Worker source resolution', () => {
     }, media, 'fallback')?.url).toBe('https://video.example/movie.mp4')
   })
 
+  it('accepts Worker-marked LAN sources and carries cloud skip timings to every source', () => {
+    const selection = cloudResolveSelection({
+      ok: true,
+      candidates: [
+        { id: 'lan', url: 'http://192.168.1.40:8096/video.mkv', lan: true },
+        { id: 'public', url: 'https://video.example/video.mp4' },
+      ],
+      skipSegments: [{ type: 'op', startTime: 45, endTime: 135, label: 'Opening' }],
+    }, media, 'lan')
+
+    expect(selection?.request.url).toBe('http://192.168.1.40:8096/video.mkv')
+    expect(selection?.sources.map((source) => source.request.skipSegments)).toEqual([
+      [{ type: 'op', startTime: 45, endTime: 135, label: 'Opening' }],
+      [{ type: 'op', startTime: 45, endTime: 135, label: 'Opening' }],
+    ])
+  })
+
   it('returns no load request when the Worker has no safe direct source', () => {
     expect(cloudResolveLoad({ ok: true, selectedId: null, candidates: [] }, media, 'empty')).toBeNull()
     expect(cloudResolveLoad({ ok: false, candidates: [{ id: 'x', url: 'https://video.example/x.mp4' }] }, media, 'failed')).toBeNull()

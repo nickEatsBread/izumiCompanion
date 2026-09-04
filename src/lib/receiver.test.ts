@@ -279,6 +279,7 @@ describe('companion play routing', () => {
   })
 
   it('requests a token-scoped HTTP trailer bridge from the paired client', async () => {
+    storage.removeItem('izumi.companion.cloudflare')
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {
       msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
@@ -315,6 +316,7 @@ describe('companion play routing', () => {
   })
 
   it('requests audible trailer previews unless muted playback is explicitly requested', async () => {
+    storage.removeItem('izumi.companion.cloudflare')
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {
       msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
@@ -333,6 +335,31 @@ describe('companion play routing', () => {
     })
     await pending
     receiver.disconnect()
+  })
+
+  it('requests a short-lived trailer bridge from the private Worker without a linked client', async () => {
+    const code = 't'.repeat(32)
+    FakeXmlHttpRequest.responder = () => ({
+      status: 200,
+      body: {
+        requestId: 'cloud-ticket_123456789012',
+        url: `${transport.endpoint}/v1/companion/trailer?code=${code}`,
+        expiresAt: Date.now() + 600_000,
+      },
+    })
+    const receiver = new CompanionReceiver(events())
+
+    await expect(receiver.requestTrailer('M7lc1UVf-VE', 'Frieren trailer', true, true)).resolves.toEqual({
+      requestId: 'cloud-ticket_123456789012',
+      url: `${transport.endpoint}/v1/companion/trailer?code=${code}`,
+    })
+    expect(FakeXmlHttpRequest.sent).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: `${transport.endpoint}/v1/companion/pairings/${transport.pairingId}/trailer`,
+      headers: expect.objectContaining({ Authorization: `Bearer ${transport.tvToken}` }),
+      body: { videoId: 'M7lc1UVf-VE', muted: true, captions: true },
+    }))
+    receiver.releaseTrailer('cloud-ticket_123456789012')
   })
 
   it('loads AniList episode details from the private Worker when the paired client is unavailable', async () => {

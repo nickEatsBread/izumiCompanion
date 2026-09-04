@@ -275,6 +275,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [playerMenu, setPlayerMenu] = useState<PlayerMenu | null>(null)
   const [playerMenuFocus, setPlayerMenuFocus] = useState(0)
   const [sourceChoices, setSourceChoices] = useState<PlaybackSourceChoice[]>([])
+  const sourceChoicesRef = useRef<PlaybackSourceChoice[]>([])
+  const failedCloudSourcesRef = useRef<Set<string>>(new Set())
   const [deviceSourceOptions, setDeviceSourceOptions] = useState<LinkedDeviceSourceOptions>()
   const [activeSourceId, setActiveSourceId] = useState<string>()
   const [deviceSourceChangeAvailable, setDeviceSourceChangeAvailable] = useState(false)
@@ -615,6 +617,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const requestedSubtitle = externalChoices.find((choice) => request.activeTrackIds.includes(Number(choice.id.replace('external-', ''))))
     selectSubtitleChoice(requestedSubtitle ?? offSubtitle)
     activeLoadRef.current = request
+    receiverRef.current?.beginPlayback(request)
     const requestedMedia = request.media ?? selected
     setPlaybackMedia(requestedMedia)
     if (request.media) setSelected(request.media)
@@ -632,6 +635,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     updatePlayer({ title: request.title, state: 'buffering', position: request.positionSeconds, duration: 0, bufferedPosition: request.positionSeconds, isLive: false })
     setScreen('loading')
     publishStatus(true)
+    const tryNextCloudSource = (): boolean => {
+      if (!request.sessionId.startsWith('cloud-')) return false
+      if (failedCloudSourcesRef.current.has(request.sessionId)) return true
+      failedCloudSourcesRef.current.add(request.sessionId)
+      const next = sourceChoicesRef.current.find((choice) => !failedCloudSourcesRef.current.has(choice.request.sessionId))
+      if (!next) return false
+      avplayRef.current.close()
+      setActiveSourceId(next.id)
+      currentSourceLabelRef.current = next.label
+      showNotice(`Trying ${next.label} after the previous source failed`)
+      window.setTimeout(() => { void startAvPlay(next.request) }, 0)
+      return true
+    }
     try {
       await avplayRef.current.load(request, {
         onBuffering: (percent) => {
@@ -704,6 +720,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           completedPlaybackRef.current?.()
         },
         onError: (message) => {
+          if (tryNextCloudSource()) return
           setErrorMessage(message)
           publishStatus(true, message)
           setScreen('error')
@@ -711,6 +728,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (tryNextCloudSource()) return
       setErrorMessage(message)
       publishStatus(true, message)
       setScreen('error')
@@ -1535,6 +1553,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     subtitleErrorRef.current = ''
     setPlayerMenu(null)
     setSourceChoices([])
+    sourceChoicesRef.current = []
+    failedCloudSourcesRef.current.clear()
     setDeviceSourceOptions(undefined)
     setActiveSourceId(undefined)
   }
@@ -1567,8 +1587,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     const result = await receiverRef.current?.requestPlay(media) ?? 'open-client'
     if (generation !== playRequestGenerationRef.current) return
-    if (typeof result !== 'string') {
+    if (typeof result !== 'string' && result.kind === 'failed') {
+      setErrorMessage(result.message)
+      setScreen('error')
+    } else if (typeof result !== 'string') {
       setSourceChoices(result.sources)
+      sourceChoicesRef.current = result.sources
       const preferred = playbackSettings.preferBingeSource && currentSourceLabelRef.current
         ? result.sources.find((source) => source.label.trim().toLowerCase() === currentSourceLabelRef.current.trim().toLowerCase())
         : undefined
@@ -1864,11 +1888,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setDeviceSourceOptions(undefined)
     const sourceMedia = activeLoadRef.current?.media ?? selected
     const result = await receiverRef.current?.requestDeviceSourceChange(sourceMedia, playerRef.current.position) ?? 'open-client'
-    if (typeof result !== 'string') {
+    if (typeof result !== 'string' && result.kind === 'resolved') {
       setSourceChoices(result.sources)
       setActiveSourceId(result.selectedId)
       await startAvPlay({ ...result.request, positionSeconds: playerRef.current.position })
-    } else if (result === 'local') showNotice('Finding linked-device sources…')
+    } else if (typeof result !== 'string') showNotice(result.message)
+    else if (result === 'local') showNotice('Finding linked-device sources…')
     else if (result === 'notified') showNotice('A source-picker notification was sent to your linked phone.')
     else if (result === 'queued') showNotice('Open izumi on your linked phone to choose a source.')
     else if (result === 'worker-error') showNotice('Your private izumi Worker could not send the source request.')

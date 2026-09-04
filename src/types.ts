@@ -23,6 +23,8 @@ export interface MediaRef {
 
 export interface CompanionMedia {
   ref: MediaRef
+  /** Stable identity supplied by Izumi so TV checkpoints merge into normal watch sync. */
+  mediaId?: number
   /** Non-secret hint used only when this TV's private Worker resolver is explicitly enabled. */
   resolver?: { streamType: 'movie' | 'series' }
   /** Transient intent used when the TV asks a linked Izumi client for a replacement source. */
