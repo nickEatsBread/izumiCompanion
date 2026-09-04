@@ -166,12 +166,6 @@ function RatingSourceMark({ source }: { source: string }) {
   return <span class={`hero-rating-source is-${normalized || 'source'}`}>{label}</span>
 }
 
-export function trailerFooterLabel(media: CompanionMedia): string | undefined {
-  if (media.mediaKind === 'movie' || media.ref.type === 'movie') return 'Complete movie'
-  if (media.episode) return undefined
-  return 'Series preview'
-}
-
 export function homeRowVisible(rowIndex: number, activeRow: number): boolean {
   return Math.abs(rowIndex - activeRow) <= 1
 }
@@ -229,7 +223,6 @@ const titleImageLoads: Partial<Record<string, Promise<boolean>>> = {}
 const preloadedTitleImageOrder: string[] = []
 const failedTitleImageOrder: string[] = []
 const MAX_PRELOADED_TITLE_IMAGES = 24
-const TITLE_TEXT_FALLBACK_MS = 350
 
 function preloadTitleImage(source?: string): Promise<boolean> {
   if (!source || failedTitleImages[source]) return Promise.resolve(false)
@@ -307,20 +300,15 @@ function initialTitleSelection(identity: string, source?: string, settled = fals
   }
 }
 
-/** Hold the title slot briefly for late provider metadata. A known logo receives an explicit paint
- * layer immediately; once readable text wins, that visit stays text and any late logo is only
- * warmed for the next card visit. */
+/** Keep the title slot pending until provider metadata settles. A known logo receives an explicit
+ * paint layer immediately; readable text is only chosen after the provider confirms no logo exists
+ * or the real image element reports an error. This prevents late TMDB/Stremio logos losing a race
+ * to an arbitrary UI timer. */
 function useStableTitleImage(identity: string, source?: string, settled = false): [string, boolean, () => void] {
   const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source, settled))
   const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source, settled)
   useEffect(() => {
     setSelection(initialTitleSelection(identity, source, settled))
-    const timer = window.setTimeout(() => {
-      setSelection((current) => current.identity === identity && !current.logo
-        ? { ...current, showText: true }
-        : current)
-    }, TITLE_TEXT_FALLBACK_MS)
-    return () => window.clearTimeout(timer)
   }, [identity])
   useEffect(() => {
     if (!settled || source) return
@@ -337,7 +325,9 @@ function useStableTitleImage(identity: string, source?: string, settled = false)
     void preloadTitleImage(source).then((loaded) => {
       if (!active) return
       setSelection((current) => {
-        if (current.identity !== identity || loaded) return current
+        // A slow detached preload is not proof that the visible image is broken. Only an actual
+        // image error may replace matching logo art with the compact text fallback.
+        if (current.identity !== identity || loaded || !failedTitleImages[source]) return current
         return { ...current, logo: '', showText: true }
       })
     })
@@ -406,6 +396,9 @@ function HeroTrailer({ source, title, onPlayingChange }: { source: string; title
   }
   const start = () => {
     post({ event: 'listening', id: 1, channel: 'widget' })
+    post({ event: 'command', func: 'setOption', args: ['captions', 'track', {}] })
+    post({ event: 'command', func: 'unloadModule', args: ['captions'] })
+    post({ event: 'command', func: 'unloadModule', args: ['cc'] })
     post({ event: 'command', func: 'setVolume', args: [100] })
     post({ event: 'command', func: 'unMute', args: [] })
     post({ event: 'command', func: 'playVideo', args: [] })
@@ -569,7 +562,6 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const [logoImage, showTextTitle, onLogoError] = useStableTitleImage(mediaIdentity(item), item.logoImage, item.titleArtSettled)
   const image = artwork[artworkIndex]
   const context = homeCardContext(item, episodeCard)
-  const trailerLabel = trailerFooterLabel(item)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
   const achievements = item.achievements?.slice(0, 2) ?? (item.placement?.position ? [{
     kind: 'popularity' as const,
@@ -618,7 +610,6 @@ const HomeFocusCard = memo(function HomeFocusCard({
             : <span class="home-focus-title-pending" aria-hidden="true" />}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
           <span>{item.title}</span>
-          {trailerLabel && <><i /><strong>{trailerLabel}</strong></>}
         </span>}
         {achievements.length > 0 && <span class="home-focus-achievements">
           {achievements.map((achievement, achievementIndex) => <span class={`home-achievement is-${achievement.kind}`} key={`${achievement.kind}-${achievement.label}-${achievementIndex}`}>
@@ -747,8 +738,11 @@ export function HomeScreen({
     const row = snapshot.rows[focus.row]
     if (!row) return
     const episodeCard = row.kind === 'continue'
-    for (let index = Math.max(0, focus.index - 1); index <= Math.min(row.items.length - 1, focus.index + 2); index += 1) {
-      preloadFocusArtwork(row.items[index], episodeCard)
+    const warmed = new Set<number>()
+    for (let offset = -1; offset <= 2; offset += 1) {
+      const index = (focus.index + offset + row.items.length) % row.items.length
+      if (!warmed.has(index)) preloadFocusArtwork(row.items[index], episodeCard)
+      warmed.add(index)
     }
   }, [focus, snapshot.rows])
 

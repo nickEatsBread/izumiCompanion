@@ -89,6 +89,11 @@ function TrailerPlayer({
     else target.postMessage(serialized, 'https://www.youtube-nocookie.com')
   }
   const send = (func: string, args: unknown[] = []) => post({ event: 'command', func, args })
+  const suppressCaptions = () => {
+    send('setOption', ['captions', 'track', {}])
+    send('unloadModule', ['captions'])
+    send('unloadModule', ['cc'])
+  }
 
   const applyPlayback = (next: TrailerPlaybackState) => {
     playbackRef.current = next
@@ -135,8 +140,10 @@ function TrailerPlayer({
       const firstReadyEvent = payload.event === 'onReady' || payload.event === 'initialDelivery' || payload.event === 'infoDelivery'
       if (firstReadyEvent && !readyRef.current) {
         readyRef.current = true
+        suppressCaptions()
         send('playVideo')
       }
+      if (payload.event === 'onApiChange') suppressCaptions()
       if (payload.event === 'onStateChange') {
         const state = trailerPlaybackState(payload.info ?? payload.data)
         if (state) applyPlayback(state)
@@ -227,7 +234,10 @@ function TrailerPlayer({
         tabIndex={-1}
         onLoad={() => {
           post(TRAILER_LISTENING_MESSAGE)
-          window.setTimeout(() => send('playVideo'), 350)
+          window.setTimeout(() => {
+            suppressCaptions()
+            send('playVideo')
+          }, 350)
         }}
       />
       <button ref={hitAreaRef} class="series-trailer-hit-area" type="button" tabIndex={-1} aria-label={playback === 'playing' ? 'Pause trailer' : 'Play trailer'} onClick={toggle} />

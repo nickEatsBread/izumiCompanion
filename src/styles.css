@@ -4601,6 +4601,12 @@ body,
   animation: home-poster-enter 190ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
+/* Cyclic navigation mounts a new edge poster on each move. Replaying its opacity animation exposed
+   the grey card surface for a frame and added needless compositor work on Chromium M56. */
+.media-row.is-active .home-poster-card {
+  animation: none;
+}
+
 .home-poster-card.is-selected-source {
   pointer-events: none;
 }
@@ -4837,30 +4843,12 @@ body,
 
 .home-trailer-footer > span {
   min-width: 0;
-  max-width: 610px;
+  max-width: 100%;
   display: block;
   overflow: hidden;
   opacity: .62;
   font-weight: 600;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-trailer-footer > i {
-  width: 5px;
-  min-width: 5px;
-  height: 5px;
-  margin: 1px 11px 0;
-  display: block;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .58);
-}
-
-.home-trailer-footer > strong {
-  min-width: 158px;
-  display: block;
-  font-size: 20px;
-  font-weight: 800;
   white-space: nowrap;
 }
 

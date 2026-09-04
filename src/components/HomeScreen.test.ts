@@ -19,7 +19,6 @@ import {
   informativeHeroMeta,
   mediaFactTokens,
   ratingDisplayValue,
-  trailerFooterLabel,
 } from './HomeScreen'
 
 const media = (subtitle?: string, contentRating?: string): CompanionMedia => ({
@@ -105,12 +104,6 @@ describe('TV home presentation', () => {
     expect(ratingDisplayValue({ source: 'IMDb', score: 8.6, scale: 10 })).toBe('8.6')
     expect(ratingDisplayValue({ source: 'Rotten Tomatoes', score: 91, scale: 100 })).toBe('91%')
     expect(ratingDisplayValue({ source: 'Metacritic', score: 74, scale: 100 })).toBe('74')
-  })
-
-  it('keeps compact movie and series labels but omits episode completion copy', () => {
-    expect(trailerFooterLabel({ ...media(), mediaKind: 'movie' })).toBe('Complete movie')
-    expect(trailerFooterLabel({ ...media(), mediaKind: 'show' })).toBe('Series preview')
-    expect(trailerFooterLabel({ ...media(), mediaKind: 'show', episode: 4 })).toBeUndefined()
   })
 
   it('describes horizontal and vertical spotlight movement for the TV transition', () => {

@@ -485,6 +485,7 @@ async function main() {
         title: getComputedStyle(title).opacity,
         footer: getComputedStyle(card.querySelector('.home-trailer-footer')).opacity,
         footerCopy: card.querySelector('.home-trailer-footer').textContent.trim(),
+        footerDecorations: card.querySelectorAll('.home-trailer-footer > i, .home-trailer-footer > strong').length,
         footerTitleOpacity: getComputedStyle(footerTitle).opacity,
         footerOverflow: getComputedStyle(footerTitle).textOverflow,
         achievements: getComputedStyle(card.querySelector('.home-focus-achievements')).opacity,
@@ -494,7 +495,7 @@ async function main() {
       };
     })()`)
     assert(activeTrailerPresentation.shade === '0' && activeTrailerPresentation.title === '0' && activeTrailerPresentation.footer === '1', `Trailer chrome does not clear the full video: ${JSON.stringify(activeTrailerPresentation)}.`)
-    assert(activeTrailerPresentation.footerCopy.includes('Chainsaw Man') && activeTrailerPresentation.footerCopy.includes('Series preview'), `Trailer footer context is incomplete: ${JSON.stringify(activeTrailerPresentation)}.`)
+    assert(activeTrailerPresentation.footerCopy === 'Chainsaw Man' && activeTrailerPresentation.footerDecorations === 0, `Trailer footer still includes completion copy or a separator: ${JSON.stringify(activeTrailerPresentation)}.`)
     assert(Number(activeTrailerPresentation.footerTitleOpacity) < 1 && activeTrailerPresentation.footerOverflow === 'ellipsis', `Long trailer titles cannot yield space to their content label: ${JSON.stringify(activeTrailerPresentation)}.`)
     assert(activeTrailerPresentation.achievements === '0' && activeTrailerPresentation.anilistLogo && !activeTrailerPresentation.sourceText.includes('AniList'), `Trailer/source achievement treatment is incorrect: ${JSON.stringify(activeTrailerPresentation)}.`)
     assert(activeTrailerPresentation.achievementWidths.every(function (width) { return width < 430; }), `Achievement badges retain an empty black tail: ${activeTrailerPresentation.achievementWidths}.`)
@@ -542,6 +543,7 @@ async function main() {
         width: focused.offsetWidth,
         visualWidth: focused.getBoundingClientRect().width,
         posterWidths: Array.from(new Set(Array.from(strip.querySelectorAll('.home-poster-card')).map(function (card) { return card.offsetWidth; }))),
+        posterAnimations: Array.from(new Set(Array.from(strip.querySelectorAll('.home-poster-card')).map(function (card) { return getComputedStyle(card).animationDuration; }))),
         focusLeft: focused.getBoundingClientRect().left,
         focusAnimation: getComputedStyle(focused.querySelector('.home-focus-frame')).animationDuration,
         mediaAnimation: getComputedStyle(focused.querySelector('.home-focus-media')).animationDuration,
@@ -564,6 +566,7 @@ async function main() {
     assert(horizontal.scrollLeft === 0 && horizontal.cyclic === 'true' && horizontal.spacers === 0, `Horizontal navigation still exposes a finite rail seam: ${JSON.stringify(horizontal)}.`)
     assert(horizontal.width === 960 && horizontal.visualWidth === 960, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
     assert(JSON.stringify(horizontal.posterWidths) === '[320]', `Neighbour cards reflowed: ${horizontal.posterWidths}.`)
+    assert(JSON.stringify(horizontal.posterAnimations) === '["0s"]', `Cyclic navigation still replays the grey poster-entry frame: ${horizontal.posterAnimations}.`)
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
     assert(horizontal.focusAnimation === '0s', `Focus outline animation is enabled: ${horizontal.focusAnimation}.`)
     assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
@@ -691,7 +694,7 @@ async function main() {
       source: document.querySelector('.series-trailer-overlay iframe').src,
       captionHud: Boolean(document.querySelector('.series-trailer-caption'))
     }))()`)
-    assert(!trailerWithoutCaptions.source.includes('cc_load_policy=1') && !trailerWithoutCaptions.source.includes('cc_lang_pref') && !trailerWithoutCaptions.captionHud,
+    assert(trailerWithoutCaptions.source.includes('cc_load_policy=0') && !trailerWithoutCaptions.source.includes('cc_lang_pref') && !trailerWithoutCaptions.captionHud,
       `Trailer captions are still forced on: ${JSON.stringify(trailerWithoutCaptions)}.`)
     await press('Backspace')
     await waitFor("!document.querySelector('.series-trailer-overlay')")
@@ -775,7 +778,7 @@ async function main() {
       var trailer = document.querySelector('.home-hover-trailer');
       return { source: trailer.src, title: trailer.title };
     })()`)
-    assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=0'), `Focused-card trailer is not configured for audible autoplay: ${hoverTrailer.source}.`)
+    assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=0') && hoverTrailer.source.includes('cc_load_policy=0'), `Focused-card trailer is not configured for audible, caption-free autoplay: ${hoverTrailer.source}.`)
     assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
     await evaluate("document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing')")
     await wait(220)

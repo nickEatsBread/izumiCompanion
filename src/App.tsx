@@ -1035,7 +1035,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (showPreviewTools) {
       const params = new URLSearchParams({
         autoplay: '1', controls: '0', disablekb: '1', enablejsapi: '1', playsinline: '1', rel: '0',
-        hl: 'en', iv_load_policy: '3',
+        cc_load_policy: '0', hl: 'en', iv_load_policy: '3',
       })
       if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
       const source = { url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
@@ -1097,12 +1097,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const timer = window.setTimeout(() => {
       homeDetailRequestsRef.current.add(homePreviewMediaKey)
       const apply = (details: CompanionMedia | null) => {
-        if (!details) return
-        setSnapshot((current) => mergeHomeMediaDetails(current, details))
-        setSelected((current) => sameMedia(current, media) ? details : current)
+        const settled = details ? { ...details, titleArtSettled: true } : { ...media, titleArtSettled: true }
+        setSnapshot((current) => mergeHomeMediaDetails(current, settled))
+        setSelected((current) => sameMedia(current, media) ? settled : current)
       }
       if (showPreviewTools) apply(previewDetailsFor(media))
-      else void receiverRef.current?.requestDetails(media).then(apply)
+      else void receiverRef.current?.requestDetails(media).then(apply).catch(() => apply(null))
     }, 80)
     return () => window.clearTimeout(timer)
   }, [cinematicScreen, homePreviewMediaKey, homePreviewMedia?.logoImage, homePreviewMedia?.description, homePreviewMedia?.trailer?.id, homePreviewMedia?.trailer?.site, showPreviewTools])
@@ -1131,10 +1131,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if (homeDetailRequestsRef.current.has(key)) return
         homeDetailRequestsRef.current.add(key)
         const apply = (details: CompanionMedia | null) => {
-          if (details) setSnapshot((current) => mergeHomeMediaDetails(current, details))
+          const settled = details ? { ...details, titleArtSettled: true } : { ...media, titleArtSettled: true }
+          setSnapshot((current) => mergeHomeMediaDetails(current, settled))
         }
         if (showPreviewTools) apply(previewDetailsFor(media))
-        else void receiverRef.current?.requestDetails(media).then(apply)
+        else void receiverRef.current?.requestDetails(media).then(apply).catch(() => apply(null))
       })
     }, 140)
     return () => window.clearTimeout(timer)
@@ -1154,7 +1155,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (showPreviewTools) {
         const params = new URLSearchParams({
           autoplay: '1', controls: '0', disablekb: '1', enablejsapi: '1', playsinline: '1', rel: '0',
-          mute: '0', hl: 'en', iv_load_policy: '3',
+          mute: '0', cc_load_policy: '0', hl: 'en', iv_load_policy: '3',
         })
         if (/^https?:$/i.test(location.protocol)) params.set('origin', location.origin)
         const source = { mediaKey: focusedHomeMediaKey, url: `https://www.youtube-nocookie.com/embed/${videoId}?${params}` }
