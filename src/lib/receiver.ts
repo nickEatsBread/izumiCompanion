@@ -48,7 +48,7 @@ export interface ReceiverEvents {
   onPairingInfo(info: PairingInfo): void
   onSnapshot(snapshot: CompanionHomeSnapshot): void
   onCatalogError?(screen: string, message: string): void
-  onSearchResults(query: string, items: CompanionMedia[], error?: string, person?: CompanionPersonFilter): void
+  onSearchResults(query: string, items: CompanionMedia[], error?: string, person?: CompanionPersonFilter, genre?: string): void
   onLoad(request: CastLoadRequest, senderId: string): void
   onControl(request: CastControlRequest, senderId: string): void
   onDeviceSourceAvailability?(available: boolean): void
@@ -683,11 +683,13 @@ export class CompanionReceiver {
         && (candidate.credit === 'cast' || candidate.credit === 'crew')
         ? { id: candidate.id, provider: candidate.provider, name: candidate.name, credit: candidate.credit }
         : undefined
+      const genre = typeof input.genre === 'string' ? input.genre.trim().slice(0, 80) : undefined
       this.events.onSearchResults(
         input.query.slice(0, 80),
         items,
         typeof input.error === 'string' ? input.error.slice(0, 240) : undefined,
         person,
+        genre,
       )
     })
     this.channel.on('izumi.companion.details-result', (value) => {
@@ -824,6 +826,7 @@ export class CompanionReceiver {
       ...snapshot,
       hero: snapshot.hero ? merge(snapshot.hero) : undefined,
       rows: snapshot.rows.map((row) => ({ ...row, items: row.items.map(merge) })),
+      history: snapshot.history?.map(merge),
       views: snapshot.views ? Object.fromEntries(Object.entries(snapshot.views).map(([key, values]) => [key, values?.map(merge)])) as CompanionHomeSnapshot['views'] : undefined,
     }
   }
@@ -1129,24 +1132,24 @@ export class CompanionReceiver {
     return true
   }
 
-  requestSearch(query: string, person?: CompanionPersonFilter): boolean {
+  requestSearch(query: string, person?: CompanionPersonFilter, genre?: string): boolean {
     const normalized = query.trim().slice(0, 80)
     if (!this.credential || !normalized) return false
     const askLinked = () => this.publish('izumi.companion.search', {
-      query: normalized, person, requestId: randomHex(12), pairingId: this.credential.slice(0, 16),
+      query: normalized, person, genre, requestId: randomHex(12), pairingId: this.credential.slice(0, 16),
     }, 'broadcast')
     if (this.cloudflare) {
       const screen = storedSnapshot()?.catalog.screen ?? 'auto'
       void workerRequest(
         this.cloudflare,
         `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/search`,
-        'POST', { screen, query: normalized, person }, 20_000,
+        'POST', { screen, query: normalized, person, genre }, 20_000,
       ).then((result) => {
         const items = (Array.isArray(result.items) ? result.items : []).slice(0, 40).filter(validCompanionMedia)
-        this.events.onSearchResults(normalized, items, undefined, person)
+        this.events.onSearchResults(normalized, items, undefined, person, genre)
       }).catch((error) => {
         if (this.connected) askLinked()
-        else this.events.onSearchResults(normalized, [], error instanceof Error ? error.message : 'Cloud search is unavailable.', person)
+        else this.events.onSearchResults(normalized, [], error instanceof Error ? error.message : 'Cloud search is unavailable.', person, genre)
       })
       return true
     }

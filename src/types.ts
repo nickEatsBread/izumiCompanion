@@ -6,6 +6,7 @@ export type ScreenName =
   | 'series'
   | 'movies'
   | 'my-list'
+  | 'watch-history'
   | 'settings'
   | 'independent-setup'
   | 'details'
@@ -155,11 +156,13 @@ export interface CompanionHomeSnapshot {
   version: 1
   revision: string
   generatedAt: number
-  catalog: { screen: string; label: string; options?: CompanionCatalogOption[] }
+  catalog: { screen: string; label: string; options?: CompanionCatalogOption[]; genres?: string[] }
   /** Mirrors the paired Izumi client's interface preference. */
   spoilersHidden?: boolean
   hero?: CompanionMedia
   rows: CompanionHomeRow[]
+  /** Most-recent-first playback history supplied by the linked izumi device. */
+  history?: CompanionMedia[]
   /** Optional provider-authored collections for TV navigation; never inferred from recommendations. */
   views?: {
     search?: CompanionMedia[]
@@ -366,9 +369,11 @@ function isCompanionMedia(value: unknown): value is CompanionMedia {
 export function isCompanionSnapshot(value: unknown): value is CompanionHomeSnapshot {
   if (!isRecord(value) || !isRecord(value.catalog) || !Array.isArray(value.rows)) return false
   const catalogOptions = value.catalog.options
+  const catalogGenres = value.catalog.genres
   if (catalogOptions !== undefined && (!Array.isArray(catalogOptions) || !catalogOptions.every((option) => (
     isRecord(option) && typeof option.screen === 'string' && typeof option.label === 'string'
   )))) return false
+  if (catalogGenres !== undefined && (!Array.isArray(catalogGenres) || !catalogGenres.every((genre) => typeof genre === 'string'))) return false
   const rowsAreValid = value.rows.every((row) => (
     isRecord(row)
     && typeof row.id === 'string'
@@ -383,6 +388,7 @@ export function isCompanionSnapshot(value: unknown): value is CompanionHomeSnaps
   ).every((key) => views[key] === undefined || (
     Array.isArray(views[key]) && views[key].every(isCompanionMedia)
   )))
+  const historyIsValid = value.history === undefined || (Array.isArray(value.history) && value.history.every(isCompanionMedia))
   return value.app === 'izumi'
     && value.kind === 'companion-home'
     && value.version === 1
@@ -392,5 +398,6 @@ export function isCompanionSnapshot(value: unknown): value is CompanionHomeSnaps
     && typeof value.catalog.label === 'string'
     && (value.hero === undefined || isCompanionMedia(value.hero))
     && rowsAreValid
+    && historyIsValid
     && viewsAreValid
 }

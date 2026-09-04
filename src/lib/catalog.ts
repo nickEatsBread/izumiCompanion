@@ -10,6 +10,7 @@ export interface CatalogCollections {
   series: CompanionMedia[]
   movies: CompanionMedia[]
   myList: CompanionMedia[]
+  history: CompanionMedia[]
 }
 
 function mediaKey(media: CompanionMedia): string {
@@ -39,6 +40,7 @@ export function catalogCollections(snapshot: CompanionHomeSnapshot): CatalogColl
     series: uniqueMedia(snapshot.views?.series ?? search.filter((item) => item.ref.type !== 'movie')),
     movies: uniqueMedia(snapshot.views?.movies ?? search.filter((item) => item.ref.type === 'movie')),
     myList: uniqueMedia(snapshot.views?.myList ?? search.filter((item) => item.inMyList === true)),
+    history: uniqueMedia(snapshot.history ?? []),
   }
 }
 
@@ -58,12 +60,18 @@ export function episodeCountsFor(media: CompanionMedia): number[] {
 
 export function seasonNumberFor(media: CompanionMedia, seasonIndex: number, seasonCounts: number[]): number {
   if (media.seasonLabels?.[seasonIndex]) {
+    if (/specials?/i.test(media.seasonLabels[seasonIndex])) return 0
     const parsed = Number(media.seasonLabels[seasonIndex].match(/\d+/)?.[0])
     if (Number.isFinite(parsed) && parsed > 0) return parsed
   }
   const episodeSeasons = [...new Set(media.episodes?.map((episode) => episode.season) ?? [])].sort((left, right) => left - right)
-  if (episodeSeasons[seasonIndex]) return episodeSeasons[seasonIndex]
+  if (episodeSeasons[seasonIndex] !== undefined) return episodeSeasons[seasonIndex]
   return seasonCounts.length === 1 && media.season ? media.season : seasonIndex + 1
+}
+
+export function seasonIndexFor(media: CompanionMedia, seasonNumber: number, seasonCounts: number[]): number {
+  const index = seasonCounts.findIndex((_, candidate) => seasonNumberFor(media, candidate, seasonCounts) === seasonNumber)
+  return index < 0 ? 0 : index
 }
 
 export function episodeDetailsFor(media: CompanionMedia, seasonIndex: number, seasonCounts: number[]): CompanionEpisode[] {

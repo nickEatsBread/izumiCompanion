@@ -693,7 +693,7 @@ async function main() {
       heroReceding: document.querySelector('.hero').classList.contains('is-receding')
     }))()`)
     assert(navigation.width >= 370 && navigation.width <= 430, `Navigation drawer width is ${navigation.width}px.`)
-    assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","Series","Movies","My List","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
+    assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","Series","Movies","My List","Watch History","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
     assert(navigation.secondaryLabels === 0, 'Navigation still renders secondary description text.')
     assert(Math.max(...navigation.labelLefts) - Math.min(...navigation.labelLefts) <= 1, `Navigation labels are not aligned: ${navigation.labelLefts}.`)
     assert(navigation.retainedRow === 1 && navigation.retainedIndex === 0 && navigation.retainedRowTop === 52, `Opening the sidebar reset the active rail: ${JSON.stringify(navigation)}.`)

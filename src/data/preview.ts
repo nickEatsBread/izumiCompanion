@@ -272,6 +272,7 @@ export const previewSnapshot: CompanionHomeSnapshot = {
   catalog: {
     screen: 'auto',
     label: 'Automatic anime',
+    genres: ['Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Mystery', 'Romance', 'Sci-Fi', 'Slice of Life', 'Supernatural'],
     options: [
       { screen: 'auto', label: 'Automatic anime' },
       { screen: 'anilist', label: 'AniList' },
@@ -280,6 +281,7 @@ export const previewSnapshot: CompanionHomeSnapshot = {
     ],
   },
   hero: frieren,
+  history: placed(popular.slice(0, 10), 'Watch History', 'catalog'),
   rows: [
     { id: 'continue', title: 'Continue Watching', kind: 'continue', items: placed(continueItems, 'Continue Watching', 'continue') },
     { id: 'popular', title: 'Popular This Week', kind: 'catalog', items: placed(popular.slice(3).concat(popular.slice(0, 3)), 'Popular This Week', 'ranking') },
@@ -327,6 +329,7 @@ export function previewDetailsFor(item: CompanionMedia): CompanionMedia {
       { id: '201', provider: 'tmdb', name: 'Elena Park', role: 'Director', credit: 'crew' },
       { id: '202', provider: 'tmdb', name: 'James Okafor', role: 'Writer', credit: 'crew' },
     ],
+    recommendations: item.recommendations ?? popular.filter((candidate) => candidate.ref.id !== item.ref.id).slice(0, 6),
   }
 }
 

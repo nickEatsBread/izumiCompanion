@@ -13,6 +13,7 @@ import {
   contributorsFor,
   detailActionsFor,
   nearestSearchKey,
+  relatedTitlesFor,
   seriesOverviewActionsFor,
   youtubeTrailerId,
   type SeriesOverviewAction,
@@ -28,7 +29,7 @@ import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRai
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
-import { catalogCollections, episodeCountsFor } from './lib/catalog'
+import { catalogCollections, episodeCountsFor, seasonIndexFor, seasonNumberFor } from './lib/catalog'
 import { preloadHomeMedia } from './lib/home-image-cache'
 import {
   catalogMediaDestination,
@@ -201,7 +202,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'settings', 'independent-setup', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'watch-history', 'settings', 'independent-setup', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -229,7 +230,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [screen, setScreen] = useState<ScreenName>(initialDestination)
   const [snapshot, setSnapshot] = useState<CompanionHomeSnapshot>(initialPreviewSnapshot)
   const [selected, setSelected] = useState<CompanionMedia>(() => {
-    const media = initialDisplaySnapshot.hero ?? initialDisplaySnapshot.rows[0]?.items[0] ?? fallbackMedia
+    const media = initialDestination === 'watch-history'
+      ? initialPreviewSnapshot.history?.[0] ?? fallbackMedia
+      : initialDisplaySnapshot.hero ?? initialDisplaySnapshot.rows[0]?.items[0] ?? fallbackMedia
     return showPreviewTools && (initialDestination === 'series' || initialDestination === 'details')
       ? previewDetailsFor(media)
       : media
@@ -241,8 +244,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       ? { zone: 'series-action', index: 0 }
       : initialDestination === 'independent-setup'
         ? { zone: 'setting', index: 1 }
-        : initialDestination === 'settings'
+      : initialDestination === 'settings'
           ? { zone: 'setting', index: 0 }
+          : initialDestination === 'my-list' || initialDestination === 'watch-history'
+            ? { zone: 'grid', index: 0 }
           : { zone: 'hero', index: 0 })
   const [activeNav, setActiveNav] = useState(navIndexFor(initialDestination))
   const [notice, setNotice] = useState('')
@@ -305,6 +310,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [subtitlePreferences, setSubtitlePreferences] = useState<SubtitlePreferences>(sourceSubtitlePreferences)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchPerson, setSearchPerson] = useState<CompanionPerson>()
+  const [searchGenre, setSearchGenre] = useState<string>()
   const [remoteSearchResults, setRemoteSearchResults] = useState<CompanionMedia[]>()
   const [searchPending, setSearchPending] = useState(false)
   const [searchError, setSearchError] = useState('')
@@ -344,6 +350,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const startupFallbackTimerRef = useRef<number>()
   const searchQueryRef = useRef(searchQuery)
   const searchPersonRef = useRef<CompanionPerson>()
+  const searchGenreRef = useRef<string>()
   const searchKeyboardColumnRef = useRef(0)
   const playerControlsTimerRef = useRef<number>()
   const seekFeedbackTimerRef = useRef<number>()
@@ -400,6 +407,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   screenRef.current = screen
   searchPersonRef.current = searchPerson
+  searchGenreRef.current = searchGenre
 
   const setFocusLocation = (next: FocusLocation) => {
     focusRef.current = next
@@ -845,11 +853,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         setFocusLocation({ zone: 'catalog', index: pendingCatalog.previousIndex })
         showNotice(message)
       },
-      onSearchResults: (query, items, error, person) => {
+      onSearchResults: (query, items, error, person, genre) => {
         if (query.trim().toLowerCase() !== searchQueryRef.current.trim().toLowerCase()) return
         const expected = searchPersonRef.current
         if (Boolean(expected) !== Boolean(person)
           || expected && person && (expected.provider !== person.provider || expected.id !== person.id || expected.credit !== person.credit)) return
+        if ((searchGenreRef.current ?? '') !== (genre ?? '')) return
         if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
         setRemoteSearchResults(items)
         setSearchPending(false)
@@ -967,7 +976,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSearchPending(true)
     const requestedQuery = searchQuery.trim()
     searchTimerRef.current = window.setTimeout(() => {
-      if (!receiverRef.current?.requestSearch(requestedQuery, searchPerson)) {
+      if (!receiverRef.current?.requestSearch(requestedQuery, searchPerson, searchGenre)) {
         setSearchPending(false)
         setSearchError('Open izumi on the paired device to search this catalogue.')
         return
@@ -982,7 +991,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current)
       if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
     }
-  }, [searchQuery, searchPerson, screen, showPreviewTools])
+  }, [searchQuery, searchPerson, searchGenre, screen, showPreviewTools])
 
   useEffect(() => {
     const playerController = avplayRef.current
@@ -1047,13 +1056,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (bounds.top < container.top + 12) animateScroll(scroller, 'scrollTop', Math.max(0, scroller.scrollTop + bounds.top - container.top - 18), 240)
       }
     }
+    if (focus.zone === 'series-season') {
+      const scroller = element.parentElement
+      if (scroller) {
+        const bounds = element.getBoundingClientRect()
+        const container = scroller.getBoundingClientRect()
+        if (bounds.bottom > container.bottom - 8) animateScroll(scroller, 'scrollTop', scroller.scrollTop + bounds.bottom - container.bottom + 12, 190)
+        else if (bounds.top < container.top + 8) animateScroll(scroller, 'scrollTop', Math.max(0, scroller.scrollTop + bounds.top - container.top - 12), 190)
+      }
+    }
     if (focus.zone === 'relation') {
-      const strip = element.parentElement
-      if (strip) {
-        const left = element.offsetLeft
-        const right = left + element.offsetWidth
-        if (left < strip.scrollLeft) animateScroll(strip, 'scrollLeft', Math.max(0, left - 24), 220)
-        else if (right > strip.scrollLeft + strip.clientWidth) animateScroll(strip, 'scrollLeft', right - strip.clientWidth + 24, 220)
+      const scroller = element.parentElement
+      if (scroller) {
+        const bounds = element.getBoundingClientRect()
+        const container = scroller.getBoundingClientRect()
+        if (bounds.bottom > container.bottom - 12) animateScroll(scroller, 'scrollTop', scroller.scrollTop + bounds.bottom - container.bottom + 18, 210)
+        else if (bounds.top < container.top + 12) animateScroll(scroller, 'scrollTop', Math.max(0, scroller.scrollTop + bounds.top - container.top - 18), 210)
       }
     }
   // Presentation-only replies replace row arrays while the viewer remains on the same tile. They
@@ -1357,16 +1375,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
   const localSearchResults = useMemo(() => allMedia.filter((item) => {
-    const searchable = [item.title, item.subtitle, item.placement?.label].filter(Boolean).join(' ').toLowerCase()
+    if (searchGenre) return (item.genres ?? []).some((genre) => genre.toLowerCase() === searchGenre.toLowerCase())
+    const searchable = [item.title, item.subtitle, item.placement?.label, ...(item.genres ?? [])].filter(Boolean).join(' ').toLowerCase()
     return !normalizedSearch || searchable.includes(normalizedSearch)
-  }), [allMedia, normalizedSearch])
+  }), [allMedia, normalizedSearch, searchGenre])
   const searchResults = normalizedSearch && remoteSearchResults !== undefined ? remoteSearchResults : localSearchResults
   const searchSuggestions = useMemo(() => {
-    const pool = Array.from(new Set(allMedia.flatMap((item) => [
-      item.title,
-      ...(item.subtitle?.split('·').map((value) => value.trim()).filter((value) => value.length > 2 && !/^\d/.test(value) && !/episodes?/i.test(value)) ?? []),
-      item.placement?.label,
-    ].filter((value): value is string => Boolean(value)))))
+    const pool = Array.from(new Set([
+      ...(snapshot.catalog.genres ?? []),
+      ...allMedia.flatMap((item) => item.genres ?? []),
+    ].map((value) => value.trim()).filter(Boolean)))
     return pool
       .filter((value) => !normalizedSearch || value.toLowerCase().includes(normalizedSearch))
       .sort((left, right) => {
@@ -1374,11 +1392,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         return Number(right.toLowerCase().startsWith(normalizedSearch)) - Number(left.toLowerCase().startsWith(normalizedSearch)) || left.localeCompare(right)
       })
       .slice(0, 7)
-  }, [allMedia, normalizedSearch])
+  }, [allMedia, normalizedSearch, snapshot.catalog.genres])
   const trendingItems = collections.trending
   const seriesItems = collections.series
   const movieItems = collections.movies
   const myListItems = collections.myList
+  const watchHistoryItems = collections.history
   const catalogOptions = useMemo(() => snapshot.catalog.options?.length
     ? snapshot.catalog.options
     : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }], [snapshot])
@@ -1668,7 +1687,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSelected(media)
     const seasonCounts = episodeCountsFor(media)
     const initialSeason = seasonCounts.length > 1
-      ? Math.max(0, Math.min(seasonCounts.length - 1, (media.season ?? 1) - 1))
+      ? seasonIndexFor(media, media.season ?? 1, seasonCounts)
       : 0
     setSeriesSeason(initialSeason)
     setCatalogMenuOpen(false)
@@ -1706,6 +1725,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     searchPersonRef.current = person
     searchQueryRef.current = query
     setSearchPerson(person)
+    setSearchGenre(undefined)
     setSearchQuery(query)
     setRemoteSearchResults(undefined)
     setSearchError('')
@@ -1746,11 +1766,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setScreen(destination)
     if (destination === 'search') {
       setSearchPerson(undefined)
+      setSearchGenre(undefined)
       changeSearchKeyFocus(0)
     }
     else if (destination === 'settings') changeFocus({ zone: 'setting', index: 0 })
     else {
-      const items = myListItems
+      const items = browseItemsFor(destination)
       setSelected(items[0] ?? fallbackMedia)
       changeFocus({ zone: 'grid', index: 0 })
     }
@@ -1766,6 +1787,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setActiveNav(1)
     setScreen('search')
     setSearchPerson(undefined)
+    setSearchGenre(undefined)
     if (nextQuery) {
       searchQueryRef.current = nextQuery
       setSearchQuery(nextQuery)
@@ -1964,7 +1986,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const browseItemsFor = (name: ScreenName): CompanionMedia[] => name === 'trending'
     ? Array.from(new Map([...trendingItems, ...seriesItems, ...movieItems].map((item) => [`${item.ref.provider}:${item.ref.type}:${item.ref.id}`, item])).values())
-    : name === 'series' ? seriesItems : name === 'movies' ? movieItems : myListItems
+    : name === 'series' ? seriesItems : name === 'movies' ? movieItems : name === 'watch-history' ? watchHistoryItems : myListItems
 
   const playSeriesEpisode = (index: number) => {
     const counts = episodeCountsFor(selected)
@@ -1973,7 +1995,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     const activeSeason = Math.min(seriesSeason, counts.length - 1)
-    const season = counts.length === 1 && selected.season ? selected.season : activeSeason + 1
+    const season = seasonNumberFor(selected, activeSeason, counts)
     const episode = index + 1
     const isResumeEpisode = season === (selected.season ?? 1) && episode === selected.episode
     playMedia({ ...selected, season, episode, progress: isResumeEpisode ? selected.progress : undefined })
@@ -2070,7 +2092,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       const activeSeason = Math.min(seriesSeason, counts.length - 1)
       const episodeCount = counts[activeSeason] ?? 1
-      const seasonNumber = counts.length === 1 && selected.season ? selected.season : activeSeason + 1
+      const seasonNumber = seasonNumberFor(selected, activeSeason, counts)
       const resumeIndex = seasonNumber === (selected.season ?? 1)
         ? Math.max(0, Math.min(episodeCount - 1, (selected.episode ?? 1) - 1))
         : 0
@@ -2085,7 +2107,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       openTrailer(selected)
       return
     }
-    if (action === 'relations' && selected.relations?.length) changeFocus({ zone: 'relation', index: 0 })
+    if (action === 'relations' && relatedTitlesFor(selected).length) changeFocus({ zone: 'relation', index: 0 })
   }
 
   const moveSeriesFocus = (action: RemoteAction) => {
@@ -2110,7 +2132,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (!counts.length && focus.zone !== 'relation') return
     const activeSeason = Math.min(seriesSeason, counts.length - 1)
     const episodeCount = counts[activeSeason] ?? 1
-    const seasonNumber = counts.length === 1 && selected.season ? selected.season : activeSeason + 1
+    const seasonNumber = seasonNumberFor(selected, activeSeason, counts)
     const resumeIndex = seasonNumber === (selected.season ?? 1)
       ? Math.max(0, Math.min(episodeCount - 1, (selected.episode ?? 1) - 1))
       : 0
@@ -2131,7 +2153,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (focus.zone === 'relation') {
-      const relations = selected.relations ?? []
+      const relations = relatedTitlesFor(selected)
       if (action === 'left') return changeFocus({ zone: 'series-action', index: Math.max(0, overviewActions.indexOf('relations')) })
       if (action === 'up') return changeFocus({ zone: 'relation', index: Math.max(0, focus.index - 1) })
       if (action === 'down') return changeFocus({ zone: 'relation', index: Math.min(relations.length - 1, focus.index + 1) })
@@ -2167,6 +2189,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const key = SEARCH_KEYS[index]?.value
     if (!key) return
     setSearchPerson(undefined)
+    setSearchGenre(undefined)
     if (key === 'DELETE') setSearchQuery((value) => value.slice(0, -1))
     else if (key === 'SPACE') setSearchQuery((value) => `${value} `)
     else if (key === 'VOICE') changeFocus({ zone: 'search-input', index: 0 })
@@ -2177,6 +2200,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const suggestion = searchSuggestions[index]
     if (!suggestion) return
     setSearchPerson(undefined)
+    searchGenreRef.current = suggestion
+    setSearchGenre(suggestion)
     setSearchQuery(suggestion)
   }
 
@@ -2399,7 +2424,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (focus.zone === 'series-season') changeFocus({ zone: 'episode', index: 0 })
         else if (focus.zone === 'episode') playSeriesEpisode(focus.index)
         else if (focus.zone === 'relation') {
-          const relation = selected.relations?.[focus.index]
+          const relation = relatedTitlesFor(selected)[focus.index]
           if (relation) selectRelatedMedia(relation.media)
         }
         else if (focus.zone === 'person') {
@@ -2420,7 +2445,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }
       return
     }
-    if (screen === 'my-list') {
+    if (screen === 'my-list' || screen === 'watch-history') {
       if (['up', 'down', 'left', 'right'].includes(action)) moveBrowseFocus(action)
       else if (action === 'select') {
         if (focus.zone === 'nav') selectNav(focus.index)
@@ -2450,16 +2475,29 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (screen === 'details') {
       const actions = detailActionsFor(selected)
       const contributors = contributorsFor(selected)
+      const relations = relatedTitlesFor(selected)
       if (focus.zone === 'person') {
         if (action === 'left') changeFocus({ zone: 'person', index: Math.max(0, focus.index - 1) })
         else if (action === 'right') changeFocus({ zone: 'person', index: Math.min(contributors.length - 1, focus.index + 1) })
         else if (action === 'up' || action === 'back') changeFocus({ zone: 'detail', index: 0 })
+        else if (action === 'down' && relations.length) changeFocus({ zone: 'relation', index: 0 })
         else if (action === 'select' && contributors[focus.index]) openPersonSearch(contributors[focus.index])
+        return
+      }
+      if (focus.zone === 'relation') {
+        if (action === 'up') changeFocus(focus.index > 0
+          ? { zone: 'relation', index: focus.index - 1 }
+          : contributors.length ? { zone: 'person', index: 0 } : { zone: 'detail', index: 0 })
+        else if (action === 'down') changeFocus({ zone: 'relation', index: Math.min(relations.length - 1, focus.index + 1) })
+        else if (action === 'left') changeFocus({ zone: 'relation', index: Math.max(0, focus.index - 1) })
+        else if (action === 'right') changeFocus({ zone: 'relation', index: Math.min(relations.length - 1, focus.index + 1) })
+        else if (action === 'select' && relations[focus.index]) selectRelatedMedia(relations[focus.index].media)
+        else if (action === 'back') changeFocus({ zone: 'detail', index: 0 })
         return
       }
       if (action === 'left') changeFocus({ zone: 'detail', index: Math.max(0, focus.index - 1) })
       else if (action === 'right') changeFocus({ zone: 'detail', index: Math.min(actions.length - 1, focus.index + 1) })
-      else if (action === 'down' && contributors.length) changeFocus({ zone: 'person', index: 0 })
+      else if (action === 'down' && (contributors.length || relations.length)) changeFocus(contributors.length ? { zone: 'person', index: 0 } : { zone: 'relation', index: 0 })
       else if (action === 'select' && focus.zone === 'detail') {
         const selectedAction = actions[focus.index] ?? 'play'
         if (selectedAction === 'play') playMedia(selected)
@@ -2632,8 +2670,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       enterCinematicDestination(next)
       return
     }
-    if (['series', 'my-list'].includes(next)) {
-      const navIndex = next === 'my-list' ? navIndexFor('my-list') : navIndexFor('series-home')
+    if (['series', 'my-list', 'watch-history'].includes(next)) {
+      const navIndex = next === 'series' ? navIndexFor('series-home') : navIndexFor(next)
       const items = browseItemsFor(next)
       setActiveNav(navIndex)
       setSelected(items[0] ?? fallbackMedia)
@@ -2712,6 +2750,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           trailerError={trailerError}
           onPersonFocus={(index) => changeFocus({ zone: 'person', index })}
           onPersonSelect={openPersonSearch}
+          onRelationFocus={(index) => changeFocus({ zone: 'relation', index })}
+          onRelationSelect={selectRelatedMedia}
         />
       )}
       {screen === 'search' && (
@@ -2736,13 +2776,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onResultSelect={selectCatalogMedia}
           onQueryChange={(value) => {
             setSearchPerson(undefined)
+            setSearchGenre(undefined)
             setSearchQuery(value)
           }}
           onQueryFocus={() => changeFocus({ zone: 'search-input', index: 0 })}
           onQueryDone={() => changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)}
           resultTitle={searchPerson
             ? `Results for ${searchPerson.credit === 'cast' ? 'actor ' : ''}${searchPerson.name}`
-            : undefined}
+            : searchGenre ? `${searchGenre} titles` : undefined}
         />
       )}
       {screen === 'series' && (
@@ -2772,11 +2813,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           trailerError={trailerError}
         />
       )}
-      {(['my-list'] as const).map((name) => screen === name && (
+      {(['my-list', 'watch-history'] as const).map((name) => screen === name && (
         <CatalogScreen
           mode={name}
-          title="My List"
-          description="Saved and in-progress titles from your izumi library."
+          title={name === 'my-list' ? 'My List' : 'Watch History'}
+          description={name === 'my-list'
+            ? 'Saved and in-progress titles from your izumi library.'
+            : 'Titles you watched recently, ordered by playback activity.'}
           items={browseItemsFor(name)}
           selected={selected}
           focus={focus}

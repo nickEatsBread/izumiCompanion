@@ -1799,6 +1799,8 @@ body.avplay-visible #av-player {
 }
 
 .season-options > div { width: 100%; }
+.season-options > div { max-height: 72vh; overflow-y: auto; scrollbar-width: none; }
+.season-options > div::-webkit-scrollbar { width: 0; }
 
 .season-options button {
   width: 100%;
@@ -2096,6 +2098,8 @@ body.avplay-visible #av-player {
 .detail-screen.has-trailer-open > .contributor-browser {
   visibility: hidden;
 }
+
+.detail-screen.has-trailer-open > .series-relations-browser { visibility: hidden; }
 
 .series-screen.has-trailer-open,
 .detail-screen.has-trailer-open { background: #020202; }
@@ -2398,6 +2402,9 @@ body.avplay-visible #av-player {
 .detail-screen.is-people .detail-copy { visibility: hidden; }
 .detail-screen.is-people .detail-poster { opacity: 0; }
 .detail-screen.is-people .detail-art img { filter: brightness(.31) saturate(.52); }
+.detail-screen.is-related .detail-copy { visibility: hidden; }
+.detail-screen.is-related .detail-poster { opacity: 0; }
+.detail-screen.is-related .detail-art img { filter: brightness(.31) saturate(.52); }
 
 .series-back-hint {
   position: absolute;
@@ -2514,7 +2521,7 @@ body.avplay-visible #av-player {
 .search-keyboard button {
   position: relative;
   min-width: 0;
-  height: clamp(42px, 5.75vh, 56px);
+  height: clamp(48px, 6.25vh, 64px);
   padding: 0 .35vw;
   border: 1px solid #363636;
   border-radius: 1px;
@@ -2527,23 +2534,23 @@ body.avplay-visible #av-player {
   color: #f2f2f2;
   background: #1a1a1a;
   gap: .3vw;
-  font-size: clamp(17px, 1.04vw, 21px);
-  font-weight: 650;
+  font-size: clamp(23px, 1.38vw, 29px);
+  font-weight: 750;
   line-height: 1;
   cursor: pointer;
   transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 .search-keyboard button.is-wide {
   display: flex;
-  font-size: clamp(13px, .78vw, 16px);
+  font-size: clamp(16px, .94vw, 20px);
 }
 .search-keyboard button.is-action {
   color: #ddd;
   background: #202020;
 }
-.search-keyboard button.is-span-2 { font-size: clamp(13px, .82vw, 17px); }
+.search-keyboard button.is-span-2 { font-size: clamp(16px, .94vw, 20px); }
 .search-keyboard button > span {
-  font-size: clamp(11px, .67vw, 14px);
+  font-size: clamp(13px, .78vw, 16px);
   font-weight: 800;
   letter-spacing: .07em;
   text-transform: uppercase;

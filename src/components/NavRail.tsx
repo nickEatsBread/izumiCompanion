@@ -2,6 +2,7 @@ import {
   Bookmark,
   Compass,
   Film,
+  History,
   House,
   Search,
   Settings,
@@ -17,6 +18,7 @@ const items: Array<{ label: string; icon: typeof House; destination: ScreenName 
   { label: 'Series', icon: Tv, destination: 'series-home' },
   { label: 'Movies', icon: Film, destination: 'movies' },
   { label: 'My List', icon: Bookmark, destination: 'my-list' },
+  { label: 'Watch History', icon: History, destination: 'watch-history' },
   { label: 'Settings', icon: Settings, destination: 'settings' },
 ]
 
@@ -36,10 +38,14 @@ export function navDestinationAt(index: number): ScreenName {
 }
 
 export function navIndexFor(destination: ScreenName): number {
-  if (destination === 'series') return 3
-  if (destination === 'details') return 4
-  if (destination === 'independent-setup') return 6
-  const index = items.findIndex((item) => item.destination === destination)
+  const resolved = destination === 'series'
+    ? 'series-home'
+    : destination === 'details'
+      ? 'movies'
+      : destination === 'independent-setup'
+        ? 'settings'
+        : destination
+  const index = items.findIndex((item) => item.destination === resolved)
   return index < 0 ? 0 : index
 }
 

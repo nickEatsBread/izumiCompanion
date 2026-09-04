@@ -6,6 +6,7 @@ import {
   contributorsFor,
   detailActionsFor,
   nearestSearchKey,
+  relatedTitlesFor,
   seriesOverviewActionsFor,
   trailerPlaybackState,
   youtubeTrailerId,
@@ -76,6 +77,17 @@ describe('series overview actions', () => {
       trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
       relations: [{ relationType: 'SEQUEL', media }],
     })).toEqual(['play', 'episodes', 'trailer', 'relations'])
+  })
+
+  it('combines explicit franchise relations with provider recommendations without duplicates', () => {
+    const sequel = { ...media, ref: { ...media.ref, id: '2' }, title: 'Example series 2' }
+    const similar = { ...media, ref: { ...media.ref, id: '3' }, title: 'Similar series' }
+    const value = { ...media, relations: [{ relationType: 'SEQUEL', media: sequel }], recommendations: [sequel, similar] }
+    expect(relatedTitlesFor(value).map((entry) => [entry.relationType, entry.media.title])).toEqual([
+      ['SEQUEL', 'Example series 2'],
+      ['SIMILAR', 'Similar series'],
+    ])
+    expect(seriesOverviewActionsFor({ ...media, recommendations: [similar] })).toEqual(['play', 'trailer', 'relations'])
   })
 
   it('keeps cast and crew identities available for filtered discovery', () => {

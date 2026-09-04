@@ -21,7 +21,7 @@ import {
 } from 'lucide-preact'
 import { memo } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { CompanionMedia, CompanionPerson, FocusLocation } from '../types'
+import type { CompanionMedia, CompanionPerson, CompanionRelation, FocusLocation } from '../types'
 import { episodeCountsFor, episodeDetailsFor, seasonNumberFor } from '../lib/catalog'
 import type { PlaybackExperienceSettings } from '../lib/playback-experience'
 import { gridWindow, linearWindow } from '../lib/windowing'
@@ -401,6 +401,7 @@ const catalogIcons = {
   series: Tv,
   movies: Film,
   'my-list': Bookmark,
+  'watch-history': History,
 }
 
 export function CatalogScreen({
@@ -430,7 +431,7 @@ export function CatalogScreen({
 }) {
   const Icon = catalogIcons[mode]
   const isEmpty = items.length === 0
-  const contextualPlacement = mode === 'trending' || mode === 'my-list' ? selected.placement : undefined
+  const contextualPlacement = mode === 'trending' || mode === 'my-list' || mode === 'watch-history' ? selected.placement : undefined
   const focusIndex = focus.zone === 'grid' ? focus.index : 0
   const itemWindow = gridWindow(items.length, focusIndex, 6, 1)
   const reason = contextualPlacement
@@ -461,7 +462,7 @@ export function CatalogScreen({
       </header>
       <section class="browse-catalog" aria-label={title}>
         <div class="browse-title-row">
-          <div><p>{mode === 'my-list' ? 'Your library' : 'Browse'}</p><h2>{title}</h2></div>
+          <div><p>{mode === 'my-list' ? 'Your library' : mode === 'watch-history' ? 'Recently watched' : 'Browse'}</p><h2>{title}</h2></div>
           <span>{items.length} titles</span>
         </div>
         {items.length ? <div
@@ -494,7 +495,7 @@ export function CatalogScreen({
         </div> : (
           <div class="catalog-empty" role="status">
             <Icon size={34} strokeWidth={1.6} />
-            <strong>{mode === 'my-list' ? 'Your list is empty' : `No ${title.toLowerCase()} available`}</strong>
+            <strong>{mode === 'my-list' ? 'Your list is empty' : mode === 'watch-history' ? 'No watch history yet' : `No ${title.toLowerCase()} available`}</strong>
             <span>Open izumi on your paired device to update this catalogue.</span>
           </div>
         )}
@@ -512,8 +513,24 @@ function relationLabel(value: string): string {
     SPIN_OFF: 'Spin-off',
     ALTERNATIVE: 'Alternate version',
     SUMMARY: 'Recap',
+    SIMILAR: 'Similar to',
+    RECOMMENDATION: 'You may also like',
   }
   return labels[value] ?? value.replace(/_/g, ' ').toLowerCase().replace(/^./, (letter: string) => letter.toUpperCase())
+}
+
+export function relatedTitlesFor(media: CompanionMedia): CompanionRelation[] {
+  const related = [...(media.relations ?? []), ...(media.recommendations ?? []).map((item) => ({
+    relationType: 'SIMILAR',
+    media: item,
+  }))]
+  const seen = new Set<string>()
+  return related.filter((relation) => {
+    const key = `${relation.media.ref.provider}:${relation.media.ref.type}:${relation.media.ref.id}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, 24)
 }
 
 export type SeriesOverviewAction = 'play' | 'episodes' | 'trailer' | 'relations'
@@ -533,7 +550,7 @@ export function seriesOverviewActionsFor(media: CompanionMedia): SeriesOverviewA
   const actions: SeriesOverviewAction[] = ['play']
   if (episodeCountsFor(media).length) actions.push('episodes')
   actions.push('trailer')
-  if (media.relations?.length) actions.push('relations')
+  if (relatedTitlesFor(media).length) actions.push('relations')
   return actions
 }
 
@@ -632,7 +649,7 @@ export function SeriesScreen({
   )
   const resumeSeason = selected.season ?? 1
   const resumeEpisode = resumeSeason === seasonNumber && selected.episode ? selected.episode : -1
-  const relations = selected.relations ?? []
+  const relations = relatedTitlesFor(selected)
   const contributors = contributorsFor(selected)
   const episodeFocus = focus.zone === 'episode' ? focus.index : 0
   const episodeWindow = linearWindow(episodes.length, episodeFocus, 4)
@@ -711,7 +728,7 @@ export function SeriesScreen({
                 class={`${index === activeSeason ? 'is-selected' : ''}${focus.zone === 'series-season' && focus.index === index ? ' is-focused' : ''}`}
                 data-focus-id={`series-season-${index}`}
                 tabIndex={focus.zone === 'series-season' && focus.index === index ? 0 : -1}
-                aria-label={`Season ${index + 1}, ${count} episodes`}
+                aria-label={`${selected.seasonLabels?.[index] ?? `Season ${index + 1}`}, ${count} episodes`}
                 onFocus={() => onSeasonFocus(index)}
                 onMouseEnter={() => onSeasonFocus(index)}
                 onClick={() => onSeasonSelect(index)}
@@ -893,8 +910,8 @@ export function SearchScreen({
             ))}
           </div>
           {suggestions.length > 0 && (
-            <div class="search-suggestions" aria-label="Search suggestions" key={`suggestions-${query}`}>
-              <p>{query ? 'Suggestions' : 'Popular searches'}</p>
+            <div class="search-suggestions" aria-label="Browse genres" key={`suggestions-${query}`}>
+              <p>Genres</p>
               {suggestions.map((suggestion, index) => (
                 <button
                   type="button"
@@ -999,6 +1016,8 @@ export function DetailScreen({
   trailerError,
   onPersonFocus,
   onPersonSelect,
+  onRelationFocus,
+  onRelationSelect,
 }: {
   media: CompanionMedia
   focus: FocusLocation
@@ -1011,6 +1030,8 @@ export function DetailScreen({
   trailerError?: string
   onPersonFocus(index: number): void
   onPersonSelect(person: CompanionPerson): void
+  onRelationFocus(index: number): void
+  onRelationSelect(media: CompanionMedia): void
 }) {
   const reason = media.placement
     ? `${media.placement.position ? `#${media.placement.position} in ` : ''}${media.placement.label}`
@@ -1019,8 +1040,9 @@ export function DetailScreen({
   const trailerId = youtubeTrailerId(media)
   const actions = detailActionsFor(media)
   const contributors = contributorsFor(media)
+  const relations = relatedTitlesFor(media)
   return (
-    <main class={`detail-screen${focus.zone === 'person' ? ' is-people' : ''}${trailerOpen ? ' has-trailer-open' : ''}`}>
+    <main class={`detail-screen${focus.zone === 'person' ? ' is-people' : ''}${focus.zone === 'relation' ? ' is-related' : ''}${trailerOpen ? ' has-trailer-open' : ''}`}>
       <div class="detail-art" key={`${media.ref.provider}-${media.ref.id}`}>
         {(media.backdrop || media.poster) && <img src={media.backdrop || media.poster} alt="" />}
         <span />
@@ -1050,7 +1072,7 @@ export function DetailScreen({
             </button>
           ))}
         </div>
-        {contributors.length > 0 && <p class="contributor-entry-hint"><UserRound size={18} /> Down for Cast &amp; Crew</p>}
+        {(contributors.length > 0 || relations.length > 0) && <p class="contributor-entry-hint"><UserRound size={18} /> Down for {contributors.length ? 'Cast & Crew' : 'Similar Titles'}</p>}
       </section>
       {media.poster && <img class="detail-poster" src={media.poster} alt="" />}
       {focus.zone === 'person' && contributors.length > 0 && <ContributorBrowser
@@ -1059,6 +1081,28 @@ export function DetailScreen({
         onFocus={onPersonFocus}
         onSelect={onPersonSelect}
       />}
+      {focus.zone === 'relation' && relations.length > 0 && <section class="series-relations-browser" aria-label={`Titles similar to ${media.title}`}>
+        <aside><strong>Similar &amp; Related</strong><small>{relations.length} available</small></aside>
+        <div class="series-relation-list">
+          {relations.map((relation, index) => {
+            const related = relation.media
+            const focused = focus.index === index
+            return <button
+              type="button"
+              class={`series-relation-row${focused ? ' is-focused' : ''}`}
+              data-focus-id={`relation-${index}`}
+              tabIndex={focused ? 0 : -1}
+              onFocus={() => onRelationFocus(index)}
+              onMouseEnter={() => onRelationFocus(index)}
+              onClick={() => onRelationSelect(related)}
+              key={`${relation.relationType}-${related.ref.provider}-${related.ref.id}`}
+            >
+              <span>{(related.backdrop || related.poster) && <img src={related.backdrop || related.poster} alt={`${related.title} artwork`} />}</span>
+              <span><small>{relationLabel(relation.relationType)}</small><strong>{related.title}</strong><p>{related.description || related.subtitle}</p></span>
+            </button>
+          })}
+        </div>
+      </section>}
       {trailerOpen && trailerId && (
         trailerSource
           ? <TrailerPlayer videoId={trailerId} source={trailerSource} title={media.title} backdrop={media.backdrop || media.poster} />

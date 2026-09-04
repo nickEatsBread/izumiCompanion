@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalogCollections, episodeCountsFor } from './catalog'
+import { catalogCollections, episodeCountsFor, seasonIndexFor, seasonNumberFor } from './catalog'
 import type { CompanionHomeSnapshot, CompanionMedia } from '../types'
 
 const media = (id: string, type: string, extra: Partial<CompanionMedia> = {}): CompanionMedia => ({
@@ -39,5 +39,22 @@ describe('TV catalogue collections', () => {
         { season: 2, episode: 2 },
       ],
     }))).toEqual([4, 2])
+  })
+
+  it('keeps provider season numbers stable when specials are listed last', () => {
+    const show = media('tmdb-show', 'series', {
+      seasonEpisodeCounts: [8, 6, 3],
+      seasonLabels: ['Season 1', 'Season 3', 'Specials'],
+    })
+    expect(seasonNumberFor(show, 1, show.seasonEpisodeCounts!)).toBe(3)
+    expect(seasonNumberFor(show, 2, show.seasonEpisodeCounts!)).toBe(0)
+    expect(seasonIndexFor(show, 3, show.seasonEpisodeCounts!)).toBe(1)
+  })
+
+  it('keeps watch history independent from My List', () => {
+    const watched = media('watched', 'movie')
+    const value = { ...snapshot([]), history: [watched] }
+    expect(catalogCollections(value).history).toEqual([watched])
+    expect(catalogCollections(value).myList).toEqual([])
   })
 })
