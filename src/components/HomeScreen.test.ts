@@ -119,6 +119,7 @@ describe('TV home presentation', () => {
     expect(titleFallbackVisible(undefined, false, false)).toBe(false)
     expect(titleFallbackVisible(undefined, true, false)).toBe(true)
     expect(titleFallbackVisible('logo.png', false, true)).toBe(false)
+    expect(titleFallbackVisible('logo.png', false, true, false, false)).toBe(true)
     expect(titleFallbackVisible('logo.png', false, true, true)).toBe(true)
   })
 })

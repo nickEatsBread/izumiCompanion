@@ -290,8 +290,15 @@ interface StableTitleSelection {
   showText: boolean
 }
 
-export function titleFallbackVisible(source?: string, settled = false, fallbackWhilePending = false, failed = false): boolean {
-  return Boolean(source && failed) || (!source && (settled || fallbackWhilePending))
+export function titleFallbackVisible(
+  source?: string,
+  settled = false,
+  fallbackWhilePending = false,
+  failed = false,
+  ready = true,
+): boolean {
+  return Boolean(source && (failed || fallbackWhilePending && !ready))
+    || (!source && (settled || fallbackWhilePending))
 }
 
 function initialTitleSelection(
@@ -300,12 +307,14 @@ function initialTitleSelection(
   settled = false,
   fallbackWhilePending = false,
 ): StableTitleSelection {
+  const ready = Boolean(source && preloadedTitleImages[source] && !failedTitleImages[source])
   return {
     identity,
-    // Give the physical TV a real, explicitly sized <img> immediately. Waiting for a detached
-    // Image.onload worked in desktop M56 but could leave the Tizen compositor with no paint layer.
-    logo: source && !failedTitleImages[source] ? source : '',
-    showText: titleFallbackVisible(source, settled, fallbackWhilePending, Boolean(source && failedTitleImages[source])),
+    // A returned URL only proves the metadata reply arrived; it does not prove that the physical
+    // TV has downloaded the image. Keep readable copy in the slot until the detached preload has
+    // completed, otherwise rapid D-pad navigation suppresses the text with an empty <img> layer.
+    logo: ready ? source! : '',
+    showText: titleFallbackVisible(source, settled, fallbackWhilePending, Boolean(source && failedTitleImages[source]), ready),
   }
 }
 
@@ -336,16 +345,14 @@ function useStableTitleImage(
   useEffect(() => {
     if (!source) return
     let active = true
-    setSelection((current) => current.identity === identity && !current.showText
-      ? { ...current, logo: source }
-      : current)
     void preloadTitleImage(source).then((loaded) => {
       if (!active) return
       setSelection((current) => {
-        // A slow detached preload is not proof that the visible image is broken. Only an actual
-        // image error may replace matching logo art with the compact text fallback.
-        if (current.identity !== identity || loaded || !failedTitleImages[source]) return current
-        return { ...current, logo: '', showText: true }
+        if (current.identity !== identity) return current
+        // Focused tiles intentionally keep the text selected for the current visit; their warmed
+        // logo is used when navigation reaches/revisits them. Hero artwork can reveal immediately.
+        if (loaded) return current.showText ? current : { ...current, logo: source }
+        return failedTitleImages[source] ? { ...current, logo: '', showText: true } : current
       })
     })
     return () => { active = false }
