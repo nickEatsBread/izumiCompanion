@@ -245,6 +245,7 @@ function focusedHomeTitleDiagnostics(): Record<string, unknown> {
     } : null,
     title: title ? { ...elementState(title), text: title.textContent?.trim() ?? '' } : null,
     pending: elementState(card.querySelector<HTMLElement>('.home-focus-title-pending')),
+    media: elementState(card.querySelector<HTMLElement>('.home-focus-media')),
     trailer: elementState(card.querySelector<HTMLElement>('.home-hover-trailer')),
   }
 }

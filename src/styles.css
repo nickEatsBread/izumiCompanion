@@ -4789,30 +4789,30 @@ body,
   color: #fff;
   background: #050505;
   text-align: left;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
+  transform: none;
+  -webkit-transform: none;
   transition: none;
 }
 
 .home-focus-card.has-previous {
   left: 0;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
+  transform: none;
+  -webkit-transform: none;
 }
 
 .home-focus-card.motion-forward .home-focus-media,
 .home-focus-card.motion-forward .home-focus-context {
-  animation: home-focus-enter-forward 150ms cubic-bezier(.2, .78, .2, 1) both;
+  animation: home-focus-enter-forward 150ms cubic-bezier(.2, .78, .2, 1);
 }
 
 .home-focus-card.motion-backward .home-focus-media,
 .home-focus-card.motion-backward .home-focus-context {
-  animation: home-focus-enter-backward 150ms cubic-bezier(.2, .78, .2, 1) both;
+  animation: home-focus-enter-backward 150ms cubic-bezier(.2, .78, .2, 1);
 }
 
 .home-focus-card.motion-vertical .home-focus-media,
 .home-focus-card.motion-vertical .home-focus-context {
-  animation: home-focus-enter-vertical 145ms cubic-bezier(.2, .78, .2, 1) both;
+  animation: home-focus-enter-vertical 145ms cubic-bezier(.2, .78, .2, 1);
 }
 
 .home-focus-card .home-focus-context {
@@ -4838,9 +4838,9 @@ body,
   left: 0;
   display: block;
   overflow: hidden;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-  will-change: transform;
+  transform: none;
+  -webkit-transform: none;
+  will-change: auto;
 }
 
 .home-focus-frame > .home-hover-trailer {

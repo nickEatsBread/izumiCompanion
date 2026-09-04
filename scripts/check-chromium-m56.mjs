@@ -395,6 +395,8 @@ async function main() {
       rowTransition: getComputedStyle(document.querySelector('.media-row')).transitionDuration,
       focusAnimation: getComputedStyle(document.querySelector('.home-focus-frame')).animationDuration,
       mediaAnimation: getComputedStyle(document.querySelector('.home-focus-media')).animationDuration,
+      mediaTransform: getComputedStyle(document.querySelector('.home-focus-media')).transform,
+      cardTransform: getComputedStyle(document.querySelector('.home-focus-card')).transform,
       trackTransform: getComputedStyle(document.querySelector('.home-motion-track')).transform
     }))()`)
     assert(JSON.stringify(rows.body) === '[1920,1080]', `Home overflowed the TV viewport: ${rows.body}.`)
@@ -409,6 +411,7 @@ async function main() {
     assert(rows.rowTransition === '0s', `The rail frame moves during vertical navigation: ${rows.rowTransition}.`)
     assert(rows.focusAnimation === '0s', `The focus outline moves with its content: ${rows.focusAnimation}.`)
     assert(rows.mediaAnimation !== '0s', `Focused artwork transition is disabled: ${rows.mediaAnimation}.`)
+    assert(rows.mediaTransform === 'none' && rows.cardTransform === 'none', `A settled focused tile retains a compositor layer over its title: ${JSON.stringify(rows)}.`)
     assert(rows.trackTransform === 'none', 'Vertical navigation transformed the full Home page.')
     await capture('m56-continue-watching.png')
 
@@ -587,7 +590,7 @@ async function main() {
     assert(horizontal.focusAnimation === '0s', `Focus outline animation is enabled: ${horizontal.focusAnimation}.`)
     assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
     assert(horizontal.mediaOpacity === '1', `Horizontal navigation dims the focused tile to ${horizontal.mediaOpacity}.`)
-    assert(horizontal.mediaWillChange === 'transform', `Focused artwork allocates unnecessary compositor properties: ${horizontal.mediaWillChange}.`)
+    assert(horizontal.mediaWillChange === 'auto', `Focused artwork retains an unnecessary compositor allocation: ${horizontal.mediaWillChange}.`)
     assert(horizontal.titleLogo === 'Attack on Titan' && !horizontal.fallbackTitle && !horizontal.titlePending,
       `Late provider title art disappeared or swapped through plain text: ${JSON.stringify(horizontal)}.`)
     assert(horizontal.titleLogoSource.includes('attack-on-titan-logo'),
