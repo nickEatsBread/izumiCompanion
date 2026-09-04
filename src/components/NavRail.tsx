@@ -7,8 +7,10 @@ import {
   Search,
   Settings,
   Tv,
+  Users,
 } from 'lucide-preact'
 import type { FocusLocation, ScreenName } from '../types'
+import { tvHousehold, tvProfile } from '../lib/profiles'
 import izumiMark from '../../brand/svg/izumi-mark-color.svg'
 
 const items: Array<{ label: string; icon: typeof House; destination: ScreenName }> = [
@@ -31,7 +33,7 @@ interface NavRailProps {
   onSelect(index: number): void
 }
 
-export const navItemCount = items.length
+export function navItemCount() { return items.length + (tvHousehold().enabled ? 1 : 0) }
 
 export function navDestinationAt(index: number): ScreenName {
   return items[index]?.destination ?? 'home'
@@ -95,6 +97,7 @@ export function NavRail({ activeIndex, focus, catalogLabel = 'Catalogue', expand
         {items.slice(0, -1).map(renderItem)}
       </div>
       <div class="nav-utility">
+        {tvHousehold().enabled && renderItem({ label: tvProfile()?.name ?? 'Profiles', icon: Users, destination: 'home' }, items.length)}
         {items.slice(-1).map((item) => renderItem(item, items.length - 1))}
       </div>
     </nav>

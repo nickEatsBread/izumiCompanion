@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CompanionMedia } from '../types'
+import { chooseTvProfile, resetTvHousehold, updateTvHousehold } from './profiles'
 import { CompanionReceiver, type ReceiverEvents } from './receiver'
 
 const credential = 'ab'.repeat(32)
@@ -106,13 +107,15 @@ const events = (): ReceiverEvents => ({
 beforeEach(() => {
   vi.useFakeTimers()
   FakeXmlHttpRequest.sent = []
+  FakeXmlHttpRequest.responder = () => ({ status: 404, body: {} })
   encryptedPlaintext = ''
   storage = new MemoryStorage()
   storage.setItem('izumi.companion.credential', credential)
   storage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
   vi.stubGlobal('localStorage', storage)
   vi.stubGlobal('location', { hostname: '192.168.1.20' })
-  vi.stubGlobal('window', { setTimeout, clearTimeout, setInterval, clearInterval })
+  vi.stubGlobal('window', { setTimeout, clearTimeout, setInterval, clearInterval, dispatchEvent: vi.fn() })
+  resetTvHousehold()
   vi.stubGlobal('XMLHttpRequest', FakeXmlHttpRequest)
   vi.stubGlobal('crypto', {
     getRandomValues: (values: Uint8Array) => {
@@ -130,11 +133,71 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetTvHousehold()
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
 describe('companion play routing', () => {
+  it('restores child cloud progress without importing a main-profile checkpoint', async () => {
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify({ ...transport, tvToken: 'b'.repeat(43) }))
+    const household = { enabled: true, profiles: [
+      { id: 'default', name: 'Alex', color: '#457b9d', createdAt: 1, ratingLimit: 18, allowAdult: true },
+      { id: 'child', name: 'Mina', color: '#2a9d8f', createdAt: 1, ratingLimit: 12, allowAdult: false },
+    ] }
+    updateTvHousehold(household)
+    await chooseTvProfile('child')
+    const snapshot = { app: 'izumi', kind: 'companion-home', version: 1, revision: '1', generatedAt: Date.now(), profileId: 'child', catalog: { screen: 'tmdb', label: 'Home' }, rows: [], household }
+    const envelope = JSON.stringify({ v: 1, iv: 'AA', data: 'AA' })
+    Object.assign(crypto.subtle, { decrypt: vi.fn(async (algorithm: { additionalData: Uint8Array }) => {
+      const context = new TextDecoder().decode(algorithm.additionalData)
+      return new TextEncoder().encode(JSON.stringify(context.includes(':snapshot:') ? snapshot : {
+        profileId: context.endsWith('childrecord') ? 'child' : 'default', media,
+        positionSeconds: context.endsWith('childrecord') ? 120 : 400, durationSeconds: 1000, updatedAt: Date.now(), completed: false,
+      })).buffer
+    }) })
+    FakeXmlHttpRequest.responder = (request) => ({ status: 200, body: request.url.includes('/snapshots')
+      ? { screen: 'child~tmdb', payload: envelope }
+      : { records: [{ mediaKey: 'childrecord', payload: envelope }, { mediaKey: 'mainrecord', payload: envelope }] } })
+    const handlers = events()
+    const receiver = new CompanionReceiver(handlers)
+    receiver.requestCatalog('tmdb')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handlers.onSnapshot).toHaveBeenCalledOnce()
+    const result = vi.mocked(handlers.onSnapshot).mock.calls[0][0]
+    expect(result.profileId).toBe('child')
+    expect(result.rows[0].items[0].resumePositionSeconds).toBe(120)
+    expect(FakeXmlHttpRequest.sent[0].url).toContain('screen=child~tmdb')
+  })
+  it('scopes child cloud requests and refuses another viewer’s late LAN snapshots', async () => {
+    const household = { enabled: true, profiles: [
+      { id: 'default', name: 'Alex', color: '#457b9d', createdAt: 1, ratingLimit: 18, allowAdult: true },
+      { id: 'child', name: 'Mina', color: '#2a9d8f', createdAt: 1, ratingLimit: 12, allowAdult: false },
+    ] }
+    updateTvHousehold(household)
+    await chooseTvProfile('child')
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, { msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) } })
+    FakeXmlHttpRequest.responder = (request) => ({ status: 200, body: request.url.endsWith('/household') ? { household } : { items: [] } })
+    const handlers = events()
+    const receiver = new CompanionReceiver(handlers)
+    await receiver.connect()
+    receiver.requestSearch('Film')
+    await vi.advanceTimersByTimeAsync(0)
+    const search = FakeXmlHttpRequest.sent.find((request) => request.url.endsWith('/search'))!
+    expect(search.body).toMatchObject({ profileId: 'child' })
+    const snapshot = { app: 'izumi', kind: 'companion-home', version: 1, revision: '1', generatedAt: 1, catalog: { screen: 'tmdb', label: 'Home' }, rows: [], household }
+    channel.emit('izumi.companion.snapshot', { credential, snapshot: { ...snapshot, profileId: 'default' } })
+    expect(handlers.onSnapshot).not.toHaveBeenCalled()
+    channel.emit('izumi.companion.snapshot', { credential, snapshot: { ...snapshot, profileId: 'child' } })
+    expect(handlers.onSnapshot).toHaveBeenCalledOnce()
+    expect(storage.getItem('izumi.companion.snapshot')).toBeNull()
+    expect(storage.getItem('izumi.companion.snapshot:child')).not.toBeNull()
+    channel.emit('izumi.load', { sessionId: 'other-profile', url: 'https://example.com/film.mp4', profileId: 'default', media }, 'desktop')
+    expect(handlers.onLoad).not.toHaveBeenCalled()
+    receiver.disconnect()
+  })
+
   it('only sends catalogue switches while the paired client channel is connected', async () => {
     storage.removeItem('izumi.companion.cloudflare')
     const channel = new FakeSmartViewChannel()
@@ -440,7 +503,7 @@ describe('companion play routing', () => {
     const result = await pending
 
     expect(result).toMatchObject({ kind: 'resolved', request: { url: 'https://media.example/video.mp4', title: 'Fight Club' } })
-    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+    expect(FakeXmlHttpRequest.sent.filter((request) => !request.url.endsWith('/household'))).toHaveLength(1)
     expect(FakeXmlHttpRequest.sent[0]).toMatchObject({
       method: 'POST',
       url: 'https://private-worker.example/v1/companion/pairings/private_pairing_1/resolve',
@@ -512,7 +575,7 @@ describe('companion play routing', () => {
     channel.emit('izumi.companion.play-accepted', { pairingId: play.pairingId, requestId: play.requestId })
 
     await expect(pending).resolves.toBe('local')
-    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+    expect(FakeXmlHttpRequest.sent.filter((request) => !request.url.endsWith('/household'))).toHaveLength(1)
     receiver.disconnect()
   })
 
@@ -537,7 +600,7 @@ describe('companion play routing', () => {
       playback: { selection: string; positionSeconds: number }
     }
     expect(play.playback).toEqual({ selection: 'manual', positionSeconds: 523.75 })
-    expect(FakeXmlHttpRequest.sent).toHaveLength(0)
+    expect(FakeXmlHttpRequest.sent.filter((request) => !request.url.endsWith('/household'))).toHaveLength(0)
     channel.emit('izumi.companion.play-accepted', { pairingId: play.pairingId, requestId: play.requestId })
 
     await expect(pending).resolves.toBe('local')
@@ -589,7 +652,7 @@ describe('companion play routing', () => {
     const result = await receiver.requestPlay(media)
 
     expect(result).toMatchObject({ kind: 'resolved', request: { url: 'https://media.example/next.mp4' } })
-    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+    expect(FakeXmlHttpRequest.sent.filter((request) => !request.url.endsWith('/household'))).toHaveLength(1)
   })
 
   it('keeps device source URLs private while selecting an opaque row on the TV', async () => {
@@ -641,7 +704,7 @@ describe('companion play routing', () => {
     const receiver = new CompanionReceiver(events())
     expect(receiver.canRequestDeviceSourceChange()).toBe(false)
     await expect(receiver.requestDeviceSourceChange(media, 30)).resolves.toBe('no-source')
-    expect(FakeXmlHttpRequest.sent).toHaveLength(0)
+    expect(FakeXmlHttpRequest.sent.filter((request) => !request.url.endsWith('/household'))).toHaveLength(0)
   })
 
   it('never queues a closed desktop request in combined mode', async () => {
@@ -658,7 +721,7 @@ describe('companion play routing', () => {
     await vi.advanceTimersByTimeAsync(1_200)
 
     await expect(pending).resolves.toBe('open-client')
-    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+    expect(FakeXmlHttpRequest.sent.filter((request) => !request.url.endsWith('/household'))).toHaveLength(1)
   })
 
   it('does not assume a legacy Worker route may wake a closed desktop', async () => {
@@ -668,7 +731,7 @@ describe('companion play routing', () => {
     await vi.advanceTimersByTimeAsync(1_200)
 
     await expect(pending).resolves.toBe('open-client')
-    expect(FakeXmlHttpRequest.sent).toHaveLength(0)
+    expect(FakeXmlHttpRequest.sent.filter((request) => !request.url.endsWith('/household'))).toHaveLength(0)
   })
 
   it('discards an incompatible cached catalog before startup renders it', () => {

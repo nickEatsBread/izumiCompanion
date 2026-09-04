@@ -1,10 +1,12 @@
 import type { CompanionHomeSnapshot, CompanionMedia, PlaybackSnapshot } from '../types'
+import { tvProfileId, tvProfileStorageKey } from './profiles'
 
 const STORAGE_KEY = 'izumi.companion.playback-progress'
 const MAX_RECORDS = 24
 const MAX_AGE_MS = 180 * 24 * 60 * 60 * 1_000
 
 export interface StoredPlaybackProgress {
+  profileId?: string
   recordKey: string
   media: CompanionMedia
   positionSeconds: number
@@ -69,14 +71,14 @@ function normalizeRecords(value: unknown, now = Date.now()): StoredPlaybackProgr
 
 export function readPlaybackProgress(now = Date.now()): StoredPlaybackProgress[] {
   try {
-    return normalizeRecords(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'), now)
+    return normalizeRecords(JSON.parse(localStorage.getItem(tvProfileStorageKey(STORAGE_KEY)) || '[]'), now)
   } catch {
     return []
   }
 }
 
 function writePlaybackProgress(records: StoredPlaybackProgress[]): void {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)) } catch { /* Best-effort TV storage. */ }
+  try { localStorage.setItem(tvProfileStorageKey(STORAGE_KEY), JSON.stringify(records)) } catch { /* Best-effort TV storage. */ }
 }
 
 export function savePlaybackProgress(
@@ -93,6 +95,7 @@ export function savePlaybackProgress(
     Number.isFinite(media.episode) ? media.episode : '',
   ].join(':')
   const record: StoredPlaybackProgress = {
+    profileId: tvProfileId(),
     recordKey,
     media: compactMedia(media),
     positionSeconds,
@@ -108,7 +111,7 @@ export function savePlaybackProgress(
 }
 
 export function clearPlaybackProgress(): void {
-  localStorage.removeItem(STORAGE_KEY)
+  localStorage.removeItem(tvProfileStorageKey(STORAGE_KEY))
 }
 
 function progressMedia(record: StoredPlaybackProgress, base?: CompanionMedia): CompanionMedia {
@@ -135,6 +138,7 @@ export function mergePlaybackProgress(
   snapshot: CompanionHomeSnapshot,
   records = readPlaybackProgress(),
 ): CompanionHomeSnapshot {
+  records = records.filter((record) => (record.profileId ?? 'default') === (snapshot.profileId ?? 'default'))
   if (!records.length) return snapshot
   const latest = new Map<string, StoredPlaybackProgress>()
   for (const record of records) {

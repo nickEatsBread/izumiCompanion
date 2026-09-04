@@ -21,6 +21,8 @@ import {
   type StoredPlaybackProgress,
 } from './playback-progress'
 
+import { tvHousehold, tvProfileId, tvProfileReady, tvProfileScope, tvProfileStorageKey, updateTvHousehold, snapshotMatchesTvProfile, filterTvSnapshot, tvAllowsMedia, resetTvHousehold } from './profiles'
+
 const CHANNEL_ID = 'com.nicho.izumi.cast'
 const PAIRING_LIFETIME_MS = 5 * 60_000
 const LOCAL_PLAY_ACK_MS = 1_200
@@ -139,10 +141,10 @@ function storedCloudflareTransport(): CompanionCloudflareTransport | null {
 
 function storedSnapshot(): CompanionHomeSnapshot | null {
   try {
-    const value = JSON.parse(localStorage.getItem(SNAPSHOT_STORAGE_KEY) || 'null')
-    if (isCompanionSnapshot(value)) return value
+    const value = JSON.parse(localStorage.getItem(tvProfileStorageKey(SNAPSHOT_STORAGE_KEY)) || 'null')
+    if (isCompanionSnapshot(value)) { updateTvHousehold(value.household); if (snapshotMatchesTvProfile(value)) return filterTvSnapshot(value) }
   } catch { /* Invalid upgrade data is removed below. */ }
-  localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
+  localStorage.removeItem(tvProfileStorageKey(SNAPSHOT_STORAGE_KEY))
   return null
 }
 
@@ -155,7 +157,7 @@ function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
 }
 
 function storeSnapshot(snapshot: CompanionHomeSnapshot): void {
-  try { localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot)) } catch { /* TV storage is best-effort. */ }
+  try { localStorage.setItem(tvProfileStorageKey(SNAPSHOT_STORAGE_KEY), JSON.stringify(snapshot)) } catch { /* TV storage is best-effort. */ }
 }
 
 class WorkerRequestError extends Error {
@@ -171,6 +173,10 @@ function workerRequest(
   payload?: unknown,
   timeoutMs = 10_000,
 ): Promise<Record<string, unknown>> {
+  const profileId = tvProfileId()
+  const scoped = method === 'POST' && /\/(catalog|search|details|resolve)$/.test(path)
+  if (scoped && !tvProfileReady()) return Promise.reject(new WorkerRequestError('Choose and unlock a profile first.', 'PROFILE_LOCKED'))
+  if (scoped) payload = { ...(payload as Record<string, unknown>), ...tvProfileScope() }
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
     request.open(method, `${transport.endpoint}${path}`, true)
@@ -178,6 +184,7 @@ function workerRequest(
     request.setRequestHeader('Authorization', `Bearer ${transport.tvToken}`)
     if (payload !== undefined) request.setRequestHeader('Content-Type', 'application/json')
     request.onload = () => {
+      if (scoped && (profileId !== tvProfileId() || !tvProfileReady())) { reject(new WorkerRequestError('The profile changed.', 'PROFILE_CHANGED')); return }
       let value: Record<string, unknown> = {}
       try { value = JSON.parse(request.responseText || '{}') as Record<string, unknown> } catch { /* handled below */ }
       if (request.status >= 200 && request.status < 300) resolve(value)
@@ -202,6 +209,7 @@ async function encryptedPlayRequest(
   const issuedAt = Date.now()
   const plain = new TextEncoder().encode(JSON.stringify({
     v: 1,
+    profileId: tvProfileId(),
     pairingId,
     requestId,
     ref: media.ref,
@@ -264,8 +272,8 @@ async function decryptTvPayload<T>(transport: CompanionCloudflareTransport, cont
   } catch { return null }
 }
 
-async function progressKey(media: CompanionMedia): Promise<string> {
-  const identity = `${media.ref.provider}:${media.ref.type}:${media.ref.id}:${media.season ?? ''}:${media.episode ?? ''}`
+async function progressKey(media: CompanionMedia, profileId = tvProfileId()): Promise<string> {
+  const identity = `${profileId}:` + `${media.ref.provider}:${media.ref.type}:${media.ref.id}:${media.season ?? ''}:${media.episode ?? ''}`
   return bytesToBase64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity))))
 }
 
@@ -372,13 +380,15 @@ function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedi
     if (!entry || typeof entry !== 'object') return []
     const relation = entry as Record<string, unknown>
     return typeof relation.relationType === 'string' && validCompanionMedia(relation.media)
-      ? [{ relationType: relation.relationType.slice(0, 80), media: relation.media }]
+      && tvAllowsMedia(relation.media) ? [{ relationType: relation.relationType.slice(0, 80), media: relation.media }]
       : []
   })
   const recommendations = (Array.isArray(details.recommendations) ? details.recommendations : [])
-    .slice(0, 12).filter(validCompanionMedia)
+    .slice(0, 12).filter(validCompanionMedia).filter(tvAllowsMedia)
   return {
     ...media,
+    contentRating: typeof details.contentRating === 'string' ? details.contentRating : media.contentRating,
+    isAdult: details.isAdult === true || media.isAdult === true,
     description: typeof details.description === 'string' ? details.description.slice(0, 1_500) : media.description,
     poster: validUrl(details.poster) ? details.poster : media.poster,
     backdrop: validUrl(details.backdrop) ? details.backdrop : media.backdrop,
@@ -508,6 +518,7 @@ function normalizeLoad(value: unknown): CastLoadRequest | undefined {
     }]
   })
   return {
+    profileId: typeof input.profileId === 'string' ? input.profileId : 'default',
     sessionId: input.sessionId,
     url: input.url,
     title: typeof input.title === 'string' && input.title ? input.title.slice(0, 240) : 'izumi',
@@ -577,9 +588,9 @@ export class CompanionReceiver {
   private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
   private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
   private workerSetupRequestId = ''
-  private activePlayback?: { sessionId: string; media: CompanionMedia }
+  private activePlayback?: { sessionId: string; media: CompanionMedia; profileId: string }
   private progressSubscriberId = ''
-  private cloudPlayback?: { sessionId: string; media: CompanionMedia }
+  private cloudPlayback?: { sessionId: string; media: CompanionMedia; profileId: string }
   private localProgressAt = 0
   private cloudProgressAt = 0
   private cloudProgressWriting = false
@@ -591,7 +602,7 @@ export class CompanionReceiver {
     this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
     this.events.onIndependentPlaybackReady?.(this.independentPlaybackReady)
     const snapshot = this.credential ? storedSnapshot() : null
-    if (snapshot) this.events.onSnapshot(mergePlaybackProgress(snapshot))
+    if (snapshot) this.acceptSnapshot(snapshot)
   }
 
   get pairingInfo(): PairingInfo {
@@ -599,6 +610,7 @@ export class CompanionReceiver {
   }
 
   async connect(): Promise<void> {
+    await this.refreshHousehold()
     if (!window.msf?.local) {
       // Once a TV has its Worker transport, the LAN receiver is an optional control/fallback
       // channel. A missing Smart View library must not prevent the cloud snapshot from starting.
@@ -624,7 +636,7 @@ export class CompanionReceiver {
     this.channel.on('izumi.load', (value, from) => {
       const request = normalizeLoad(value)
       const sender = this.messageSender(value, from)
-      if (!request || !sender) return
+      if (!request || !sender || (request.profileId ?? 'default') !== tvProfileId() || !tvProfileReady() || !tvAllowsMedia(request.media ?? { contentRating: request.contentRating })) return
       this.activeSenderId = sender
       this.activeSessionId = request.sessionId
       this.events.onLoad(request, sender)
@@ -700,8 +712,9 @@ export class CompanionReceiver {
       const message = parseMessage(value)
       if (!message || typeof message !== 'object') return
       const input = message as Record<string, unknown>
-      if (!this.credential || input.credential !== this.credential || typeof input.query !== 'string') return
-      const items = Array.isArray(input.items) ? input.items.slice(0, 40).filter(validCompanionMedia) : []
+      if (!this.credential || input.credential !== this.credential || typeof input.query !== 'string'
+        || !tvProfileReady() || (input.profileId ?? 'default') !== tvProfileId()) return
+      const items = Array.isArray(input.items) ? input.items.slice(0, 40).filter(validCompanionMedia).filter(tvAllowsMedia) : []
       const candidate = input.person && typeof input.person === 'object' ? input.person as Record<string, unknown> : undefined
       const person: CompanionPersonFilter | undefined = candidate
         && typeof candidate.id === 'string' && typeof candidate.provider === 'string' && typeof candidate.name === 'string'
@@ -792,6 +805,7 @@ export class CompanionReceiver {
   }
 
   private async cloudProgressRecords(): Promise<Array<{
+    profileId: string
     media: CompanionMedia
     positionSeconds: number
     durationSeconds: number
@@ -812,12 +826,13 @@ export class CompanionReceiver {
       return decryptTvPayload<Record<string, unknown>>(this.cloudflare!, `progress:${row.mediaKey}`, row.payload)
     }))
     return decrypted.flatMap((value) => {
-      if (!value || !validCompanionMedia(value.media)) return []
+      if (!value || (value.profileId ?? 'default') !== tvProfileId() || !validCompanionMedia(value.media)) return []
       const positionSeconds = Number(value.positionSeconds)
       const durationSeconds = Number(value.durationSeconds)
       const updatedAt = Number(value.updatedAt)
       if (!Number.isFinite(positionSeconds) || !Number.isFinite(durationSeconds) || !Number.isFinite(updatedAt)) return []
       return [{
+        profileId: typeof value.profileId === 'string' ? value.profileId : 'default',
         media: value.media,
         positionSeconds: Math.max(0, positionSeconds),
         durationSeconds: Math.max(0, durationSeconds),
@@ -842,7 +857,9 @@ export class CompanionReceiver {
 
   private async refreshCloudSnapshot(screen?: string): Promise<boolean> {
     if (!this.cloudflare || !crypto.subtle) return false
-    const query = screen ? `?screen=${encodeURIComponent(screen)}` : ''
+    const requestedProfile = tvProfileId()
+    const selector = screen && tvHousehold().enabled ? `${requestedProfile}~${screen}` : screen
+    const query = selector ? `?screen=${encodeURIComponent(selector)}` : ''
     try {
       const result = await workerRequest(
         this.cloudflare,
@@ -854,14 +871,25 @@ export class CompanionReceiver {
         this.cloudflare, `snapshot:${result.screen}`, result.payload,
       )
       if (!isCompanionSnapshot(snapshot)) return false
+      updateTvHousehold(snapshot.household)
+      if (requestedProfile !== tvProfileId() || !snapshotMatchesTvProfile(snapshot) || !tvProfileReady()) return false
       const merged = await this.withCloudProgress(snapshot)
-      storeSnapshot(merged)
-      this.events.onSnapshot(merged)
-      return true
+      if (requestedProfile !== tvProfileId()) return false
+      return this.acceptSnapshot(merged)
     } catch { return false }
   }
 
+  private async refreshHousehold(): Promise<void> {
+    if (!this.cloudflare) return
+    try {
+      const result = await workerRequest(this.cloudflare, `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/household`, 'GET')
+      updateTvHousehold(result.household)
+    } catch { /* Offline or older Worker: retain the last authenticated household gate. */ }
+  }
+
   requestRefresh(): void {
+    void this.refreshHousehold()
+    void this.refreshCloudSnapshot() // Latest roster may belong to another profile; never display its personal rows.
     const screen = storedSnapshot()?.catalog.screen
     void this.refreshCloudSnapshot(screen)
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
@@ -899,7 +927,7 @@ export class CompanionReceiver {
     this.events.onIndependentPlaybackReady?.(true)
     // The Worker maps an unsupported "auto" request to the profile's configured default, so this
     // starts either the AniList, TMDB or Stremio home selected during phone setup.
-    this.requestCatalog('auto')
+    void this.refreshHousehold().then(() => this.requestCatalog('auto'))
   }
 
   /** Ask the authenticated, currently linked izumi client to open the private Worker onboarding. */
@@ -915,6 +943,8 @@ export class CompanionReceiver {
   }
 
   async requestDetails(media: CompanionMedia, presentationOnly = false): Promise<CompanionMedia | null> {
+    const viewer = tvProfileId()
+    if (!tvProfileReady() || !tvAllowsMedia(media)) return null
     if (!presentationOnly && this.cloudflare && media.ref.provider !== 'jvm') {
       try {
         const result = await workerRequest(
@@ -925,7 +955,7 @@ export class CompanionReceiver {
           6_000,
         )
         const details = cloudMediaDetails(result, media)
-        if (details) return details
+        if (details && tvAllowsMedia(details)) return details
       } catch { /* The open paired client remains the richer fallback for unsupported/offline metadata. */ }
     }
     if (!this.credential || !this.connected) return null
@@ -934,7 +964,7 @@ export class CompanionReceiver {
       const finish = (details: CompanionMedia | null) => {
         window.clearTimeout(timer)
         this.detailRequests.delete(requestId)
-        resolve(details)
+        resolve(viewer === tvProfileId() && tvProfileReady() && details && tvAllowsMedia(details) ? details : null)
       }
       const timer = window.setTimeout(() => finish(null), DETAILS_TIMEOUT_MS)
       this.detailRequests.set(requestId, finish)
@@ -948,6 +978,7 @@ export class CompanionReceiver {
   }
 
   async requestTrailer(videoId: string, title: string, muted = false, captions = false): Promise<CompanionTrailerSource> {
+    if (!tvProfileReady()) throw new Error('Choose a profile first.')
     if (!this.credential) throw new Error('Pair this TV with izumi to play trailers.')
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return Promise.reject(new Error('This trailer has an invalid YouTube ID.'))
 
@@ -1008,6 +1039,8 @@ export class CompanionReceiver {
   }
 
   async requestPlay(media: CompanionMedia): Promise<CompanionPlayResult> {
+    const viewer = tvProfileId()
+    if (!tvProfileReady() || !tvAllowsMedia(media)) return { kind: 'failed', message: 'This title is unavailable for this profile.' }
     if (!this.credential) return 'open-client'
     const secureRequestId = secureRandomHex(16)
     const requestId = secureRequestId ?? randomHex(16)
@@ -1045,11 +1078,13 @@ export class CompanionReceiver {
       }
     }
 
+    if (viewer !== tvProfileId() || !tvProfileReady()) return 'no-source'
     return this.requestFromDevice(media, requestId, secureRequestId)
   }
 
   /** Warm a Worker-resolved source without waking the paired device or interrupting playback. */
   async prefetchPlay(media: CompanionMedia): Promise<boolean> {
+    if (!tvProfileReady() || !tvAllowsMedia(media)) return false
     if (!this.credential || !this.cloudflare || this.cloudflare.playbackMode === 'device-only') return false
     const key = this.playKey(media)
     const cached = this.prefetchedPlays.get(key)
@@ -1076,7 +1111,7 @@ export class CompanionReceiver {
   }
 
   private playKey(media: CompanionMedia): string {
-    return `${media.ref.provider}:${media.ref.type}:${media.ref.id}:${media.season ?? ''}:${media.episode ?? ''}`
+    return `${tvProfileId()}:${media.ref.provider}:${media.ref.type}:${media.ref.id}:${media.season ?? ''}:${media.episode ?? ''}`
   }
 
   canRequestDeviceSourceChange(): boolean {
@@ -1103,6 +1138,8 @@ export class CompanionReceiver {
     requestId: string,
     secureRequestId: string | null,
   ): Promise<CompanionPlayResult> {
+    const viewer = tvProfileId()
+    if (!tvProfileReady() || !tvAllowsMedia(media)) return 'no-source'
     const pairingId = this.cloudflare?.pairingId ?? this.credential.slice(0, 16)
     const accepted = new Promise<boolean>((resolve) => {
       const finish = (value: boolean) => {
@@ -1124,6 +1161,7 @@ export class CompanionReceiver {
       requestId,
     }, 'broadcast')
     if (await accepted) return 'local'
+    if (viewer !== tvProfileId() || !tvProfileReady()) return 'no-source'
     if (!this.cloudflare) return 'open-client'
     if (!this.cloudflare.wakeWhenClosed) return 'open-client'
     if (!secureRequestId || !crypto.subtle) return 'open-client'
@@ -1142,10 +1180,13 @@ export class CompanionReceiver {
   }
 
   requestCatalog(screen: string): boolean {
+    const viewer = tvProfileId()
+    if (!tvProfileReady()) { void this.refreshCloudSnapshot(); return false }
     if (!this.credential || !screen || screen.length > 40) return false
     if (this.cloudflare) {
       void (async () => {
         if (await this.refreshCloudSnapshot(screen)) return
+        if (viewer !== tvProfileId() || !tvProfileReady()) return
         try {
           const result = await workerRequest(
             this.cloudflare!,
@@ -1153,12 +1194,14 @@ export class CompanionReceiver {
             'POST', { screen }, 20_000,
           )
           if (isCompanionSnapshot(result.snapshot)) {
+            updateTvHousehold(result.snapshot.household)
+            if (viewer !== tvProfileId() || !snapshotMatchesTvProfile(result.snapshot)) return
             const snapshot = await this.withCloudProgress(result.snapshot)
-            storeSnapshot(snapshot)
-            this.events.onSnapshot(snapshot)
+            if (viewer === tvProfileId()) this.acceptSnapshot(snapshot)
             return
           }
         } catch (error) {
+          if (viewer !== tvProfileId() || !tvProfileReady()) return
           if (!this.connected) {
             this.events.onCatalogError?.(screen, error instanceof Error ? error.message : 'The cloud catalogue is unavailable.')
             return
@@ -1174,6 +1217,8 @@ export class CompanionReceiver {
   }
 
   requestSearch(query: string, person?: CompanionPersonFilter, genre?: string): boolean {
+    const viewer = tvProfileId()
+    if (!tvProfileReady()) return false
     const normalized = query.trim().slice(0, 80)
     if (!this.credential || !normalized) return false
     const askLinked = () => this.publish('izumi.companion.search', {
@@ -1186,9 +1231,10 @@ export class CompanionReceiver {
         `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/search`,
         'POST', { screen, query: normalized, person, genre }, 20_000,
       ).then((result) => {
-        const items = (Array.isArray(result.items) ? result.items : []).slice(0, 40).filter(validCompanionMedia)
+        const items = (Array.isArray(result.items) ? result.items : []).slice(0, 40).filter(validCompanionMedia).filter(tvAllowsMedia)
         this.events.onSearchResults(normalized, items, undefined, person, genre)
       }).catch((error) => {
+        if (viewer !== tvProfileId() || !tvProfileReady()) return
         if (this.connected) askLinked()
         else this.events.onSearchResults(normalized, [], error instanceof Error ? error.message : 'Cloud search is unavailable.', person, genre)
       })
@@ -1221,10 +1267,10 @@ export class CompanionReceiver {
   }
 
   beginPlayback(request: CastLoadRequest): void {
-    this.activePlayback = request.media ? { sessionId: request.sessionId, media: request.media } : undefined
+    this.activePlayback = request.media ? { sessionId: request.sessionId, media: request.media, profileId: tvProfileId() } : undefined
     this.localProgressAt = 0
     if (request.sessionId.startsWith('cloud-') && request.media && this.cloudflare) {
-      this.cloudPlayback = { sessionId: request.sessionId, media: request.media }
+      this.cloudPlayback = { sessionId: request.sessionId, media: request.media, profileId: tvProfileId() }
       this.activeSessionId = request.sessionId
       this.cloudProgressAt = 0
     } else if (!request.sessionId.startsWith('cloud-')) {
@@ -1236,11 +1282,12 @@ export class CompanionReceiver {
     const active = this.cloudPlayback
     const transport = this.cloudflare
     if (!active || !transport || active.sessionId !== snapshot.sessionId || !crypto.subtle) return
-    const mediaKey = await progressKey(active.media)
+    const mediaKey = await progressKey(active.media, active.profileId)
     const positionSeconds = Math.max(0, Math.min(604_800, Number(snapshot.positionSeconds) || 0))
     const durationSeconds = Math.max(0, Math.min(604_800, Number(snapshot.durationSeconds) || 0))
     const completed = durationSeconds > 0 && positionSeconds / durationSeconds >= 0.85
     const value = {
+      profileId: active.profileId,
       media: active.media,
       sessionId: snapshot.sessionId,
       positionSeconds,
@@ -1260,7 +1307,7 @@ export class CompanionReceiver {
   publishStatus(snapshot: PlaybackSnapshot): void {
     const now = Date.now()
     const finalState = snapshot.state === 'paused' || snapshot.state === 'idle' || Boolean(snapshot.error)
-    if (this.activePlayback?.sessionId === snapshot.sessionId
+    if (this.activePlayback?.profileId === tvProfileId() && this.activePlayback?.sessionId === snapshot.sessionId
       && (this.localProgressAt === 0 || now - this.localProgressAt >= 5_000
         || finalState && now - this.localProgressAt >= 1_000)) {
       this.localProgressAt = now
@@ -1309,11 +1356,18 @@ export class CompanionReceiver {
   }
 
   unpair(revokeWorker = true): void {
+    const personalKeys: string[] = []
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index)
+      if (key && /^izumi\.companion\.(snapshot|playback-progress)(:|$)/.test(key)) personalKeys.push(key)
+    }
+    personalKeys.forEach((key) => localStorage.removeItem(key))
     if (revokeWorker) void this.revokeCloudflarePairing()
     localStorage.removeItem('izumi.companion.credential')
     localStorage.removeItem('izumi.companion.cloudflare')
-    localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
+    localStorage.removeItem(tvProfileStorageKey(SNAPSHOT_STORAGE_KEY))
     clearPlaybackProgress()
+    resetTvHousehold()
     this.credential = ''
     this.progressSubscriberId = ''
     this.deviceSourceRequests.clear()
@@ -1333,6 +1387,7 @@ export class CompanionReceiver {
     Object.keys(localStorage)
       .filter((key) => key.startsWith('izumi.companion.'))
       .forEach((key) => localStorage.removeItem(key))
+    resetTvHousehold()
     this.credential = ''
     this.cloudflare = null
     this.clearTrailerRequests()
@@ -1410,10 +1465,8 @@ export class CompanionReceiver {
     this.events.onPaired(true)
     const snapshot = input.snapshot
     if (isCompanionSnapshot(snapshot)) {
-      const merged = mergePlaybackProgress(snapshot)
-      storeSnapshot(merged)
-      this.events.onSnapshot(merged)
-    } else localStorage.removeItem(SNAPSHOT_STORAGE_KEY)
+      this.acceptSnapshot(snapshot)
+    } else localStorage.removeItem(tvProfileStorageKey(SNAPSHOT_STORAGE_KEY))
     this.publish('izumi.companion.paired', { ok: true, deviceId: this.pairing.deviceId }, senderId)
   }
 
@@ -1423,13 +1476,31 @@ export class CompanionReceiver {
     const input = message as { credential?: unknown; snapshot?: unknown }
     if (!this.credential || input.credential !== this.credential || !isCompanionSnapshot(input.snapshot)) return
     this.events.onPaired(true)
-    const snapshot = mergePlaybackProgress(input.snapshot)
-    storeSnapshot(snapshot)
-    this.events.onSnapshot(snapshot)
+    this.acceptSnapshot(input.snapshot)
+  }
+
+  private acceptSnapshot(snapshot: CompanionHomeSnapshot): boolean {
+    updateTvHousehold(snapshot.household)
+    if (!tvProfileReady() || !snapshotMatchesTvProfile(snapshot)) return false
+    const safe = filterTvSnapshot(mergePlaybackProgress(snapshot))
+    storeSnapshot(safe)
+    this.events.onSnapshot(safe)
+    return true
+  }
+
+  refreshForProfile(): void {
+    this.prefetchedPlays.clear()
+    this.deviceSourceRequests.clear()
+    for (const finish of this.detailRequests.values()) finish(null)
+    const snapshot = storedSnapshot()
+    if (snapshot) this.acceptSnapshot(snapshot)
+    else this.events.onSnapshot({ app: 'izumi', kind: 'companion-home', version: 1, revision: 'profile-' + Date.now(), generatedAt: Date.now(), profileId: tvProfileId(), household: tvHousehold(), catalog: { screen: 'auto', label: 'Home' }, rows: [], history: [] })
+    this.requestCatalog(snapshot?.catalog.screen ?? 'auto')
   }
 
   private publish(event: string, data: unknown, target: string): void {
     if (!this.channel || !this.connected && event !== 'izumi.ready') return
+    if (tvHousehold().enabled && event.startsWith('izumi.companion.') && data && typeof data === 'object') data = { ...data, profileId: tvProfileId() }
     try { this.channel.publish(event, data, target || 'broadcast') } catch { /* receiver may be closing */ }
   }
 

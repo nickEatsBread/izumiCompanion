@@ -1,3 +1,5 @@
+import { ProfileScreen, PROFILE_REMOTE } from './components/ProfileScreen'
+import { PROFILES_CHANGED, tvHousehold, tvProfileReady } from './lib/profiles'
 import QRCode from 'qrcode'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
@@ -304,6 +306,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           : initialDestination === 'my-list' || initialDestination === 'watch-history'
             ? { zone: 'grid', index: 0 }
           : { zone: 'hero', index: 0 })
+  const [profilesOpen, setProfilesOpen] = useState(!tvProfileReady())
+  const profilesOpenRef = useRef(profilesOpen)
+  profilesOpenRef.current = profilesOpen
   const [activeNav, setActiveNav] = useState(navIndexFor(initialDestination))
   const [notice, setNotice] = useState('')
   const [safeArea, setSafeArea] = useState(false)
@@ -945,6 +950,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     registerRemoteKeys()
+    const onProfilesChanged = () => {
+      setProfilesOpen(!tvProfileReady())
+      if (!tvProfileReady()) {
+        if (activeLoadRef.current) stopPlayback('home')
+        closeTrailer()
+      }
+    }
+    window.addEventListener(PROFILES_CHANGED, onProfilesChanged)
     if (showPreviewTools) settleStartupAfterPaint()
     const receiver = new CompanionReceiver({
       onConnection: setConnected,
@@ -1066,6 +1079,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     document.addEventListener('visibilitychange', flushHiddenPlaybackStatus)
     return () => {
       window.clearInterval(statusTimer)
+      window.removeEventListener(PROFILES_CHANGED, onProfilesChanged)
       window.removeEventListener('pagehide', flushPlaybackStatus)
       window.removeEventListener('beforeunload', flushPlaybackStatus)
       document.removeEventListener('visibilitychange', flushHiddenPlaybackStatus)
@@ -1804,7 +1818,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (focus.zone !== 'nav') lastHomeContentFocusRef.current = focus
     if (focus.zone === 'nav') {
       if (action === 'up') next = { zone: 'nav', index: Math.max(-1, focus.index - 1) }
-      else if (action === 'down') next = { zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) }
+      else if (action === 'down') next = { zone: 'nav', index: Math.min(navItemCount() - 1, focus.index + 1) }
       else if (action === 'right') {
         const previous = lastHomeContentFocusRef.current
         if (previous.zone === 'hero') {
@@ -2028,6 +2042,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const selectNav = (index: number) => {
+    if (index === 8 && tvHousehold().enabled) { closeTrailer(); setProfilesOpen(true); return }
     if (index === -1) return openCatalogMenu()
     closeTrailer()
     clearNavigationHistory()
@@ -2489,7 +2504,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const items = browseItemsFor(screen)
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount() - 1, focus.index + 1) })
       else if (action === 'right' && items.length) {
         changeFocus({ zone: 'grid', index: 0 })
         setSelected(items[0])
@@ -2533,7 +2548,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const focus = focusRef.current
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount() - 1, focus.index + 1) })
       else if (action === 'right') changeSearchKeyFocus(0)
       return
     }
@@ -2693,7 +2708,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount - 1, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount() - 1, focus.index + 1) })
       else if (action === 'right') changeFocus({ zone: 'setting', index: 0 })
     } else if (focus.zone === 'setting') {
       if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
@@ -2703,6 +2718,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const handleRemote = (action: RemoteAction) => {
+    if (profilesOpenRef.current) { window.dispatchEvent(new CustomEvent(PROFILE_REMOTE, { detail: action })); return }
     markRemoteInput(action)
     const focus = focusRef.current
     if (exitConfirmation) {
@@ -3097,6 +3113,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   return (
     <div class={`app-shell screen-${screen}${safeArea ? ' show-safe-area' : ''}`}>
+      {profilesOpen && <ProfileScreen onChoose={() => {
+        setProfilesOpen(false)
+        clearNavigationHistory()
+        setRemoteSearchResults([])
+        setSearchQuery('')
+        setSearchPerson(undefined)
+        setSearchGenre(undefined)
+        if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
+        catalogRequestRef.current = undefined
+        receiverRef.current?.refreshForProfile()
+      }} onRefresh={() => receiverRef.current?.requestRefresh()}/>}
       {cinematicScreen && (
         <HomeScreen
           snapshot={renderedCinematicSnapshot}

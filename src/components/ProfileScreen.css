@@ -1,0 +1,30 @@
+.tv-profiles { position:fixed; inset:0; z-index:2000; background:#101214; color:#f6f3ed; display:flex; align-items:center; justify-content:center; font-family:inherit; }
+.tv-profiles-content { width:92%; text-align:center; padding:36px 0; }
+.tv-profiles-mark { width:66px; height:66px; margin-bottom:24px; }
+.tv-profiles h1 { font-size:56px; line-height:1.15; margin:0 0 48px; font-weight:750; letter-spacing:-1px; }
+.tv-profile-tiles { display:flex; justify-content:center; flex-wrap:wrap; max-width:1400px; margin:0 auto; }
+.tv-profile-tile { background:transparent; border:0; width:190px; margin:0 14px 16px; padding:8px; color:#9da2a5; }
+.tv-profile-tile img { display:block; width:166px; height:166px; border-radius:32px; border:4px solid transparent; transition:transform .18s ease,border-color .18s ease; }
+.tv-profile-tile span { display:block; font-size:26px; margin-top:18px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tv-profile-tile small { display:block; height:24px; margin-top:8px; }
+.tv-profile-tiles.is-dense .tv-profile-tile { width:144px; }
+.tv-profile-tiles.is-dense .tv-profile-tile img { width:120px; height:120px; border-radius:26px; }
+.tv-profile-tile.is-profile-focused { color:#fff; }
+.tv-profile-tile.is-profile-focused img { border-color:#fff; transform:scale(1.07); }
+.tv-profiles button { font-family:inherit; cursor:pointer; outline:none; }
+.tv-profile-manage,.tv-profile-actions button,.tv-pin-keys button { background:transparent; color:#aeb3b6; border:2px solid #44494d; border-radius:8px; font-size:25px; padding:15px 32px; }
+.tv-profile-manage { margin-top:44px; }
+.tv-profile-manage.is-profile-focused,.tv-profile-actions button.is-profile-focused,.tv-pin-keys button.is-profile-focused { background:#f6f3ed; border-color:#f6f3ed; color:#111; }
+.tv-profiles-back { position:absolute; top:48px; left:64px; background:none; border:0; color:white; padding:14px; }
+.tv-profiles-hint { color:#aeb3b6; font-size:26px; margin:0 0 24px; }
+.tv-profiles-instructions { font-size:30px; line-height:1.8; margin:0 0 24px; }
+.tv-profile-actions { margin-top:48px; }
+.tv-profile-actions button { margin:0 12px; }
+.tv-pin-dots { height:36px; display:flex; justify-content:center; align-items:center; }
+.tv-pin-dots i { width:18px; height:18px; margin:0 12px; border-radius:50%; border:2px solid #72797d; }
+.tv-pin-dots i.filled { background:white; border-color:white; }
+.tv-profile-error { min-height:28px; margin:16px 0; font-size:23px; color:#eeb2ab; }
+.tv-pin-keys { display:flex; flex-wrap:wrap; width:444px; margin:0 auto; }
+.tv-pin-keys button { width:138px; height:68px; padding:6px; margin:5px; }
+.tv-pin-keys button:disabled { opacity:.35; }
+@media (prefers-reduced-motion:reduce) { .tv-profile-tile img { transition:none; } }

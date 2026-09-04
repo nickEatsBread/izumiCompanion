@@ -42,6 +42,7 @@ export interface CompanionMedia {
   subtitle?: string
   description?: string
   contentRating?: string
+  isAdult?: boolean
   mediaKind?: 'movie' | 'show'
   genres?: string[]
   releaseYear?: number
@@ -162,6 +163,8 @@ export interface CompanionCatalogOption {
 }
 
 export interface CompanionHomeSnapshot {
+  profileId?: string
+  household?: import('./lib/profiles').TvHousehold
   app: 'izumi'
   kind: 'companion-home'
   version: 1
@@ -226,10 +229,12 @@ export interface CastTrackHints {
 }
 
 export interface CastLoadRequest {
+  profileId?: string
   sessionId: string
   url: string
   title: string
   contentRating?: string
+  isAdult?: boolean
   contentType?: string
   positionSeconds: number
   subtitles: CastSubtitleTrack[]
