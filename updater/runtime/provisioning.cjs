@@ -9,9 +9,22 @@ function encryptSetup(handshake, certificate) {
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
   cipher.setAAD(Buffer.from(handshake.challenge))
   const encrypted = Buffer.concat([cipher.update(JSON.stringify({ challenge: handshake.challenge, certificate }), 'utf8'), cipher.final()])
-  const envelope = { schema: 1, challenge: handshake.challenge, key: crypto.publicEncrypt({ key: handshake.publicKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING }, key).toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: encrypted.toString('base64') }
+  const envelope = { schema: 1, framing: 'lf', challenge: handshake.challenge, key: crypto.publicEncrypt({ key: handshake.publicKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING }, key).toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: encrypted.toString('base64') }
   key.fill(0)
-  return Buffer.from(JSON.stringify(envelope))
+  return Buffer.from(JSON.stringify(envelope) + '\n')
+}
+function parseSetupTransfer(text) {
+  try {
+    const envelope = JSON.parse(text)
+    if (envelope && envelope.framing === 'lf' && text.charAt(text.length - 1) !== '\n') return undefined
+    return envelope
+  }
+  catch (error) {
+    // SDB exposes the destination while it is still being written. Keep an
+    // incomplete transfer in place; the final newline marks a finished frame.
+    if (error.name === 'SyntaxError' && text.charAt(text.length - 1) !== '\n') return undefined
+    throw error
+  }
 }
 function decryptSetup(envelope, privateKey, challenge) {
   if (!envelope || envelope.schema !== 1 || envelope.challenge !== challenge) throw new Error('This setup transfer has expired. Retry from the desktop installer.')
@@ -29,4 +42,4 @@ function verifyReceipt(envelope, publicKey) {
   if (!envelope || typeof envelope.state !== 'string' || typeof envelope.signature !== 'string' || !crypto.createVerify('RSA-SHA256').update(envelope.state).verify(publicKey, Buffer.from(envelope.signature, 'base64'))) throw new Error('The TV setup receipt failed signature verification.')
   return JSON.parse(envelope.state)
 }
-module.exports = { SETUP_PATH, PUBLIC_PATH, RECEIPT_PATH, encryptSetup, decryptSetup, setupCode, verifyReceipt }
+module.exports = { SETUP_PATH, PUBLIC_PATH, RECEIPT_PATH, encryptSetup, parseSetupTransfer, decryptSetup, setupCode, verifyReceipt }

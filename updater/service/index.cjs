@@ -7,7 +7,7 @@ const forge = require('node-forge')
 const { Sdb, installationProgress } = require('../runtime/sdb.cjs')
 const releases = require('../runtime/releases.cjs')
 const { signWidget, validateCertificate, authorFingerprint } = require('../runtime/widget.cjs')
-const { decryptSetup, SETUP_PATH, PUBLIC_PATH, RECEIPT_PATH } = require('../runtime/provisioning.cjs')
+const { decryptSetup, parseSetupTransfer, SETUP_PATH, PUBLIC_PATH, RECEIPT_PATH } = require('../runtime/provisioning.cjs')
 const { UpdateEngine } = require('./engine.cjs')
 
 const APP_ID = 'IzumiTV001.IzumiTV'
@@ -109,11 +109,15 @@ async function configureSetup() {
   setupTimer = setInterval(() => {
     if (Date.now() > setupExpires) { clearInterval(setupTimer); remove(PUBLIC_PATH); if (setupServer) setupServer.close(); return }
     if (engine.busy || !fs.existsSync(SETUP_PATH)) return
-    let payload
-    try { payload = readSmall(SETUP_PATH) } catch (error) { remove(SETUP_PATH); engine.report('setup-error', error.message); return }
+    let payload, envelope
+    try {
+      payload = readSmall(SETUP_PATH)
+      envelope = parseSetupTransfer(payload)
+      if (envelope === undefined) return
+    } catch (error) { remove(SETUP_PATH); engine.report('setup-error', error.message); return }
     remove(SETUP_PATH)
     try {
-      const received = decryptSetup(JSON.parse(payload), setupPrivateKey, setupChallenge)
+      const received = decryptSetup(envelope, setupPrivateKey, setupChallenge)
       const fingerprint = validateCertificate(received)
       if (certificate && (certificate.duid !== received.duid || authorFingerprint(certificate) !== fingerprint)) throw new Error('The installer supplied a different Samsung author identity. Restore the original desktop certificate backup.')
       atomic(path.join(directory, 'samsung-identity.json'), JSON.stringify(received))

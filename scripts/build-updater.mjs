@@ -25,10 +25,7 @@ const polyfills = await build({
   absWorkingDir: project, stdin: { contents: "require('core-js/stable');", resolveDir: project },
   bundle: true, platform: 'node', target: 'es2015', format: 'cjs', write: false,
 })
-const prelude = `if(!Buffer.from)Buffer.from=function(v,e){if(typeof v==='number')throw new TypeError('Expected bytes');return new Buffer(v,e);};
-if(!Buffer.alloc)Buffer.alloc=function(n){var b=new Buffer(n);b.fill(0);return b;};
-if(!Buffer.allocUnsafe)Buffer.allocUnsafe=function(n){return new Buffer(n);};
-if(!require('crypto').constants)require('crypto').constants=require('constants');\n`
+const prelude = await readFile(resolve(project, 'updater/runtime/node-compat.cjs'), 'utf8') + '\n'
 const compatiblePolyfills = await transformAsync(polyfills.outputFiles[0].text, {
   babelrc: false, configFile: false, sourceType: 'script',
   presets: [[presetEnv, { targets: { ie: '11' }, modules: false }]],

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
 const JSZip = require('jszip')
 const { releaseInfo, verifyBytes, allowedDownloadUrl, compareVersions } = require('../runtime/releases.cjs')
-const { encryptSetup, decryptSetup } = require('../runtime/provisioning.cjs')
+const { encryptSetup, parseSetupTransfer, decryptSetup } = require('../runtime/provisioning.cjs')
 const { readWidget } = require('../runtime/widget.cjs')
 const { UpdateEngine } = require('../service/engine.cjs')
 const { verifyReceipt } = require('../runtime/provisioning.cjs')
@@ -29,7 +29,15 @@ test('setup credentials are encrypted for one TV and one challenge, and tamperin
   const certificate = { password: 'secret-test-password', authorCert: 'private-test-key' }
   const bytes = encryptSetup(handshake, certificate)
   assert.equal(bytes.toString().includes(certificate.password), false)
+  assert.equal(bytes[bytes.length - 1], 10)
+  for (let length = 0; length < bytes.length; length++) {
+    assert.equal(parseSetupTransfer(bytes.toString('utf8', 0, length)), undefined, 'An incomplete upload must not be consumed')
+  }
   const envelope = JSON.parse(bytes)
+  assert.deepEqual(parseSetupTransfer(bytes.toString()), envelope)
+  const legacy = { ...envelope }; delete legacy.framing
+  assert.deepEqual(parseSetupTransfer(JSON.stringify(legacy)), legacy, 'Complete older transfers remain supported')
+  assert.throws(() => parseSetupTransfer('{"schema":\n'), SyntaxError, 'Malformed completed transfers must fail')
   assert.deepEqual(decryptSetup(envelope, pair.privateKey, handshake.challenge), certificate)
   assert.throws(() => decryptSetup(envelope, pair.privateKey, 'b'.repeat(64)), /expired/)
   const damaged = Buffer.from(envelope.data, 'base64'); damaged[0] ^= 1

@@ -29,3 +29,8 @@ jobs:
       - run: npm run build:all
       - run: node scripts/package-companion.mjs
       - run: node scripts/verify-release.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 4.4.3
+      - name: Verify the packaged updater on the TV Node runtime
+        run: node scripts/check-updater-node4.cjs
