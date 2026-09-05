@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CompanionHomeSnapshot, CompanionMedia, PlaybackSnapshot } from '../types'
-import { mergePlaybackProgress, readPlaybackProgress, savePlaybackProgress } from './playback-progress'
+import { mediaWithPlaybackProgress, mergePlaybackProgress, readPlaybackProgress, savePlaybackProgress } from './playback-progress'
 
 class MemoryStorage {
   private readonly values = new Map<string, string>()
@@ -45,6 +45,36 @@ beforeEach(() => {
 })
 
 describe('TV playback progress', () => {
+  it('carries all episode checkpoints through catalog and detail refreshes across seasons', () => {
+    const show = { ...media('1'), ref: { provider: 'tmdb', type: 'tv', id: '1' }, seasonEpisodeCounts: [2, 2] }
+    savePlaybackProgress({ ...show, season: 1, episode: 1 }, status(900), 10_000)
+    savePlaybackProgress({ ...show, season: 1, episode: 2 }, status(200), 10_001)
+    savePlaybackProgress({ ...show, season: 2, episode: 1 }, status(600), 10_002)
+    const records = readPlaybackProgress(10_003)
+    const base = snapshot()
+    base.rows[0].items = [show]
+    const merged = mergePlaybackProgress(base, records)
+    const details = mediaWithPlaybackProgress({ ...show, episodes: [
+      { season: 1, episode: 1, title: 'Pilot', progress: 0 },
+      { season: 1, episode: 2, title: 'Second', progress: 0 },
+      { season: 2, episode: 1, title: 'Return', progress: 0 },
+    ] }, merged, records)
+    expect(details).toMatchObject({ season: 2, episode: 1, episodeProgress: .6, resumePositionSeconds: 600 })
+    expect(details.episodes).toEqual([
+      expect.objectContaining({ season: 1, episode: 1, title: 'Pilot', progress: 1, watched: true }),
+      expect.objectContaining({ season: 1, episode: 2, title: 'Second', progress: .2, watched: false }),
+      expect.objectContaining({ season: 2, episode: 1, title: 'Return', progress: .6, watched: false }),
+    ])
+  })
+
+  it('hydrates a search result from the linked continue row without requiring a local checkpoint', () => {
+    const base = snapshot()
+    base.rows.unshift({ id: 'continue', title: 'Continue', kind: 'continue', items: [
+      { ...media('1'), season: 3, episode: 5, episodeProgress: .45, resumePositionSeconds: 450 },
+    ] })
+    expect(mediaWithPlaybackProgress(media('1'), base, [])).toMatchObject({ season: 3, episode: 5, episodeProgress: .45, resumePositionSeconds: 450 })
+  })
+
   it('stores a compact, exact checkpoint that survives a reload', () => {
     savePlaybackProgress({ ...media(), season: 2, episode: 4 }, status(347), 10_000)
 

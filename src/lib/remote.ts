@@ -37,6 +37,12 @@ export function remoteAction(event: KeyboardEvent): RemoteAction | undefined {
   return KEY_NAMES[event.key] ?? KEY_CODES[event.keyCode]
 }
 
+export function remoteSeekAction(action: RemoteAction): 'rewind' | 'fastForward' | undefined {
+  if (action === 'left' || action === 'rewind') return 'rewind'
+  if (action === 'right' || action === 'fastForward') return 'fastForward'
+  return undefined
+}
+
 export function registerRemoteKeys(): void {
   const input = window.tizen?.tvinputdevice
   if (!input) return

@@ -33,7 +33,8 @@ import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRai
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
-import { catalogCollections, episodeCountsFor, seasonIndexFor, seasonNumberFor } from './lib/catalog'
+import { catalogCollections, episodeCountsFor, mediaForEpisode, seriesPlaybackTarget, seasonIndexFor, seasonNumberFor } from './lib/catalog'
+import { mediaWithPlaybackProgress } from './lib/playback-progress'
 import { preloadHomeMedia } from './lib/home-image-cache'
 import {
   catalogMediaDestination,
@@ -49,7 +50,7 @@ import {
 } from './lib/home-navigation'
 import { popNavigationEntry, pushNavigationEntry } from './lib/navigation-history'
 import { normalizeTvLinkCode, tvLinkUrl } from './lib/onboarding'
-import { registerRemoteKeys, remoteAction, type RemoteAction } from './lib/remote'
+import { registerRemoteKeys, remoteAction, remoteSeekAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController } from './lib/subtitles'
 import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
@@ -308,6 +309,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           : initialDestination === 'my-list' || initialDestination === 'watch-history'
             ? { zone: 'grid', index: 0 }
           : { zone: 'hero', index: 0 })
+  const snapshotRef = useRef(snapshot)
+  snapshotRef.current = snapshot
   const [profilesOpen, setProfilesOpen] = useState(!tvProfileReady())
   const profilesOpenRef = useRef(profilesOpen)
   profilesOpenRef.current = profilesOpen
@@ -436,6 +439,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const seekHoldStartedRef = useRef(0)
   const pendingSeekRef = useRef<number>()
   const seekInFlightRef = useRef(false)
+  const seekGenerationRef = useRef(0)
   const catalogRequestRef = useRef<{
     screen: string
     label: string
@@ -550,7 +554,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     receiverRef.current?.publishStatus({
       sessionId: request.sessionId,
       state: view.state,
-      positionSeconds: view.position,
+      positionSeconds: pendingSeekRef.current !== undefined && avplayRef.current.available
+        ? avplayRef.current.currentTime() : view.position,
       durationSeconds: view.duration || undefined,
       ...audioSnapshot(),
       subtitleState: subtitleStateRef.current,
@@ -735,6 +740,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const stopPlayback = (destination: ScreenName = 'home') => {
+    stopSeekHold(undefined, false)
     // Publish the terminal state before clearing the authenticated sender session. Android uses
     // this to stop its session-only HTTP-relay foreground service at EOF and on explicit stop.
     updatePlayer({ state: 'idle' })
@@ -765,6 +771,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const startAvPlay = async (request: CastLoadRequest) => {
+    stopSeekHold(undefined, false)
     playRequestGenerationRef.current += 1
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     const requestedPreferences = subtitlePreferencesFor(request.subtitleStyle)
@@ -1360,6 +1367,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     let remaining = 10
     setNextCountdown(remaining)
     const timer = window.setInterval(() => {
+      if (seekHoldActionRef.current || pendingSeekRef.current !== undefined) return
       remaining -= 1
       if (remaining <= 0) {
         window.clearInterval(timer)
@@ -1479,7 +1487,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     ? `${homePreviewMedia.ref.provider}:${homePreviewMedia.ref.type}:${homePreviewMedia.ref.id}`
     : ''
   const homePrefetchMedia = useMemo(
-    () => cinematicScreen ? homeDetailPrefetchTargets(cinematicRows, focus, homeRowIndexesRef.current) : [],
+    () => cinematicScreen ? homeDetailPrefetchTargets(cinematicRows, focus, homeRowIndexesRef.current)
+      .map((media) => homePresentationCacheRef.current.get(homeMediaKey(media)) ?? media) : [],
     [cinematicRows, cinematicScreen, focus],
   )
 
@@ -1540,8 +1549,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const prioritized: HomeDetailTask[] = []
     const priorityKeys = new Set<string>()
     for (const item of media) {
-      warmHomeArtwork(item)
       const key = homeMediaKey(item)
+      warmHomeArtwork(homePresentationCacheRef.current.get(key) ?? item)
       if (priorityKeys.has(key)) continue
       priorityKeys.add(key)
       if (item.titleArtSettled || homePresentationCacheRef.current.has(key)) continue
@@ -1874,6 +1883,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const finishActivePlayback = () => {
+    stopSeekHold(undefined, false)
     updatePlayer({ state: 'idle' })
     publishStatus(true)
     avplayRef.current.close()
@@ -1981,11 +1991,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     void receiverRef.current?.requestDetails(media).then((details) => {
       if (!details) return
-      setSelected((current) => sameMedia(current, media) ? details : current)
+      setSelected((current) => sameMedia(current, media) ? mediaWithPlaybackProgress(details, snapshotRef.current) : current)
     })
   }
 
   const openSeries = (media: CompanionMedia) => {
+    media = mediaWithPlaybackProgress(media, snapshotRef.current)
     closeTrailer()
     pushCurrentNavigation()
     setSelected(media)
@@ -2141,12 +2152,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     seekInFlightRef.current = true
+    const generation = seekGenerationRef.current
     const finish = () => {
+      if (generation !== seekGenerationRef.current) return
       if (pendingSeekRef.current === target) pendingSeekRef.current = undefined
       seekInFlightRef.current = false
       if (pendingSeekRef.current !== undefined) flushPendingSeek()
     }
     void avplayRef.current.seek(target).then(() => {
+      if (generation !== seekGenerationRef.current) return
       publishStatus(true)
       finish()
     }, finish)
@@ -2164,7 +2178,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (commit) flushPendingSeek()
   }
 
-  const stopSeekHold = (action?: RemoteAction) => {
+  const stopSeekHold = (action?: RemoteAction, commit = true) => {
     const active = seekHoldActionRef.current
     if (action && action !== active) return
     if (seekHoldDelayRef.current) window.clearTimeout(seekHoldDelayRef.current)
@@ -2174,26 +2188,37 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     seekHoldIntervalRef.current = undefined
     seekHoldReleaseRef.current = undefined
     seekHoldActionRef.current = undefined
+    if (!commit) {
+      seekGenerationRef.current += 1
+      pendingSeekRef.current = undefined
+      seekInFlightRef.current = false
+      setSeekFeedback(undefined)
+    }
     if (!active) return
-    flushPendingSeek()
+    if (commit) flushPendingSeek()
     if (seekFeedbackTimerRef.current) window.clearTimeout(seekFeedbackTimerRef.current)
     seekFeedbackTimerRef.current = window.setTimeout(() => setSeekFeedback(undefined), 900)
   }
 
   const releaseSeekHold = (action: RemoteAction) => {
-    if (action !== seekHoldActionRef.current) return
+    const seekAction = remoteSeekAction(action)
+    if (!seekAction || seekAction !== seekHoldActionRef.current) return
     if (seekHoldReleaseRef.current) window.clearTimeout(seekHoldReleaseRef.current)
     // Tizen remotes can emit a key-up between repeat pulses. A short quiet period distinguishes
     // that cadence from a genuine release and prevents one decoder seek (and buffer cycle) per
     // pulse while preserving an immediate on-screen scrub position.
     seekHoldReleaseRef.current = window.setTimeout(() => {
       seekHoldReleaseRef.current = undefined
-      stopSeekHold(action)
+      stopSeekHold(seekAction)
     }, SEEK_HOLD_RELEASE_GRACE_MS)
   }
 
   seekHoldKeyDownRef.current = (action, _repeated) => {
-    if (action !== 'rewind' && action !== 'fastForward') {
+    const seekAction = remoteSeekAction(action)
+    const navigating = (action === 'left' || action === 'right') && (playerToolsActive
+      || action === 'left' && playerPromptFocus === 'next' && Boolean(visibleSkipSegment)
+      || action === 'right' && playerPromptFocus === 'skip' && nextEpisodeVisible)
+    if (!seekAction || navigating) {
       if (seekHoldActionRef.current) stopSeekHold()
       return false
     }
@@ -2201,17 +2226,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       stopSeekHold()
       return false
     }
-    if (seekHoldActionRef.current === action) {
+    if (seekHoldActionRef.current === seekAction) {
       if (seekHoldReleaseRef.current) window.clearTimeout(seekHoldReleaseRef.current)
       seekHoldReleaseRef.current = undefined
       return true
     }
     stopSeekHold()
-    seekHoldActionRef.current = action
+    seekHoldActionRef.current = seekAction
     seekHoldStartedRef.current = tvNow()
     // Move the scrubber immediately at 1x so a short press never feels delayed. AVPlay itself is
     // left untouched until release; only the cheap player HUD updates throughout the hold.
-    seekFromRemote(action === 'fastForward' ? 1 : -1, 1, false)
+    seekFromRemote(seekAction === 'fastForward' ? 1 : -1, 1, false)
     seekHoldDelayRef.current = window.setTimeout(() => {
       const pulse = () => {
         const active = seekHoldActionRef.current
@@ -2334,8 +2359,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const activeSeason = Math.min(seriesSeason, counts.length - 1)
     const season = seasonNumberFor(selected, activeSeason, counts)
     const episode = index + 1
-    const isResumeEpisode = season === (selected.season ?? 1) && episode === selected.episode
-    playMedia({ ...selected, season, episode, progress: isResumeEpisode ? selected.progress : undefined })
+    playMedia(mediaForEpisode(selected, season, episode))
   }
 
   const skipCurrentSegment = () => {
@@ -2357,6 +2381,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   playNextEpisodeRef.current = () => playNextEpisode(true)
 
   playbackTimeRef.current = (position, duration) => {
+    if (seekHoldActionRef.current || pendingSeekRef.current !== undefined) return
     const segment = activeSkipSegment(skipSegments, position, handledSkipSegmentsRef.current)
     if (segment) {
       if (playbackSettings.autoSkipSegments) {
@@ -2426,18 +2451,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const activateSeriesOverviewAction = (action: SeriesOverviewAction) => {
     if (action === 'play') {
-      const counts = episodeCountsFor(selected)
-      if (!counts.length) {
-        playMedia(selected)
-        return
-      }
-      const activeSeason = Math.min(seriesSeason, counts.length - 1)
-      const episodeCount = counts[activeSeason] ?? 1
-      const seasonNumber = seasonNumberFor(selected, activeSeason, counts)
-      const resumeIndex = seasonNumber === (selected.season ?? 1)
-        ? Math.max(0, Math.min(episodeCount - 1, (selected.episode ?? 1) - 1))
-        : 0
-      playSeriesEpisode(resumeIndex)
+      playMedia(seriesPlaybackTarget(selected).media)
       return
     }
     if (action === 'episodes') {
@@ -3047,12 +3061,18 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       const action = remoteAction(event)
       if (action) seekHoldKeyUpRef.current?.(action)
     }
+    const onBlur = () => stopSeekHold()
+    const onVisibilityChange = () => { if (document.hidden) stopSeekHold() }
     window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', onBlur)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
-      stopSeekHold()
+      window.removeEventListener('blur', onBlur)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      stopSeekHold(undefined, false)
     }
   }, [])
 

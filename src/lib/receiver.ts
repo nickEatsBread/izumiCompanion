@@ -318,8 +318,6 @@ function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedi
   const input = value as Record<string, unknown>
   const details = input.details && typeof input.details === 'object' ? input.details as Record<string, unknown> : null
   if (!details) return null
-  const watchedThrough = Math.max(0, (media.episode ?? 1) - 1)
-  let absolute = 0
   const hideSpoilers = storedSnapshot()?.spoilersHidden === true
   const episodes = (Array.isArray(details.episodes) ? details.episodes : []).slice(0, 2_000).flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return []
@@ -328,8 +326,13 @@ function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedi
     const episodeNumber = Number(episode.episode)
     if (!Number.isInteger(seasonNumber) || seasonNumber < 0
       || !Number.isInteger(episodeNumber) || episodeNumber < 1) return []
-    absolute += 1
-    const watched = absolute <= watchedThrough
+    const saved = media.episodes?.find((item) => item.season === seasonNumber && item.episode === episodeNumber)
+    const current = seasonNumber === (media.season ?? 1) && episodeNumber === media.episode
+    const progress = current && Number.isFinite(media.episodeProgress) ? media.episodeProgress
+      : saved?.progress ?? (typeof episode.progress === 'number' && Number.isFinite(episode.progress) ? Math.max(0, Math.min(1, episode.progress)) : undefined)
+    const watched = progress !== undefined ? progress >= 1 : saved?.watched
+      ?? (typeof episode.watched === 'boolean' ? episode.watched
+        : seasonNumber === (media.season ?? 1) && episodeNumber < (media.episode ?? 1))
     const runtime = Number(episode.runtimeMinutes)
     return [{
       season: seasonNumber,
@@ -339,7 +342,8 @@ function cloudMediaDetails(value: unknown, media: CompanionMedia): CompanionMedi
       image: validUrl(episode.image) ? episode.image : undefined,
       runtimeMinutes: Number.isFinite(runtime) && runtime > 0 ? Math.max(1, Math.round(runtime)) : undefined,
       releasedAt: typeof episode.releasedAt === 'string' ? episode.releasedAt.slice(0, 40) : undefined,
-      progress: watched ? 1 : absolute === media.episode ? media.episodeProgress : undefined,
+      videoId: typeof episode.videoId === 'string' ? episode.videoId.slice(0, 500) : undefined,
+      progress: watched ? 1 : progress,
       watched,
       spoiler: hideSpoilers && !watched,
     }]
@@ -986,7 +990,8 @@ export class CompanionReceiver {
   async requestDetails(media: CompanionMedia, presentationOnly = false): Promise<CompanionMedia | null> {
     const viewer = tvProfileId()
     if (!tvProfileReady() || !tvAllowsMedia(media)) return null
-    if (!presentationOnly && this.cloudflare && media.ref.provider !== 'jvm') {
+    if (this.cloudflare && media.ref.provider !== 'jvm'
+      && (!presentationOnly || !this.connected || this.cloudflare.playbackMode === 'cloud-only')) {
       try {
         const result = await workerRequest(
           this.cloudflare,

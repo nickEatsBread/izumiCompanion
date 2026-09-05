@@ -313,33 +313,39 @@ function useStableTitleImage(
   source?: string,
   lockFallbackForVisit = false,
 ): [string, boolean, () => void] {
-  const [selection, setSelection] = useState<StableTitleSelection>(() => initialTitleSelection(identity, source))
-  const visible = selection.identity === identity ? selection : initialTitleSelection(identity, source)
+  const selection = useRef<StableTitleSelection>(initialTitleSelection(identity, source))
+  const [, refresh] = useState(0)
+  if (selection.current.identity !== identity) selection.current = initialTitleSelection(identity, source)
+  const visible = selection.current
   // The physical M56 runtime can paint the new card before it runs the passive effect below.
   // Derive a confirmed no-logo fallback from props in the render itself, so a completed metadata
   // response can never leave the focused card's title slot blank for an extra compositor cycle.
   const showText = visible.showText || !visible.logo
   useEffect(() => {
-    setSelection(initialTitleSelection(identity, source))
-  }, [identity])
-  useEffect(() => {
     if (!source) return
     let active = true
     void preloadHomeImage(source, 'title').then((loaded) => {
       if (!active) return
-      setSelection((current) => {
-        if (current.identity !== identity) return current
-        // Focused tiles intentionally keep the text selected for the current visit; their warmed
-        // logo is used when navigation reaches/revisits them. Hero artwork can reveal immediately.
-        if (loaded) return current.showText && lockFallbackForVisit ? current : { ...current, logo: source, showText: false }
-        return isHomeImageFailed(source, 'title') ? { ...current, logo: '', showText: true } : current
-      })
+      const current = selection.current
+      if (current.identity !== identity) return
+      // Preserve exactly what the first frame displayed, even if decoding completes before the
+      // effect runs. Resetting selection in a passive effect caused a late text-to-logo pop.
+      if (loaded && !(current.showText && lockFallbackForVisit) && current.logo !== source) {
+        selection.current = { ...current, logo: source, showText: false }
+        refresh((value) => value + 1)
+      } else if (isHomeImageFailed(source, 'title') && current.logo) {
+        selection.current = { ...current, logo: '', showText: true }
+        refresh((value) => value + 1)
+      }
     })
     return () => { active = false }
   }, [identity, lockFallbackForVisit, source])
   return [visible.logo, showText, () => {
     if (visible.logo) markHomeImageFailed(visible.logo, 'title')
-    setSelection((current) => current.identity === identity ? { ...current, logo: '', showText: true } : current)
+    if (selection.current.identity === identity) {
+      selection.current = { ...selection.current, logo: '', showText: true }
+      refresh((value) => value + 1)
+    }
   }]
 }
 
@@ -589,7 +595,9 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const artworkKey = artwork.join('|')
   const [artworkSelection, setArtworkSelection] = useState({ identity, index: 0 })
   const artworkIndex = artworkSelection.identity === identity ? artworkSelection.index : 0
-  const [trailerPlaying, setTrailerPlaying] = useState(false)
+  const [trailerState, setTrailerState] = useState({ identity, playing: false })
+  const trailerPlaying = trailerState.identity === identity && trailerState.playing
+  const setTrailerPlaying = (playing: boolean) => setTrailerState({ identity, playing })
   const [logoImage, , onLogoError] = useStableTitleImage(
     identity,
     item.logoImage,
@@ -642,7 +650,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
         {trailerSource && <HeroTrailer source={trailerSource} title={item.title} captions={trailerNeedsEnglishCaptions(item.trailer?.language)} onPlayingChange={setTrailerPlaying} />}
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
-          ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={460} height={130} decoding="sync" onError={onLogoError} />
+          ? <img class="home-focus-logo" key={`logo-${identity}`} src={logoImage} alt={item.title} width={460} height={130} decoding="sync" onError={onLogoError} />
           : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
           <span>{item.title}</span>

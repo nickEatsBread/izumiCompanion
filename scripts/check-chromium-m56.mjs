@@ -449,6 +449,8 @@ async function main() {
         logo: copy.classList.contains('home-focus-logo') ? copy.getAttribute('alt') : '',
         plainTitle: Boolean(focused.querySelector('.home-focus-title')),
         copyAnimation: getComputedStyle(copy).animationName,
+        copyOpacity: getComputedStyle(copy).opacity,
+        artworkAnimation: getComputedStyle(focused.querySelector('.home-focus-media')).animationName,
         achievements: Array.from(focused.querySelectorAll('.home-achievement')).map(function (item) { return item.textContent.trim(); }),
         achievementParts: Array.from(focused.querySelectorAll('.home-achievement')).map(function (item) {
           var lead = item.querySelector('.home-achievement-lead');
@@ -479,7 +481,8 @@ async function main() {
     assert(verticalDestination.copy[0] >= verticalDestination.frame[1] && verticalDestination.copy[1] <= verticalDestination.frame[1] + verticalDestination.frame[3], `Focused title treatment is clipped outside its frame: ${verticalDestination.copy}.`)
     assert(verticalDestination.logo === 'Chainsaw Man' && !verticalDestination.plainTitle, `Focused card did not prefer its source logo: ${JSON.stringify(verticalDestination)}.`)
     assert(JSON.stringify(verticalDestination.copySize) === '[460,130]', `Focused title logo has no stable M56 paint box: ${verticalDestination.copySize}.`)
-    assert(verticalDestination.copyAnimation === 'none', `Focused title treatment is delayed by an opacity animation: ${verticalDestination.copyAnimation}.`)
+    assert(verticalDestination.copyOpacity === '1' && verticalDestination.copyAnimation === verticalDestination.artworkAnimation,
+      `Focused title and artwork do not enter together at full opacity: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.achievements.length === 2 && verticalDestination.achievementIcons === 2, `Focused achievements are incomplete: ${JSON.stringify(verticalDestination)}.`)
     assert(verticalDestination.achievementParts[1].lead === '#31' && verticalDestination.achievementParts[1].context === 'Highest rated 2022' && verticalDestination.achievementParts[1].contextColor.includes('0.72'), `Achievement hierarchy is not split or capitalized: ${JSON.stringify(verticalDestination.achievementParts)}.`)
     assert(JSON.stringify(verticalDestination.facts) === '["Show","Action","2022","12 episodes"]', `Focused facts repeat shelf copy or omit metadata: ${JSON.stringify(verticalDestination.facts)}.`)
@@ -775,6 +778,7 @@ async function main() {
       var heading = document.querySelector('.series-title-block h1, .detail-copy h1');
       return heading && heading.textContent.trim() !== ${JSON.stringify(parentSeriesTitle)};
     })()`)
+    await waitFor("document.activeElement && document.activeElement.matches('.series-action.is-focused, .detail-actions .is-focused')")
     await press('Backspace')
     await waitFor(`document.querySelector('.app-shell.screen-series .series-title-block h1').textContent.trim() === ${JSON.stringify(parentSeriesTitle)} && document.querySelector('.series-relation-row.is-focused')`)
     const nestedSeriesReturn = await evaluate(`(() => ({
@@ -1027,6 +1031,30 @@ async function main() {
      })()`)
     assert(homeSkeleton.blocks >= 12 && homeSkeleton.blockAnimation === 'none' && homeSkeleton.sweepAnimation.includes('skeleton-page-sweep'), `Home skeleton is not using its single M56 compositor sweep: ${JSON.stringify(homeSkeleton)}.`)
 
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=series` })
+    await waitFor("document.querySelector('.series-action.is-focused') && !document.getElementById('startup-splash')")
+    const resumeLabel = await evaluate("document.querySelector('.series-action').textContent.trim()")
+    assert(resumeLabel === 'Resume Season 1: Episode 12', `Series action ignores viewing progress: ${resumeLabel}.`)
+    const buttonsFit = await evaluate(`Array.from(document.querySelectorAll('.series-action')).every(function (button) {
+      var label = button.querySelector('span');
+      var bounds = button.getBoundingClientRect();
+      var text = label.getBoundingClientRect();
+      return label.scrollWidth <= label.clientWidth + 1 && text.right < bounds.right && text.bottom <= bounds.bottom;
+    })`)
+    assert(buttonsFit, 'Series action text overflows its button.')
+    await capture('m56-series-resume.png')
+    await press('ArrowDown')
+    await press('Enter')
+    await waitFor("document.querySelector('.series-episode.is-focused')")
+    for (let episode = 1; episode < 12; episode += 1) await press('ArrowDown')
+    const episodeProgress = await evaluate(`(() => {
+      var current = document.querySelector('.series-episode.is-focused');
+      var bar = current.querySelector('[role="progressbar"]');
+      return { value: bar && Number(bar.getAttribute('aria-valuenow')), height: bar && bar.getBoundingClientRect().height, copy: current.textContent };
+    })()`)
+    assert(episodeProgress.value === 64 && episodeProgress.height >= 6 && episodeProgress.copy.includes('64% watched'), `More Episodes progress is missing: ${JSON.stringify(episodeProgress)}.`)
+    await capture('m56-episode-progress.png')
+
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=loading` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.loading-status')")
     await waitFor("!document.getElementById('startup-splash')")
@@ -1084,6 +1112,19 @@ async function main() {
     // repeatedly committing decoder seeks and restarting at 1x.
     assert(heldSeek.position >= scrubbedPosition + 60, `Held fast-forward did not accumulate: ${scrubbedPosition} -> ${heldSeek.position}.`)
     assert(heldSeek.multiplier === '3×' && heldSeek.chevrons === 3 && !heldSeek.buffering, `Held fast-forward feedback restarted or exposed buffering: ${JSON.stringify(heldSeek)}.`)
+    await wait(400)
+    // The D-pad must use the same continuous scrubber as the dedicated media keys.
+    await cdp.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, nativeVirtualKeyCode: 39 })
+    await wait(1250)
+    assert(await evaluate("document.querySelector('.player-seek-feedback strong').textContent") === '2×', 'Held D-pad right did not accelerate to 2×.')
+    await wait(1000)
+    const dpadHold = await evaluate(`({ position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow')), multiplier: document.querySelector('.player-seek-feedback strong').textContent })`)
+    assert(dpadHold.multiplier === '3×' && dpadHold.position > heldSeek.position + 60, `Held D-pad right did not scrub continuously: ${JSON.stringify(dpadHold)}.`)
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, nativeVirtualKeyCode: 39 })
+    await wait(450)
+    const releasedPosition = await evaluate("Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow'))")
+    await wait(800)
+    assert(await evaluate("Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow'))") <= releasedPosition + 2, 'D-pad scrubbing continued after release.')
     await press('ArrowDown')
     await waitFor("document.querySelector('.player-actions > button.is-focused')")
     await capture('m56-player-buffering.png')
@@ -1100,12 +1141,15 @@ async function main() {
       skip: document.querySelector('.player-skip').textContent,
       markers: document.querySelectorAll('.player-segment-marker').length,
       nextTop: Math.round(document.querySelector('.next-episode-card').getBoundingClientRect().top),
+      nextWidth: document.querySelector('.next-episode-card').getBoundingClientRect().width,
+      nextFont: parseFloat(getComputedStyle(document.querySelector('.next-episode-copy strong')).fontSize),
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
     assert(playbackPrompts.next.includes('S1 E13') && playbackPrompts.next.includes('Play next episode'), `Next episode prompt is incomplete: ${playbackPrompts.next}.`)
     assert(playbackPrompts.skip.toLowerCase().includes('skip'), `Skip prompt is incomplete: ${playbackPrompts.skip}.`)
     assert(playbackPrompts.markers === 2, `Expected two skip markers, received ${playbackPrompts.markers}.`)
     assert(playbackPrompts.nextTop < 160, `Up-next card did not enter at its stable top position: ${playbackPrompts.nextTop}.`)
+    assert(playbackPrompts.nextWidth >= 650 && playbackPrompts.nextFont >= 26, `Up-next card is too small for TV viewing: ${JSON.stringify(playbackPrompts)}.`)
     assert(JSON.stringify(playbackPrompts.body) === '[1920,1080]', `Player prompts overflowed the TV viewport: ${playbackPrompts.body}.`)
     await capture('m56-player-prompts.png')
 

@@ -496,7 +496,7 @@ export function PlayerScreen({
           <span class="next-episode-copy">
             <small>{nextCountdown != null ? `Playing in ${nextCountdown}` : 'Up next'}{nextSourceReady ? ' · Ready' : ''}</small>
             <strong>S{nextEpisode.season ?? 1} E{nextEpisode.episode} · {nextEpisode.episodeTitle || nextEpisode.title}</strong>
-            <span>Play next episode <ArrowRight size={17} /></span>
+            <span><span>Play next episode</span><ArrowRight size={24} /></span>
           </span>
         </button>
       )}

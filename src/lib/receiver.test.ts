@@ -321,6 +321,7 @@ describe('companion play routing', () => {
   })
 
   it('keeps a TMDB logo request alive beyond the paired client rating timeout', async () => {
+    storage.removeItem('izumi.companion.cloudflare')
     const channel = new FakeSmartViewChannel()
     Object.assign(window, {
       msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
@@ -441,6 +442,21 @@ describe('companion play routing', () => {
       body: { videoId: 'M7lc1UVf-VE', muted: true, captions: true },
     }))
     receiver.releaseTrailer('cloud-ticket_123456789012')
+  })
+
+  it('prefetches title art through the Worker when no paired client is connected', async () => {
+    FakeXmlHttpRequest.responder = () => ({ status: 200, body: { ok: true, details: {
+      logoImage: 'https://image.tmdb.org/t/p/w500/title.png',
+      episodes: [{ season: 1, episode: 1 }, { season: 2, episode: 1 }, { season: 2, episode: 2 }],
+    } } })
+    const result = await new CompanionReceiver(events()).requestDetails({ ...media, season: 2, episode: 2, episodeProgress: .5 }, true)
+    expect(result?.logoImage).toBe('https://image.tmdb.org/t/p/w500/title.png')
+    expect(result?.episodes).toEqual([
+      expect.objectContaining({ season: 1, episode: 1, watched: false }),
+      expect.objectContaining({ season: 2, episode: 1, watched: true, progress: 1 }),
+      expect.objectContaining({ season: 2, episode: 2, watched: false, progress: .5 }),
+    ])
+    expect(FakeXmlHttpRequest.sent[0].url).toContain('/details')
   })
 
   it('loads AniList episode details from the private Worker when the paired client is unavailable', async () => {

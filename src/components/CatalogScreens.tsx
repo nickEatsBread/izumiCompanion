@@ -24,7 +24,7 @@ import {
 import { memo } from 'preact/compat'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CompanionMedia, CompanionPerson, CompanionRelation, FocusLocation } from '../types'
-import { episodeCountsFor, episodeDetailsFor, seasonNumberFor } from '../lib/catalog'
+import { episodeCountsFor, episodeDetailsFor, episodeProgressFor, seriesPlaybackTarget, seasonNumberFor } from '../lib/catalog'
 import type { PlaybackExperienceSettings } from '../lib/playback-experience'
 import type { MediaRating } from '../lib/media-rating'
 import { gridWindow, linearWindow } from '../lib/windowing'
@@ -654,6 +654,7 @@ export function SeriesScreen({
     [selected, activeSeason, seasonCounts, hasEpisodeMetadata],
   )
   const resumeSeason = selected.season ?? 1
+  const playbackTarget = useMemo(() => seriesPlaybackTarget(selected), [selected])
   const resumeEpisode = resumeSeason === seasonNumber && selected.episode ? selected.episode : -1
   const relations = relatedTitlesFor(selected)
   const contributors = contributorsFor(selected)
@@ -700,7 +701,7 @@ export function SeriesScreen({
           {overviewActions.map((action, index) => {
             const focused = focus.zone === 'series-action' && focus.index === index
             const label = action === 'play'
-              ? `Play Season ${resumeSeason}: Episode ${resumeEpisode > 0 ? resumeEpisode : 1}`
+              ? playbackTarget.label
               : action === 'episodes'
                 ? 'More Episodes'
                 : action === 'trailer'
@@ -760,8 +761,8 @@ export function SeriesScreen({
             const index = episodeWindow.start + offset
             const focused = focus.zone === 'episode' && focus.index === index
             const current = seasonNumber === resumeSeason && episode.episode === resumeEpisode
-            const watched = episode.watched ?? (seasonNumber === resumeSeason && episode.episode < resumeEpisode)
-            const progress = episode.progress ?? (current ? selected.episodeProgress : watched ? 1 : 0)
+            const progress = episodeProgressFor(selected, episode)
+            const watched = episode.watched ?? progress >= 1
             const spoiler = hideSpoilers && (episode.spoiler ?? !watched)
             const title = spoiler
               ? `Episode ${episode.episode}`
@@ -781,12 +782,12 @@ export function SeriesScreen({
                 <span class="series-episode-art">
                   {(episode.image || selected.backdrop || selected.poster) && <img src={episode.image || selected.backdrop || selected.poster} alt={`${selected.title}, season ${seasonNumber}, episode ${episode.episode}`} />}
                   <strong>S{seasonNumber}: E{episode.episode}</strong>
-                  {typeof progress === 'number' && progress > 0 && <span><i style={{ width: `${Math.round(progress * 100)}%` }} /></span>}
+                  {progress > 0 && <span role="progressbar" aria-label={`Episode ${episode.episode} watched`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><i style={{ width: `${Math.round(progress * 100)}%` }} /></span>}
                 </span>
                 <span class="series-episode-copy">
                   <strong>“{title}”</strong>
                   {spoiler ? <p>Episode details hidden to avoid spoilers.</p> : episode.description && <p>{episode.description}</p>}
-                  <em>{episode.runtimeMinutes ? `(${episode.runtimeMinutes}m)` : current ? 'Continue watching' : watched ? 'Watched' : ''}</em>
+                  <em>{[progress > 0 && progress < 1 ? `${Math.round(progress * 100)}% watched` : watched ? 'Watched' : '', episode.runtimeMinutes ? `${episode.runtimeMinutes}m` : ''].filter(Boolean).join(' · ')}</em>
                 </span>
               </button>
             )

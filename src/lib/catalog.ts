@@ -90,3 +90,60 @@ export function episodeDetailsFor(media: CompanionMedia, seasonIndex: number, se
     runtimeMinutes: media.episodeRuntimeMinutes,
   })
 }
+
+/** Episode progress is distinct from a title's overall series progress. */
+export function episodeProgressFor(media: CompanionMedia, episode: CompanionEpisode): number {
+  const current = episode.season === (media.season ?? 1) && episode.episode === media.episode
+  const fraction = current && Number.isFinite(media.episodeProgress)
+    ? media.episodeProgress!
+    : episode.progress
+  if (Number.isFinite(fraction)) return Math.max(0, Math.min(1, fraction!))
+  if (episode.watched) return 1
+  if (current && media.resumePositionSeconds && (episode.runtimeMinutes || media.episodeRuntimeMinutes)) {
+    return Math.min(1, media.resumePositionSeconds / ((episode.runtimeMinutes || media.episodeRuntimeMinutes!) * 60))
+  }
+  if (episode.watched !== false && episode.season === (media.season ?? 1) && episode.episode < (media.episode ?? 1)) return 1
+  return 0
+}
+
+/** Carry only the selected episode's resume point into a playback request. */
+export function mediaForEpisode(media: CompanionMedia, season: number, episode: number): CompanionMedia {
+  const detail = media.episodes?.find((item) => item.season === season && item.episode === episode)
+  const current = season === (media.season ?? 1) && episode === media.episode
+  const fraction = episodeProgressFor(media, detail ?? { season, episode })
+  const resume = fraction < 1 && (fraction > 0 || current && (media.resumePositionSeconds ?? 0) > 0)
+  return {
+    ...media,
+    season,
+    episode,
+    episodeTitle: detail?.title ?? (current ? media.episodeTitle : undefined),
+    episodeImage: detail?.image ?? (current ? media.episodeImage : undefined),
+    episodeRuntimeMinutes: detail?.runtimeMinutes ?? media.episodeRuntimeMinutes,
+    episodeProgress: resume ? fraction : undefined,
+    resumePositionSeconds: resume && current ? media.resumePositionSeconds : undefined,
+    progress: resume ? media.progress : undefined,
+    playback: undefined,
+    resolver: media.resolver ? { ...media.resolver, videoId: detail?.videoId ?? (current ? media.resolver.videoId : undefined) } : undefined,
+  }
+}
+
+export function seriesPlaybackTarget(media: CompanionMedia): { media: CompanionMedia; label: string } {
+  const counts = episodeCountsFor(media)
+  const episodes = counts.flatMap((_, index) => episodeDetailsFor(media, index, counts))
+  let target = episodes.find((item) => item.season === (media.season ?? 1) && item.episode === media.episode)
+  if (!target) target = episodes.find((item) => {
+    const progress = episodeProgressFor(media, item)
+    return progress > 0 && progress < 1
+  }) ?? episodes.find((item) => item.season > 0) ?? episodes[0]
+  let verb = 'Play'
+  if (target && episodeProgressFor(media, target) >= 1) {
+    const next = episodes.slice(episodes.indexOf(target) + 1).find((item) => episodeProgressFor(media, item) < 1)
+    if (next) { target = next; verb = 'Continue' }
+    else verb = 'Play again'
+  }
+  const season = target?.season ?? media.season ?? 1
+  const episode = target?.episode ?? media.episode ?? 1
+  const playback = mediaForEpisode(media, season, episode)
+  if (playback.episodeProgress || playback.resumePositionSeconds) verb = 'Resume'
+  return { media: playback, label: `${verb} Season ${season}: Episode ${episode}` }
+}

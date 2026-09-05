@@ -1,4 +1,4 @@
-import type { CompanionHomeSnapshot, CompanionMedia, PlaybackSnapshot } from '../types'
+import type { CompanionEpisode, CompanionHomeSnapshot, CompanionMedia, PlaybackSnapshot } from '../types'
 import { tvProfileId, tvProfileStorageKey } from './profiles'
 
 const STORAGE_KEY = 'izumi.companion.playback-progress'
@@ -132,6 +132,63 @@ function progressMedia(record: StoredPlaybackProgress, base?: CompanionMedia): C
   }
 }
 
+/** Keep all episode checkpoints, including earlier seasons, when provider details are refreshed. */
+export function mergeEpisodeProgress(media: CompanionMedia, records: StoredPlaybackProgress[]): CompanionMedia {
+  const matching = records.filter((record) => playbackMediaKey(record.media) === playbackMediaKey(media)
+    && (record.profileId ?? 'default') === tvProfileId() && record.media.episode != null)
+    .sort((left, right) => left.updatedAt - right.updatedAt)
+  if (!matching.length) return media
+  const episodes = new Map<string, CompanionEpisode>((media.episodes ?? []).map((item) => [`${item.season}:${item.episode}`, item]))
+  for (const record of matching) {
+    const season = record.media.season ?? 1
+    const episode = record.media.episode!
+    const key = `${season}:${episode}`
+    const previous = episodes.get(key)
+    episodes.set(key, {
+      ...previous,
+      season,
+      episode,
+      runtimeMinutes: record.durationSeconds > 0 ? record.durationSeconds / 60 : previous?.runtimeMinutes,
+      progress: record.completed ? 1 : record.durationSeconds > 0
+        ? Math.min(1, record.positionSeconds / record.durationSeconds) : previous?.progress,
+      watched: record.completed,
+    })
+  }
+  return { ...media, episodes: [...episodes.values()] }
+}
+
+/** Catalog/search cards may have no watch state. Hydrate them before opening series details. */
+export function mediaWithPlaybackProgress(
+  media: CompanionMedia,
+  snapshot: CompanionHomeSnapshot,
+  records = readPlaybackProgress(),
+): CompanionMedia {
+  const key = playbackMediaKey(media)
+  const linked = [...snapshot.rows.filter((row) => row.kind === 'continue').flatMap((row) => row.items), ...(snapshot.history ?? [])]
+    .find((item) => playbackMediaKey(item) === key)
+  const episodes = new Map((media.episodes ?? []).map((item) => [`${item.season}:${item.episode}`, item]))
+  for (const item of linked?.episodes ?? []) {
+    const episodeKey = `${item.season}:${item.episode}`
+    episodes.set(episodeKey, { ...item, ...episodes.get(episodeKey), progress: item.progress, watched: item.watched })
+  }
+  let result = linked ? {
+    ...media,
+    season: linked.season ?? media.season,
+    episode: linked.episode ?? media.episode,
+    episodeProgress: linked.episodeProgress,
+    resumePositionSeconds: linked.resumePositionSeconds,
+    episodeRuntimeMinutes: linked.episodeRuntimeMinutes ?? media.episodeRuntimeMinutes,
+    episodes: [...episodes.values()],
+  } : media
+  const latest = records.filter((record) => playbackMediaKey(record.media) === key
+    && (record.profileId ?? 'default') === tvProfileId()).sort((a, b) => b.updatedAt - a.updatedAt)[0]
+  // A linked client may already have advanced to the next episode. Keep that target intact.
+  if (latest && (!linked || ((linked.season ?? 1) === (latest.media.season ?? 1) && linked.episode === latest.media.episode))) {
+    result = progressMedia(latest, result)
+  }
+  return mergeEpisodeProgress(result, records)
+}
+
 /** Merge crash-safe TV checkpoints into any catalogue snapshot. Incomplete records that are not
  * present in the linked device's snapshot are inserted into Continue Watching and Watch History. */
 export function mergePlaybackProgress(
@@ -154,7 +211,7 @@ export function mergePlaybackProgress(
   }
   const merge = (media: CompanionMedia): CompanionMedia => {
     const record = recordFor(media)
-    return record ? progressMedia(record, media) : media
+    return mergeEpisodeProgress(record ? progressMedia(record, media) : media, records)
   }
   const rows = snapshot.rows.map((row) => ({
     ...row,
@@ -172,14 +229,14 @@ export function mergePlaybackProgress(
     const existing = new Set(continueRow.items.map(playbackMediaKey))
     const recovered = incomplete
       .filter((record) => !existing.has(playbackMediaKey(record.media)))
-      .map((record) => progressMedia(record))
+      .map((record) => mergeEpisodeProgress(progressMedia(record), records))
     continueRow.items = [...recovered, ...continueRow.items]
   }
   const history = (snapshot.history ?? []).map(merge)
   const historyKeys = new Set(history.map(playbackMediaKey))
   const recoveredHistory = [...latest.values()]
     .filter((record) => !historyKeys.has(playbackMediaKey(record.media)))
-    .map((record) => progressMedia(record))
+    .map((record) => mergeEpisodeProgress(progressMedia(record), records))
   return {
     ...snapshot,
     hero: snapshot.hero ? merge(snapshot.hero) : undefined,
