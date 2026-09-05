@@ -23,7 +23,7 @@ let pendingVerification
 let cancelAuthorization
 
 function emit(type, text) {
-  const entry = { type, text: String(text), at: Date.now() }
+  const entry = { type, text: host.mobile ? String(text).replace(/\bcomputer\b/g, 'phone') : String(text), at: Date.now() }
   installationLog.append(entry)
   host.onEvent('installer:log', entry)
 }
@@ -274,7 +274,7 @@ async function run(request) {
         ? `${message}\n\nThe TV rejected the signing identity. Confirm Developer Mode is enabled, then restart: hold the remote’s Power button for at least 5 seconds. If the TV stays off, press Power again. Retry once it is back on.`
         : message
     emit('error', friendly)
-    throw new Error(friendly)
+    throw new Error(host.mobile ? friendly.replace(/\bcomputer\b/g, 'phone') : friendly)
   } finally {
     transport?.close()
     operationRunning = false
