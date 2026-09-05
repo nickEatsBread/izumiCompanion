@@ -1,3 +1,4 @@
+import { LANGUAGE_DATA, playbackLanguageName } from '../shared/languages'
 import type { CastTrackHints, CastTrackPreference, PlaybackTrack } from '../types'
 
 const languageAliases: Record<string, string> = {
@@ -14,8 +15,10 @@ const languageAliases: Record<string, string> = {
 
 export function trackLanguageKey(value: string | undefined): string {
   const key = value?.trim().toLowerCase().replace('_', '-').split('-')[0] ?? ''
+  if (!key) return ''
   if (/^(?:und|undefined|unknown|none|mul|zxx)$/.test(key)) return ''
-  return languageAliases[key] ?? key
+  const language = LANGUAGE_DATA.find(row => row.code === key || row.terminology === key || row.iso1 === key)
+  return language?.iso1 || language?.code || languageAliases[key] || key
 }
 
 const textKey = (value: string | undefined) => value?.trim().toLowerCase() ?? ''
@@ -43,7 +46,7 @@ export function subtitleTrackLabel(
   index: number,
 ): string {
   const key = trackLanguageKey(language)
-  const languageLabel = subtitleLanguageNames[key] ?? (key ? key.toUpperCase() : '')
+  const languageLabel = subtitleLanguageNames[key] ?? (key ? playbackLanguageName(key) : '')
   const cleanTitle = title?.trim()
   const distinctive = cleanTitle && !genericSubtitleTitle.test(cleanTitle) ? cleanTitle : ''
   if (languageLabel && distinctive && !distinctive.toLowerCase().includes(languageLabel.toLowerCase())) {

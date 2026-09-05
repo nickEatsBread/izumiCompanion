@@ -2,7 +2,7 @@ import { useLayoutEffect, useState } from 'preact/hooks'
 import { ArrowLeft, LockKeyhole } from 'lucide-preact'
 import { chooseTvProfile, tvHousehold, tvProfileId, tvProfileReady, type TvProfile } from '../lib/profiles'
 import { profileAvatarUrl } from '../lib/profile-avatars'
-import izumiMark from '../../brand/svg/izumi-mark-color.svg'
+import izumiMark from '../../brand/svg/izumi-wordmark-white.svg'
 import './ProfileScreen.css'
 
 export const PROFILE_REMOTE = 'izumi-profile-remote'

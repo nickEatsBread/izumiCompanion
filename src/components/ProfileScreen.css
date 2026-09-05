@@ -1,6 +1,6 @@
 .tv-profiles { position:fixed; inset:0; z-index:2000; background:#101214; color:#f6f3ed; display:flex; align-items:center; justify-content:center; font-family:inherit; }
 .tv-profiles-content { width:92%; text-align:center; padding:36px 0; }
-.tv-profiles-mark { width:66px; height:66px; margin-bottom:24px; }
+.tv-profiles-mark { width:150px; height:46px; margin-bottom:24px; }
 .tv-profiles h1 { font-size:56px; line-height:1.15; margin:0 0 48px; font-weight:750; letter-spacing:-1px; }
 .tv-profile-tiles { display:flex; justify-content:center; flex-wrap:wrap; max-width:1400px; margin:0 auto; }
 .tv-profile-tile { background:transparent; border:0; width:190px; margin:0 14px 16px; padding:8px; color:#9da2a5; }
