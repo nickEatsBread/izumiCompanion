@@ -6,13 +6,12 @@ const path = require('node:path')
 const vm = require('node:vm')
 const { createRequire } = require('node:module')
 function controller(fail = false) {
-  const filename = path.join(__dirname, '../src/main.cjs'), realRequire = createRequire(filename)
-  const handlers = new Map(), calls = []
+  const filename = path.join(__dirname, '../src/installer-core.cjs'), realRequire = createRequire(filename)
+  const calls = [], module = { exports: {} }
   const logged = []
-  const electron = { app: { setPath() {}, getPath: () => __dirname, whenReady: () => ({ then() {} }), on() {} }, ipcMain: { handle: (name, fn) => handlers.set(name, fn) } }
   const transport = { findInstalledApp: async id => { calls.push(['read', id]); if (fail) throw Error('TV connection lost'); return { app_version: '0.2.35' } }, close: () => calls.push(['close']) }
-  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { __dirname: path.dirname(filename), Buffer, process, setTimeout, clearTimeout, require: name => name === 'electron' ? electron : name === './installation-log.cjs' ? { InstallationLog: class { append(entry) { logged.push(entry) } } } : name === './samsung.cjs' ? { SamsungTransport: { connect: async (_ip, log) => { calls.push(['connect']); log('command', 'TV · 0 vd_applist'); log('output', 'Samsung registry output'); return transport } } } : name === './runtime/releases.cjs' ? { ...realRequire(name), latest: () => { throw Error('Connection checks must not download or install releases') } } : realRequire(name) }, { filename })
-  return { run: request => handlers.get('installer:run')({ sender: { send() {} } }, request), calls, logged }
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { module, __dirname: path.dirname(filename), Buffer, process, setTimeout, clearTimeout, require: name => name === './installation-log.cjs' ? { InstallationLog: class { append(entry) { logged.push(entry) } } } : name === './samsung.cjs' ? { SamsungTransport: { connect: async (_ip, log) => { calls.push(['connect']); log('command', 'TV · 0 vd_applist'); log('output', 'Samsung registry output'); return transport } } } : name === './runtime/releases.cjs' ? { ...realRequire(name), latest: () => { throw Error('Connection checks must not download or install releases') } } : realRequire(name) }, { filename })
+  return { run: module.exports.createInstaller({ userData: __dirname, onEvent() {} }).run, calls, logged }
 }
 test('Connect reads the installed version and releases the TV without downloading or installing', async () => {
   const { run, calls, logged } = controller()

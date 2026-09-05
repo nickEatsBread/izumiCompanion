@@ -34,3 +34,6 @@ profiles.xml
 !.env.example
 .DS_Store
 Thumbs.db
+
+installer/src/cloudflare/
+installer/.cache/

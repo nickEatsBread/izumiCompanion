@@ -140,7 +140,7 @@ test('Samsung certificate creation rejects a non-profile success response', asyn
 })
 
 test('installer invalidates identities created without the correct TV device profile', () => {
-  const main = fs.readFileSync(path.join(root, 'src', 'main.cjs'), 'utf8')
+  const main = fs.readFileSync(path.join(root, 'src', 'installer-core.cjs'), 'utf8')
   assert.match(main, /CERTIFICATE_FORMAT_VERSION\s*=\s*2/)
   assert.match(main, /saved\?\.formatVersion === CERTIFICATE_FORMAT_VERSION/)
   assert.match(main, /await uploadDeviceProfile\(transport, duid, saved\)/)

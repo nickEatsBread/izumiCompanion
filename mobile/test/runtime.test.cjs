@@ -1,0 +1,40 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const http = require('node:http')
+const vm = require('node:vm')
+const { createRequire } = require('node:module')
+
+test('mobile runtime serves only packaged UI and routes installer and Cloudflare requests', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'izumi-mobile-test-'))
+  const filename = path.resolve(__dirname, '../nodejs-assets/nodejs-project/main.js')
+  const realRequire = createRequire(filename)
+  const listeners = [], messages = []
+  let server
+  const bridge = { app: { datadir: () => directory }, channel: { on: (_event, callback) => listeners.push(callback), send: value => messages.push(JSON.parse(value)) } }
+  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), { __dirname: path.dirname(filename), URL, Buffer, require: name => name === 'rn-bridge' ? bridge : name === 'node:http' ? { createServer: callback => server = http.createServer(callback) } : realRequire(name) }, { filename })
+  t.after(() => {
+    server?.closeAllConnections(); server?.close()
+    const resolved = path.resolve(directory)
+    assert.equal(path.dirname(resolved), path.resolve(os.tmpdir()))
+    assert.ok(path.basename(resolved).startsWith('izumi-mobile-test-'))
+    fs.rmSync(resolved, { recursive: true })
+  })
+  assert.equal(messages[0].type, 'runtime-ready')
+  await listeners[0](JSON.stringify({ type: 'init', addresses: ['192.0.2.10'] }))
+  for (let i = 0; i < 50 && !messages.some(value => value.type === 'ready'); i++) await new Promise(resolve => setTimeout(resolve, 10))
+  const url = messages.find(value => value.type === 'ready').url
+  const page = await fetch(url)
+  assert.equal(page.status, 200)
+  assert.match(await page.text(), /mobile-bridge\.js/)
+  assert.equal((await fetch(new URL('/', url))).status, 404)
+  assert.equal((await fetch(url, { method: 'POST' })).status, 404)
+  assert.equal((await fetch(new URL('../installer-core.cjs', url))).status, 404)
+  await listeners[0](JSON.stringify({ type: 'request', scope: 'installer', id: 'config', method: 'getConfig' }))
+  assert.deepEqual(messages.find(value => value.id === 'config').result.localAddresses, ['192.0.2.10'])
+  await listeners[0](JSON.stringify({ type: 'request', scope: 'cloudflare', id: 'unknown', method: 'shell', input: {} }))
+  assert.match(messages.find(value => value.id === 'unknown').error, /Unknown Cloudflare/)
+  assert.ok(fs.existsSync(path.join(directory, 'izumi-tv-installer')))
+})

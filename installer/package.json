@@ -15,7 +15,13 @@
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
-    "dist:linux": "electron-builder --linux --publish never"
+    "dist:linux": "electron-builder --linux --publish never",
+    "cloudflare": "node scripts/build-cloudflare.cjs",
+    "prestart": "npm run cloudflare",
+    "predist": "npm run cloudflare",
+    "predist:win": "npm run cloudflare",
+    "predist:mac": "npm run cloudflare",
+    "predist:linux": "npm run cloudflare"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.11",

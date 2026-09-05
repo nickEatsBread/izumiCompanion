@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('izumiInstaller', {
   getConfig: () => ipcRenderer.invoke('installer:get-config'),
+  openCloudflareSetup: () => ipcRenderer.invoke('installer:cloudflare-setup'),
   run: (request) => ipcRenderer.invoke('installer:run', request),
   verifyCode: (code) => ipcRenderer.invoke('installer:verify-code', code),
   copyLogs: () => ipcRenderer.invoke('installer:copy-logs'),

@@ -55,6 +55,14 @@ download **izumi Companion Installer** for your computer:
 Open the installer. On Linux, allow the AppImage to run as a program first.
 The installer downloads the TV packages for you; you do not need to upload or choose a WGT file.
 
+Android and iPhone installer builds are available through the [mobile build workflow](https://github.com/nickEatsBread/izumiCompanion/actions/workflows/mobile.yml). Android builds are testing APKs; iPhone builds are unsigned IPAs for signing with a sideloading tool. See [mobile setup and build details](mobile/README.md).
+
+### Cloudflare setup
+
+Choose **Set up Cloudflare** in the installer to link the TV's sources with native one-click deployment. Enter the code shown in Companion, approve the matching number on the TV, choose your sources, and deploy. Claim the temporary Cloudflare account before the expiry shown in the wizard.
+
+You can also use [TV Link](https://tv-link.izumi.watch) in a browser with a Cloudflare API token. Updated Android izumi builds can open the TV's QR invitation directly in the app. The website's **Open in izumi** button provides an app handoff on other platforms, with browser setup available if the app is absent.
+
 ### 2. Prepare your TV
 
 1. On the TV, open **Apps** or **Apps Settings**, then enter **12345** with the remote’s number keypad.

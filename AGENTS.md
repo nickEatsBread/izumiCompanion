@@ -9,6 +9,9 @@
   application source. Shared signing and transport source lives in `updater/runtime/` here.
 - The desktop `installer/` ships alongside Companion and the TV updater. Keep their release
   versions aligned and include the installer source in release commits.
+- `mobile/` shares `installer/src/installer-core.cjs` and the updater runtime. Test changes
+  against both hosts. Its Android APK includes the JavaScript bundle; its iOS build is intentionally
+  unsigned. Keep mobile package, Android and iOS versions aligned when preparing releases.
 - Commit as `nickEatsBread <281274910+nickEatsBread@users.noreply.github.com>`.
 - Preserve unrelated working-tree changes and commit focused changes in this repository.
 

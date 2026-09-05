@@ -1,6 +1,11 @@
 const FormData = require('form-data')
 const fetch = require('node-fetch')
 const { SamsungCertificateCreator: BaseSamsungCertificateCreator } = require('tizen')
+const fs = require('node:fs')
+const path = require('node:path')
+const forge = require('node-forge')
+const JSZip = require('jszip')
+const { DOMParser } = require('@xmldom/xmldom')
 
 const DEVICE_PROFILE_URL = 'https://svdca.samsungqbe.com/apis/v1/distributors'
 
@@ -9,6 +14,53 @@ class SamsungCertificateCreator extends BaseSamsungCertificateCreator {
     super()
     this.fetch = options.fetch || fetch
     this.FormData = options.FormData || FormData
+    this.cacheDirectory = options.cacheDirectory
+  }
+
+  async _downloadVDCertificates() {
+    if (!this.cacheDirectory) return super._downloadVDCertificates()
+    const names = ['vd_tizen_dev_author_ca.cer', 'vd_tizen_dev_public2.crt']
+    if (names.every(name => fs.existsSync(path.join(this.cacheDirectory, name)))) return
+    let url = 'https://download.tizen.org/sdk/extensions/tizen-certificate-extension_2.0.70.zip'
+    try {
+      const response = await this.fetch('https://download.tizen.org/sdk/tizenstudio/official/extension_info.xml')
+      if (!response.ok) throw new Error('Extension index unavailable')
+      const xml = new DOMParser().parseFromString(await response.text(), 'text/xml')
+      for (const extension of Array.from(xml.getElementsByTagName('extension'))) {
+        if (extension.getElementsByTagName('name')[0]?.textContent?.trim() !== 'Samsung Certificate Extension') continue
+        const candidate = new URL(extension.getElementsByTagName('repository')[0].textContent.trim())
+        if (candidate.protocol === 'https:' && candidate.hostname === 'download.tizen.org') url = candidate.href
+      }
+    } catch { /* Fall back to Samsung's published extension archive. */ }
+    const response = await this.fetch(url)
+    if (!response.ok) throw new Error('Could not download the Samsung public certificate chain.')
+    let zip = await JSZip.loadAsync(await response.buffer())
+    for (const extension of ['.zip', '.jar']) {
+      const entry = Object.values(zip.files).find(file => !file.dir && file.name.endsWith(extension))
+      if (!entry) throw new Error('Samsung returned an unsupported certificate archive.')
+      zip = await JSZip.loadAsync(await entry.async('nodebuffer'))
+    }
+    fs.mkdirSync(this.cacheDirectory, { recursive: true })
+    for (const name of names) {
+      const entry = Object.values(zip.files).find(file => !file.dir && path.basename(file.name) === name)
+      if (!entry) throw new Error('The Samsung certificate archive is incomplete.')
+      fs.writeFileSync(path.join(this.cacheDirectory, name), await entry.async('nodebuffer'))
+    }
+  }
+
+  _mobilePKCS12(key, issued, name, authorInfo) {
+    const chain = fs.readFileSync(path.join(this.cacheDirectory, name), 'utf8')
+    const pkcs12 = forge.pkcs12.toPkcs12Asn1(forge.pki.privateKeyFromPem(key.privateKey), [issued, chain], authorInfo.password, { generateLocalKeyId: true, friendlyName: 'UserCertificate' })
+    return forge.asn1.toDer(pkcs12).getBytes()
+  }
+
+  _generateAuthorPKCS12(key, issued, authorInfo) {
+    return this.cacheDirectory ? this._mobilePKCS12(key, issued, 'vd_tizen_dev_author_ca.cer', authorInfo) : super._generateAuthorPKCS12(key, issued, authorInfo)
+  }
+
+  _generateDistributorPKCS12(key, issued, authorInfo) {
+    if (this.cacheDirectory && authorInfo.privilegeLevel !== 'Public') throw new Error('The mobile installer supports public Samsung certificates.')
+    return this.cacheDirectory ? this._mobilePKCS12(key, issued, 'vd_tizen_dev_public2.crt', authorInfo) : super._generateDistributorPKCS12(key, issued, authorInfo)
   }
 
   async _fetchDeviceProfile(accessInfo, authorInfo, distributorCert) {

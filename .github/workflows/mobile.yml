@@ -1,0 +1,73 @@
+name: Build mobile installer
+on:
+  workflow_dispatch:
+  push:
+    paths: ['mobile/**', 'installer/**', 'updater/runtime/**', '.github/workflows/mobile.yml']
+  pull_request:
+    paths: ['mobile/**', 'installer/**', 'updater/runtime/**', '.github/workflows/mobile.yml']
+permissions:
+  contents: read
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: Android
+          - os: macos-latest
+            platform: iOS
+    runs-on: ${{ matrix.os }}
+    env:
+      NODEJS_MOBILE_BUILD_NATIVE_MODULES: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            installer/package-lock.json
+            mobile/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix installer --ignore-scripts
+      - run: npm test --prefix installer
+      - run: npm run assets --prefix installer
+      - run: npm run cloudflare --prefix installer
+      - run: npm ci --prefix mobile
+      - run: npm run typecheck --prefix mobile
+      - run: node mobile/scripts/icons.cjs
+      - run: npm run prepareRuntime --prefix mobile
+      - run: npm test --prefix mobile
+      - uses: actions/setup-java@v4
+        if: matrix.platform == 'Android'
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+        if: matrix.platform == 'Android'
+      - name: Build Android testing APK
+        if: matrix.platform == 'Android'
+        working-directory: mobile/android
+        run: bash gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+      - name: Build unsigned iPhone app
+        if: matrix.platform == 'iOS'
+        working-directory: mobile/ios
+        run: |
+          pod install
+          xcodebuild -workspace IzumiInstaller.xcworkspace -scheme IzumiInstaller -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
+          mkdir -p unsigned/Payload
+          cp -R build/Build/Products/Release-iphoneos/IzumiInstaller.app unsigned/Payload/
+          cd unsigned
+          zip -qry izumi-Companion-Installer-iOS-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: izumi-installer-${{ matrix.platform }}
+          path: |
+            mobile/android/app/build/outputs/apk/debug/*.apk
+            mobile/ios/unsigned/*.ipa
+          if-no-files-found: error
