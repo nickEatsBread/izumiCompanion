@@ -1,0 +1,98 @@
+{
+  "name": "izumi-companion-installer",
+  "version": "0.2.36",
+  "private": true,
+  "description": "Desktop installer for izumi Companion on Samsung Tizen TVs",
+  "author": "izumi contributors",
+  "license": "AGPL-3.0-or-later",
+  "main": "src/main.cjs",
+  "scripts": {
+    "assets": "node scripts/build-assets.cjs",
+    "test:ui": "electron scripts/check-ui.cjs",
+    "start": "electron .",
+    "install-only": "node src/install-only.cjs",
+    "test": "node --test test/*.test.cjs",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.11",
+    "form-data": "^4.0.6",
+    "jszip": "^3.10.1",
+    "node-fetch": "^2.7.0",
+    "node-forge": "^1.4.0",
+    "tizen": "https://github.com/reisxd/tizen.js/archive/45b00106149d0c8eff74ead4a979c909dd80efd6.tar.gz"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.nicho.izumi.tvinstaller",
+    "productName": "izumi Companion Installer",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "!src/runtime/**",
+      {
+        "from": "../updater/runtime",
+        "to": "src/runtime",
+        "filter": [
+          "*.cjs",
+          "*.json"
+        ]
+      },
+      "installer.config.json",
+      "package.json",
+      "LICENSE",
+      "assets/icon.png",
+      "THIRD-PARTY-NOTICES.md"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "izumi-Companion-Installer-${version}-Windows.${ext}"
+    },
+    "mac": {
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "izumi-Companion-Installer-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Utility",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "izumi-Companion-Installer-${version}-Linux.${ext}"
+    }
+  }
+}

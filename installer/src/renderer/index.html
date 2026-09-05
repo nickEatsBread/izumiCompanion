@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'">
+  <title>izumi Companion Installer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header class="app-header">
+      <div class="brand"><img class="brand-mark" src="assets/mark.svg" alt=""><img class="brand-wordmark" src="assets/wordmark.svg" alt="izumi"><span>TV installer</span></div>
+      <span class="platform">Samsung Tizen <span id="app-version"></span></span>
+    </header>
+    <ol class="stepper" aria-label="Installation steps">
+      <li data-step="1" aria-current="step"><b>1</b><span>Connect your TV</span></li>
+      <li data-step="2"><b>2</b><span>Install izumi</span></li>
+      <li data-step="3"><b>3</b><span>Finish setup</span></li>
+    </ol>
+
+    <section id="connect-view" class="connect-layout" aria-labelledby="connect-title">
+      <div class="preparation">
+        <p class="eyebrow">First-time setup</p>
+        <h1 id="connect-title" tabindex="-1">Set up your<br>Samsung TV.</h1>
+        <p class="lede">Keep your TV and computer on the same network, then follow these steps on the TV.</p>
+        <ol class="tv-steps">
+          <li><span>01</span><div><strong>Open Developer Mode</strong><p>Go to Apps or Apps Settings, then enter <kbd>12345</kbd> with your remote.</p></div></li>
+          <li><span>02</span><div><strong>Connect to this computer</strong><p>Turn Developer Mode on and set Host PC IP to one of these addresses:</p><div id="host-ip" class="host-addresses">Loading your network address…</div></div></li>
+          <li><span>03</span><div><strong>Restart your TV</strong><p>Hold the remote’s Power button for at least <strong>5 seconds</strong>. If the TV stays off, press Power again to turn it on.</p></div></li>
+        </ol>
+      </div>
+      <div class="connection-panel">
+        <div class="tv-drawing" aria-hidden="true"><div class="tv-screen"><img src="assets/mark.svg" alt=""><img src="assets/wordmark.svg" alt=""></div><i></i></div>
+        <h2>Connect your TV</h2>
+        <p>Enter its IP address to check the connection.</p>
+        <form id="connect-form" novalidate>
+          <label for="tv-ip">TV IP address</label>
+          <input id="tv-ip" inputmode="decimal" autocomplete="off" placeholder="192.168.1.80" spellcheck="false" aria-describedby="ip-help ip-error">
+          <p id="ip-help" class="field-help">Find it in your TV’s Network Status → IP Settings.</p>
+          <p id="ip-error" class="field-error" hidden></p>
+          <button id="connect" class="primary" type="submit">Connect TV <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="connection-note">This checks the connection. Installation comes next.</p>
+      </div>
+    </section>
+
+    <section id="install-view" class="task-view" aria-labelledby="install-title" hidden>
+      <div class="task-heading"><p class="eyebrow" id="connection-label">TV connected</p><h1 id="install-title" tabindex="-1">Install izumi.</h1><p class="lede" id="install-description">We’ll download the latest release and prepare it for your TV.</p></div>
+      <div id="install-options">
+        <div class="package-item"><img src="assets/mark.svg" alt=""><div><h2>izumi Companion</h2><p>Your library and playback, on the TV.</p></div><span id="installed-version" class="package-version">Included</span></div>
+        <label class="package-item updater-choice" for="enable-updater"><span class="update-symbol" aria-hidden="true">↻</span><div><strong>Updates on your TV</strong><p>Includes izumi Updater. Requires Tizen 3.0+ with Web service support.</p></div><input type="checkbox" id="enable-updater" checked></label>
+        <p class="signing-note">Samsung sign-in may open in your browser. Your existing signing identity is kept for future updates.</p>
+        <div class="form-actions"><button id="back" class="secondary" type="button">Back</button><button id="install" class="primary" type="button">Install on TV <span aria-hidden="true">→</span></button></div>
+        <div class="utility-actions"><span>Already installed?</span><button id="launch" type="button">Open izumi</button><button id="launch-updater" type="button">Open updater</button></div>
+      </div>
+      <div id="operation-panel" hidden>
+        <div id="download-progress"><div class="progress-caption"><label id="progress-label" for="progress">Preparing your TV…</label><span id="progress-value"></span></div><progress id="progress" max="100"></progress></div>
+        <ol class="install-phases"><li data-phase="download">Download</li><li data-phase="signing">Prepare</li><li data-phase="install">Install</li><li data-phase="verify">Verify TV</li></ol>
+        <p class="operation-note">Keep the TV on and this window open.</p>
+      </div>
+    </section>
+
+    <section id="finish-view" class="task-view" aria-labelledby="finish-title" hidden>
+      <div class="completion-mark" aria-hidden="true">✓</div><p class="eyebrow">Installed on your TV</p><h1 id="finish-title" tabindex="-1">You’re almost there.</h1>
+      <div id="finish-setup"><p class="lede">One last setting lets future Companion updates run without your computer.</p><ol class="finish-steps"><li>On the TV, open <strong>Apps → 12345</strong>.</li><li>Set Developer Mode <strong>Host PC IP</strong> to <code>127.0.0.1</code>.</li><li>Hold the remote’s <strong>Power button for at least 5 seconds</strong> to restart. If the TV stays off, press Power again.</li><li>Open <strong>izumi companion</strong> from Apps.</li></ol><p class="field-help">To use this installer again, set Host PC IP back to this computer and repeat the restart above.</p></div>
+      <p id="companion-ready" class="lede" hidden>Open izumi companion from TV Apps and pair it with your izumi device.</p>
+      <button id="start-over" class="secondary" type="button">Set up another TV</button>
+      <button class="text-button" type="button" data-view-logs>View installation logs</button>
+    </section>
+
+    <form id="verify-tv" class="verification" novalidate hidden>
+      <div><p class="eyebrow">Confirm it’s your TV</p><h2>Enter the code on your TV.</h2><p>izumi Updater shows a Desktop setup code. Enter it to finish setting up updates.</p></div>
+      <label for="tv-code">Desktop setup code</label><div class="code-entry"><input id="tv-code" placeholder="ABCD-1234-EF56" autocomplete="off" maxlength="14" spellcheck="false" aria-describedby="code-error"><button id="verify-code" class="primary" type="submit">Confirm TV</button></div><p id="code-error" class="field-error" hidden></p>
+    </form>
+
+    <div id="error-panel" class="error-panel" role="alert" hidden><strong>Couldn’t finish this step</strong><p id="error-message"></p><button class="text-button" type="button" data-view-logs>View installation logs</button></div>
+    <p id="status" class="sr-only" role="status" aria-live="polite">Ready to connect</p>
+    <details id="activity" class="activity"><summary id="logs-summary">Installation logs</summary><div class="log-tools"><button id="copy-logs" class="text-button" type="button" data-log-action disabled>Copy logs</button><button id="save-logs" class="text-button" type="button" data-log-action disabled>Save logs…</button><button id="open-logs" class="text-button" type="button" data-log-action>Open saved logs</button><span id="log-status" role="status"></span></div><p id="log-hint" class="field-help">Logs appear here when you connect. Saved logs stay available after you close the installer.</p><div id="log" role="log" class="log" aria-live="off"></div></details>
+    <footer><span>Made for your Samsung TV.</span><p>Your Samsung identity is saved on this computer. TV setup transfers an encrypted copy to private storage on your TV.</p></footer>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

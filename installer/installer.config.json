@@ -1,0 +1,10 @@
+{
+  "githubRepo": "nickEatsBread/izumiCompanion",
+  "assetPattern": "^izumi-companion\\.wgt$",
+  "packageId": "IzumiTV001",
+  "appId": "IzumiTV001.IzumiTV",
+  "minimumTizenVersion": "2.3",
+  "updaterAppId": "IzumiUP001.Updater",
+  "updaterPackageId": "IzumiUP001",
+  "minimumUpdaterTizenVersion": "3.0"
+}

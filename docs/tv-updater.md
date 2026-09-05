@@ -2,8 +2,8 @@
 
 The Companion and separate TV updater are maintained here. Shared signing,
 release verification and Samsung transport code lives in `updater/runtime/`.
-The desktop `installer/` remains local, uncommitted work awaiting review; TV
-builds and checks do not depend on it.
+The desktop `installer/` ships with each release. TV builds and checks do not
+depend on the Electron application being installed locally.
 
 ## User flow
 

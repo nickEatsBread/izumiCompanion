@@ -7,7 +7,8 @@
   copy the TV source tree back into that repository.
 - The sibling `izumi-companion` directory (with a hyphen) is legacy installer tooling, not the TV
   application source. Shared signing and transport source lives in `updater/runtime/` here.
-- The desktop `installer/` is currently local work awaiting review. Do not add it to commits.
+- The desktop `installer/` ships alongside Companion and the TV updater. Keep their release
+  versions aligned and include the installer source in release commits.
 - Commit as `nickEatsBread <281274910+nickEatsBread@users.noreply.github.com>`.
 - Preserve unrelated working-tree changes and commit focused changes in this repository.
 
@@ -34,7 +35,7 @@ existing TV pairing/storage upgrade path.
 ## Deploying to the development TV
 
 - Current updater test: deploy only `izumi-updater.wgt`. Keep Companion at 0.2.35
-  so the helper can install 0.2.36. Push and GitHub publication are on hold for user review.
+  so the helper can install 0.2.36 from the public GitHub release.
 - Read the TV's current IPv4 address from its Network Status screen and set `IZUMI_TV_IP`
   in the local shell before running deployment commands. Never commit device addresses.
 - The TV's Developer Mode Host PC IP must match the computer's active Wi-Fi/Ethernet IPv4
@@ -61,8 +62,7 @@ installer UI's Launch action after installation. Confirm the TV opens the newly 
 screen before reporting deployment complete.
 
 For Companion plus updater installation and provisioning, use `installer/src/setup-local.cjs`
-from the local desktop tooling as documented in `docs/tv-updater.md`. That tooling is not yet
-committed. The first transfer requires the code shown on the TV.
+as documented in `docs/tv-updater.md`. The first transfer requires the code shown on the TV.
 Do not change Developer Mode Host PC IP to loopback until provisioning has been confirmed;
 doing so earlier prevents the desktop from finishing installation. Never report an end-to-end
 on-TV update as tested until the loopback installation and Companion relaunch have actually run.
