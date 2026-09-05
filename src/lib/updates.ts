@@ -1,5 +1,7 @@
-export const UPDATER_APP_ID = 'IzumiUP001.Updater'
-export const UPDATE_RELEASE_URL = 'https://api.github.com/repos/nickEatsBread/izumiCompanion/releases/latest'
+import releaseConfig from '../../updater/runtime/release-config.json'
+
+export const UPDATER_APP_ID = releaseConfig.packages.updater.appId
+export const UPDATE_RELEASE_URL = `https://api.github.com/repos/${releaseConfig.repository}/releases/latest`
 export interface TvUpdate { version: string; helperInstalled: boolean }
 
 export function newerVersion(candidate: string, installed: string): boolean {
@@ -10,11 +12,12 @@ export function newerVersion(candidate: string, installed: string): boolean {
 }
 export function updateVersionFromRelease(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return
-  const release = value as { tag_name?: string; draft?: boolean; prerelease?: boolean; assets?: Array<{ name: string; digest?: string; browser_download_url?: string }> }
+  const release = value as { tag_name?: string; draft?: boolean; prerelease?: boolean; assets?: Array<{ name?: string; state?: string; size?: number; digest?: string; browser_download_url?: string } | null> }
   if (release.draft || release.prerelease || !/^v?\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(release.tag_name || '') || !Array.isArray(release.assets)) return
-  for (const name of ['izumi-companion.wgt', 'izumi-updater.wgt']) {
-    const matches = release.assets.filter((asset) => asset.name === name)
-    if (matches.length !== 1 || !/^sha256:[a-f0-9]{64}$/.test(matches[0].digest || '') || matches[0].browser_download_url !== `https://github.com/nickEatsBread/izumiCompanion/releases/download/${release.tag_name}/${name}`) return
+  for (const { asset: name } of Object.values(releaseConfig.packages)) {
+    const matches = release.assets.filter((asset) => asset?.name === name)
+    const asset = matches[0]
+    if (matches.length !== 1 || !asset || asset.state !== 'uploaded' || !Number.isInteger(asset.size) || !asset.size || asset.size < 0 || asset.size > releaseConfig.maxPackageBytes || !/^sha256:[a-f0-9]{64}$/.test(asset.digest || '') || asset.browser_download_url !== `https://github.com/${releaseConfig.repository}/releases/download/${release.tag_name}/${name}`) return
   }
   return release.tag_name!.replace(/^v/, '')
 }

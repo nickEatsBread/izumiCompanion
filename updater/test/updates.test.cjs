@@ -9,7 +9,7 @@ const { UpdateEngine } = require('../service/engine.cjs')
 const { verifyReceipt } = require('../runtime/provisioning.cjs')
 
 function release(version = '0.2.35') {
-  return { tag_name: 'v' + version, assets: ['izumi-companion.wgt', 'izumi-updater.wgt'].map((name) => ({ name, size: 3, digest: 'sha256:' + crypto.createHash('sha256').update('wgt').digest('hex'), browser_download_url: `https://github.com/nickEatsBread/izumiCompanion/releases/download/v${version}/${name}` })) }
+  return { tag_name: 'v' + version, draft: false, prerelease: false, assets: ['izumi-companion.wgt', 'izumi-updater.wgt'].map((name) => ({ name, state: 'uploaded', size: 3, digest: 'sha256:' + crypto.createHash('sha256').update('wgt').digest('hex'), browser_download_url: `https://github.com/nickEatsBread/izumiCompanion/releases/download/v${version}/${name}` })) }
 }
 test('release verification requires both pinned, checksummed assets', () => {
   const result = releaseInfo(release())

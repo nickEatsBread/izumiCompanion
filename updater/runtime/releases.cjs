@@ -3,13 +3,11 @@ const https = require('https')
 const url = require('url')
 const crypto = require('crypto')
 
-const REPOSITORY = 'nickEatsBread/izumiCompanion'
+const releaseConfig = require('./release-config.json')
+const REPOSITORY = releaseConfig.repository
 const LATEST_URL = `https://api.github.com/repos/${REPOSITORY}/releases/latest`
-const PACKAGES = {
-  companion: { asset: 'izumi-companion.wgt', packageId: 'IzumiTV001', appId: 'IzumiTV001.IzumiTV' },
-  updater: { asset: 'izumi-updater.wgt', packageId: 'IzumiUP001', appId: 'IzumiUP001.Updater' },
-}
-const MAX_PACKAGE_BYTES = 64 * 1024 * 1024
+const PACKAGES = releaseConfig.packages
+const MAX_PACKAGE_BYTES = releaseConfig.maxPackageBytes
 
 function version(value) {
   const match = /^v?(\d{1,5})\.(\d{1,5})\.(\d{1,5})$/.exec(String(value || ''))
@@ -28,11 +26,11 @@ function releaseInfo(release) {
   const packages = {}
   Object.keys(PACKAGES).forEach((kind) => {
     const definition = PACKAGES[kind]
-    const matches = release.assets.filter((asset) => asset.name === definition.asset)
+    const matches = release.assets.filter((asset) => asset && asset.name === definition.asset)
     if (matches.length !== 1) throw new Error(`The release is missing ${definition.asset}. Try again after the release finishes publishing.`)
     const asset = matches[0]
     const expectedUrl = `https://github.com/${REPOSITORY}/releases/download/${tag}/${definition.asset}`
-    if (asset.browser_download_url !== expectedUrl || !/^sha256:[a-f0-9]{64}$/.test(asset.digest || '') || !Number.isInteger(asset.size) || asset.size <= 0 || asset.size > MAX_PACKAGE_BYTES) {
+    if (asset.state !== 'uploaded' || asset.browser_download_url !== expectedUrl || !/^sha256:[a-f0-9]{64}$/.test(asset.digest || '') || !Number.isInteger(asset.size) || asset.size <= 0 || asset.size > MAX_PACKAGE_BYTES) {
       throw new Error(`The release metadata for ${definition.asset} could not be verified.`)
     }
     packages[kind] = Object.assign({}, definition, { url: expectedUrl, sha256: asset.digest.slice(7), size: asset.size, version: releaseVersion })

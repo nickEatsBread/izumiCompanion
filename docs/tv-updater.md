@@ -122,15 +122,16 @@ node scripts/verify-release.mjs
 
 Outputs are `artifacts/izumi-companion.wgt` and `artifacts/izumi-updater.wgt`.
 The updater includes its AGPL-3.0-or-later license and third-party notices;
-Companion retains its existing license. Desktop installers are not part of the
-TV release workflow while that source is awaiting review.
+Companion retains its existing license. The **Build release** workflow builds
+both WGTs and the Windows, macOS and Linux installers. It requires the installer
+source to be included before a public release can be prepared.
 
-Set the same release version in root `config.xml`, `updater/config.xml` and
-`updater/package.json` (including its lockfile). Run the **Build TV release**
-GitHub workflow. It builds both WGTs and creates a **draft** release. Publishing
-the complete stable
-`vMAJOR.MINOR.PATCH` release makes it visible to the installer and update checks.
-Both fixed WGT names and GitHub-generated `sha256:` digests must be present.
+Follow the [development and release guide](development.md#publish-a-release)
+to align package versions, build a complete draft, and publish a stable
+`vMAJOR.MINOR.PATCH` release. Both fixed WGT names, completed upload states,
+valid sizes and GitHub-generated `sha256:` digests must be present. The shared
+`updater/runtime/release-config.json` pins the repository and package identities
+for the client, updater service and packaged desktop installer.
 Do not overwrite assets in a published release; ship a new version instead.
 The updater deliberately ignores draft and prerelease releases, so its real
 GitHub download path can only be tested after both assets are published. Keep

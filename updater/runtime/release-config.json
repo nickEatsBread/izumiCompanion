@@ -1,0 +1,8 @@
+{
+  "repository": "nickEatsBread/izumiCompanion",
+  "maxPackageBytes": 67108864,
+  "packages": {
+    "companion": { "asset": "izumi-companion.wgt", "packageId": "IzumiTV001", "appId": "IzumiTV001.IzumiTV" },
+    "updater": { "asset": "izumi-updater.wgt", "packageId": "IzumiUP001", "appId": "IzumiUP001.Updater" }
+  }
+}

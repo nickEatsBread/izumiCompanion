@@ -1156,6 +1156,8 @@ async function main() {
     const hiddenControls = await evaluate("Boolean(document.querySelector('.app-shell.screen-player .player-controls.is-hidden'))")
     assert(hiddenControls, 'Back exited playback instead of hiding visible controls.')
 
+    // Previous seek scenarios save resume progress. Keep this near-ending fixture independent.
+    await evaluate("Object.keys(localStorage).forEach(function(key){if(key.indexOf('izumi.companion.playback-progress') >= 0)localStorage.removeItem(key);})")
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=next` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.next-episode-card')")
     await waitFor("document.querySelector('.player-skip')")
@@ -1360,7 +1362,7 @@ async function main() {
       XMLHttpRequest.prototype.send=function() {
         if(!this.__updateFixture) return send.apply(this,arguments);
         Object.defineProperty(this,'status',{value:200});
-        Object.defineProperty(this,'responseText',{value:JSON.stringify({tag_name:'v0.2.35',assets:['izumi-companion.wgt','izumi-updater.wgt'].map(function(name){return {name:name,digest:'sha256:'+'a'.repeat(64),browser_download_url:'https://github.com/nickEatsBread/izumiCompanion/releases/download/v0.2.35/'+name};})})});
+        Object.defineProperty(this,'responseText',{value:JSON.stringify({tag_name:'v0.2.35',assets:['izumi-companion.wgt','izumi-updater.wgt'].map(function(name){return {name:name,state:'uploaded',size:1024,digest:'sha256:'+'a'.repeat(64),browser_download_url:'https://github.com/nickEatsBread/izumiCompanion/releases/download/v0.2.35/'+name};})})});
         var xhr=this; setTimeout(function(){if(xhr.onload)xhr.onload();},10);
       };
       document.dispatchEvent(new Event('visibilitychange'));

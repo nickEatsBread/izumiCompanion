@@ -1,0 +1,26 @@
+name: Verify published updates
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-downloads:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: updater/package-lock.json
+      - run: npm ci --prefix updater --ignore-scripts
+      - name: Download through the same public feed as the installed apps
+        run: node scripts/verify-published-release.mjs
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
