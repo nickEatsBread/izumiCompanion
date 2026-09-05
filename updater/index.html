@@ -3,26 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=1920, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' http://tizen.org; connect-src http://127.0.0.1:18763; style-src 'self'; img-src 'self' data:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' http://tizen.org; connect-src http://127.0.0.1:18763; style-src 'self'; img-src 'self' data:; font-src 'self'">
   <title>izumi Updater</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <header><img class="wordmark" src="wordmark.svg" alt="izumi"><span>TV updates</span><p>Samsung Tizen</p></header>
   <main>
-    <img class="wordmark" src="wordmark.svg" alt="izumi">
-    <p class="eyebrow">TV UPDATER</p>
-    <h1 id="title">Keep the good<br>things coming.</h1>
-    <p id="message" role="status" aria-live="polite">Starting your update service…</p>
-    <div class="versions"><span>Installed <strong id="installed">—</strong></span><span>Latest <strong id="latest">—</strong></span></div>
-    <p id="setup-code" hidden></p>
-    <div id="progress-wrap" hidden><div id="progress" role="progressbar" aria-label="Update progress"><i id="progress-fill"></i></div><span id="progress-label"></span></div>
-    <div class="actions">
-      <button id="primary" disabled>Checking…</button>
-      <button id="open" class="secondary">Open izumi</button>
-    </div>
-    <p id="help">Updates use the Samsung signing identity set up by your desktop installer.</p>
+    <section class="update-content" aria-labelledby="title">
+      <p class="eyebrow" id="state-label">izumi Companion</p>
+      <h1 id="title">App updates.</h1>
+      <p id="message" role="status" aria-live="polite">Connecting to your update service…</p>
+      <div class="versions"><div><span>On your TV</span><strong id="installed">—</strong></div><div><span>Latest release</span><strong id="latest">—</strong></div></div>
+      <div id="progress-wrap" hidden><div id="progress" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="100"><i id="progress-fill"></i></div><span id="progress-label"></span></div>
+      <div class="actions"><button id="primary" disabled>Checking…</button><button id="open" class="secondary">Open izumi</button></div>
+      <p id="help">Use your remote to check for updates or return to izumi.</p>
+    </section>
+    <aside>
+      <section id="setup-panel" class="setup-panel">
+        <p class="eyebrow">First-time setup</p><h2>Finish on your computer.</h2><p>Open the izumi desktop installer and enter this code when asked.</p>
+        <div class="code-box"><span>Desktop setup code</span><strong id="setup-code">Starting…</strong></div>
+        <p class="setup-note">Keep this screen open until the installer confirms setup.</p>
+      </section>
+      <section id="update-steps" class="update-steps" hidden>
+        <h2>What happens next</h2><ol><li data-stage="download"><b>01</b><div><strong>Download the release</strong><p>Checked before installation.</p></div></li><li data-stage="signing"><b>02</b><div><strong>Prepare it for your TV</strong><p>Uses your saved Samsung identity.</p></div></li><li data-stage="install"><b>03</b><div><strong>Install and confirm</strong><p>Your library and settings stay in place.</p></div></li></ol>
+      </section>
+    </aside>
   </main>
-  <div class="art" aria-hidden="true"><img src="icon.png" alt=""></div>
+  <footer><span>izumi Updater</span><span>Back returns to TV Apps when an update isn’t running.</span></footer>
   <script src="ui.js"></script>
 </body>
 </html>

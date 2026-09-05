@@ -13,6 +13,8 @@ builds and checks do not depend on it.
 2. The installer downloads `izumi-companion.wgt` and `izumi-updater.wgt` from
    the latest stable release of `nickEatsBread/izumiCompanion`. No WGT chooser is
    needed. Companion-only installation remains available for older TVs.
+   **Connect TV** checks the connection and installed Companion version first,
+   without downloading or installing. **Install on TV** starts the selected setup.
 3. Samsung sign-in creates the TV-specific author/distributor identity on the
    first installation. Later installs preserve it. If an existing installation
    has no matching saved identity, the installer asks for the original backup

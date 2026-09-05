@@ -110,13 +110,21 @@ async function startServer() {
         return
       }
 
-      const requested = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
-      const path = resolve(dist, requested)
-      if (path !== dist && !path.startsWith(`${dist}${sep}`)) {
+      const updaterRequest = pathname.startsWith('/updater/')
+      const root = updaterRequest ? resolve(project, 'updater/dist') : dist
+      const requested = updaterRequest ? pathname.slice('/updater/'.length) || 'index.html' : pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '')
+      if (updaterRequest && requested === 'test-fixture.js') {
+        response.writeHead(200, { 'content-type': 'application/javascript; charset=utf-8' })
+        response.end(await readFile(resolve(project, 'updater/test/ui-fixture.js')))
+        return
+      }
+      const path = resolve(root, requested)
+      if (path !== root && !path.startsWith(`${root}${sep}`)) {
         response.writeHead(403).end()
         return
       }
-      const body = await readFile(path)
+      let body = await readFile(path)
+      if (updaterRequest && requested === 'index.html') body = body.toString().replace('<script src="ui.js">', '<script src="test-fixture.js"></script><script src="ui.js">')
       response.writeHead(200, {
         'cache-control': 'no-store',
         'content-type': mimeTypes[extname(path)] ?? 'application/octet-stream',
@@ -1354,6 +1362,29 @@ async function main() {
     const updateLaunch = await evaluate('window.__UPDATE_LAUNCH')
     assert(updateLaunch.id === 'IzumiUP001.Updater' && updateLaunch.control.launchMode === 'SINGLE' && updateLaunch.control.data[0].value[0] === 'install-and-return', 'Update now did not launch the helper with the return intent.')
     await waitFor("document.activeElement.hasAttribute('data-focus-id')")
+
+    // Run the actual helper UI on the TV's browser generation with a local service fixture.
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/updater/` })
+    await waitFor("document.getElementById('setup-code') && document.getElementById('setup-code').textContent === 'ABCD-1234-EF56'")
+    const helperGeometry = await evaluate(`(function(){var code=document.getElementById('setup-code'),p=document.getElementById('primary'),r=code.getBoundingClientRect();return {codeFits:code.scrollWidth<=code.clientWidth,right:r.right,bottom:r.bottom,button:getComputedStyle(p).backgroundColor,logo:document.querySelector('.wordmark').naturalWidth};})()`)
+    assert(helperGeometry.codeFits && helperGeometry.right < 1920 && helperGeometry.bottom < 980 && helperGeometry.logo > 0 && helperGeometry.button === 'rgb(243, 245, 246)', 'Updater setup layout or branding failed: ' + JSON.stringify(helperGeometry))
+    await capture('m56-updater-setup.png')
+    await evaluate("Object.assign(window.__UPDATER_STATE,{provisioned:true,stage:'ready',message:'A new version of izumi is ready.',setupCode:'',updateAvailable:true})")
+    await waitFor("document.getElementById('primary').textContent === 'Update now'")
+    assert(await evaluate("window.__UPDATER_ACTIONS.indexOf('/update') === -1"), 'Opening the updater directly started an installation.')
+    await capture('m56-updater-ready.png')
+    await press('ArrowRight'); assert(await evaluate("document.activeElement.id === 'open'"), 'Updater remote focus did not reach Open izumi.')
+    await press('ArrowLeft'); await press('Enter')
+    await waitFor("document.getElementById('progress-label').textContent === '38%'")
+    await capture('m56-updater-download.png')
+    await evaluate("Object.assign(window.__UPDATER_STATE,{stage:'installing',message:'Installing izumi. Keep the TV on…',progress:72})")
+    await waitFor("document.getElementById('progress-label').textContent === '72%'")
+    await capture('m56-updater-installing.png')
+    await evaluate("Object.assign(window.__UPDATER_STATE,{stage:'complete',message:'izumi has been updated.',progress:100,busy:false,installedVersion:'0.2.36',updateAvailable:false})")
+    await waitFor("document.getElementById('title').textContent === 'izumi is up to date.'")
+    assert(await evaluate("!window.__UPDATER_OPENED"), 'Direct updater completion should wait for Open izumi.')
+    await press('ArrowRight'); await press('Enter')
+    assert(await evaluate("window.__UPDATER_OPENED === 'IzumiTV001.IzumiTV'"), 'Open izumi did not launch Companion.')
 
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))

@@ -36,6 +36,7 @@ const compatiblePolyfills = await transformAsync(polyfills.outputFiles[0].text, 
 const serviceCode = prelude + compatiblePolyfills.code + '\n' + transformed.code
 const { parse } = await import('acorn')
 parse(serviceCode, { ecmaVersion: 5, sourceType: 'script', allowReserved: true })
+parse(await readFile(resolve(project, 'updater/ui.js'), 'utf8'), { ecmaVersion: 5, sourceType: 'script' })
 await writeFile(resolve(output, 'service/index.js'), serviceCode)
 // The TV's old Node trust store is stale. Supply current trusted roots without disabling TLS verification.
 await writeFile(resolve(output, 'service/ca.pem'), rootCertificates.join('\n'))

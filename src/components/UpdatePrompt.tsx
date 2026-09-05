@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { checkTvUpdate, launchUpdater, type TvUpdate } from '../lib/updates'
 import type { RemoteAction } from '../lib/remote'
+import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
 import './UpdatePrompt.css'
 
 const DISMISS_KEY = 'izumi.tv.update-dismissed'
@@ -55,8 +56,8 @@ export function UpdatePrompt({ prompt }: { prompt: ReturnType<typeof useUpdatePr
   if (!prompt.visible || !prompt.update) return null
   return <div class="tv-update-backdrop">
     <section class="tv-update-dialog" role="dialog" aria-modal="true" aria-labelledby="tv-update-heading" aria-describedby="tv-update-message">
-      <p class="tv-update-eyebrow">IZUMI COMPANION · {prompt.update.version}</p>
-      <h2 id="tv-update-heading">A fresh update is ready.</h2>
+      <div class="tv-update-brand"><img src={wordmark} alt="izumi" /><p class="tv-update-eyebrow">Companion · {prompt.update.version}</p></div>
+      <h2 id="tv-update-heading">An update is ready.</h2>
       <p id="tv-update-message">{prompt.error || (prompt.update.helperInstalled ? 'Update now and we’ll bring you right back to izumi when it’s ready.' : 'Use the desktop installer to install this update and set up izumi Updater for future updates on your TV.')}</p>
       <div class="tv-update-actions">
         <button ref={first} class={prompt.choice === 0 ? 'is-focused' : ''} disabled={prompt.launching} onFocus={() => prompt.setChoice(0)} onClick={prompt.install}>{prompt.launching ? 'Opening updater…' : prompt.update.helperInstalled ? 'Update now' : 'Set up updates'}</button>

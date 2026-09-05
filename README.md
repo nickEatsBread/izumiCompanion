@@ -68,8 +68,9 @@ still pending. See the [hardware verification](docs/tv-updater.md#hardware-verif
    the remote's number keypad. Turn **Developer Mode** on, set **Host PC IP** to the computer's
    address, confirm, and restart the TV. Samsung documents this in its
    [TV connection guide](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html).
-3. Open **izumi Companion Installer** on the computer and enter the **TV's IP address**. Keep
-   **Enable updates on the TV** selected on supported TVs, then choose **Set up izumi**.
+3. Open **izumi Companion Installer** on the computer and enter the **TV's IP address**.
+   Choose **Connect TV** to check the connection. On the next screen, keep **Updates on your TV**
+   selected on supported TVs, then choose **Install on TV**.
 4. Complete Samsung sign-in when prompted. The installer downloads, verifies, signs and installs
    Companion and its updater. You do not need to select or upload a WGT manually.
 5. When **izumi Updater** opens on the TV, enter its **Desktop setup code** in the desktop installer.
@@ -79,7 +80,7 @@ still pending. See the [hardware verification](docs/tv-updater.md#hardware-verif
    and restart the TV. This enables the updater to install future Companion versions on the TV.
 7. Open **izumi companion** from TV Apps and pair it with izumi using the on-screen code or QR code.
 
-For Tizen 2.3 TVs, leave **Enable updates on the TV** unchecked. Install Companion only and keep
+For Tizen 2.3 TVs, leave **Updates on your TV** unchecked. Install Companion only and keep
 Host PC IP set to the computer; the separate on-TV updater is not available on that runtime.
 
 ### Updating and reconnecting

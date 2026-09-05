@@ -31,10 +31,15 @@
     text('message', state.message)
     text('installed', state.installedVersion || 'Not installed')
     text('latest', state.latestVersion || (state.stage === 'checking' ? 'Checking…' : '—'))
-    document.getElementById('setup-code').hidden = !state.setupCode || state.stage === 'setup-complete'
-    text('setup-code', 'Desktop setup code: ' + (state.setupCode || ''))
+    document.getElementById('setup-panel').hidden = Boolean(state.provisioned)
+    document.getElementById('update-steps').hidden = !state.provisioned
+    text('setup-code', state.setupCode || 'Starting…')
     var complete = state.stage === 'complete' || state.stage === 'current'
-    text('title', complete ? 'Ready for your next episode.' : state.busy ? 'A little refresh.' : 'Keep the good things coming.')
+    text('title', complete ? 'izumi is up to date.' : state.busy ? state.stage === 'checking' ? 'Checking for updates.' : 'Updating izumi.' : !state.provisioned ? 'Set up TV updates.' : 'App updates.')
+    text('state-label', state.stage === 'error' || state.stage === 'setup-error' ? 'Needs attention' : complete ? 'Update complete' : 'izumi Companion')
+    var stages = document.querySelectorAll('[data-stage]')
+    var currentStage = state.stage === 'downloading' ? 'download' : state.stage === 'signing' ? 'signing' : ['uploading', 'installing', 'verifying'].indexOf(state.stage) >= 0 ? 'install' : ''
+    for (var step = 0; step < stages.length; step++) stages[step].className = stages[step].getAttribute('data-stage') === currentStage ? 'active' : ''
     var updating = ['downloading', 'signing', 'uploading', 'installing', 'verifying'].indexOf(state.stage) >= 0
     document.getElementById('progress-wrap').hidden = !updating && !complete
     var bar = document.getElementById('progress')
