@@ -42,7 +42,9 @@ export default function App() {
   function message(event: WebViewMessageEvent, scope: 'installer' | 'cloudflare') {
     try {
       const source = new URL(event.nativeEvent.url);
-      if (scope === 'cloudflare' ? source.origin !== CLOUD : event.nativeEvent.url !== readyUrl.current) return;
+      // Android WebMessageListener supplies the origin; older Android and iOS
+      // supply a full document URL. Both must identify this host's exact origin.
+      if (scope === 'cloudflare' ? source.origin !== CLOUD : !readyUrl.current || source.origin !== new URL(readyUrl.current).origin) return;
       const value = JSON.parse(event.nativeEvent.data);
       if (value.type === 'open-cloudflare' && scope === 'installer') { setCloudOpen(true); return; }
       if ((value.type === 'share-logs' && scope === 'installer') || (value.type === 'share-recovery' && scope === 'cloudflare')) {
