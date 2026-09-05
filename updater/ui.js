@@ -52,7 +52,7 @@
     open.disabled = Boolean(state.busy)
     primary.textContent = state.busy ? state.stage === 'checking' ? 'Checking…' : 'Updating…' : state.updateAvailable && state.provisioned && state.stage !== 'error' ? 'Update now' : 'Check for updates'
     if (!state.provisioned) text('help', 'Run the izumi desktop installer to finish setup. It securely transfers your TV’s Samsung signing identity.')
-    else text('help', 'For updates without a computer: Apps → 12345 → Developer Mode → Host PC IP 127.0.0.1, then restart the TV.')
+    else text('help', 'Set Host PC IP to 127.0.0.1 in Apps → 12345 → Developer Mode. To restart, hold remote Power for at least 5 seconds. If the TV stays off, press Power again.')
     if (autoStart && !autoStarted && !state.busy) {
       autoStarted = true
       if (state.provisioned) action('/update', { returnToApp: true })

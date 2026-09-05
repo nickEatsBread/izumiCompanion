@@ -9,12 +9,18 @@ builds and checks do not depend on it.
 
 1. Open the desktop installer with the computer and TV on the same network.
    Enable Developer Mode in TV Apps (`12345`), set Host PC IP to the computer,
-   restart the TV and enter its IP in the installer.
+   restart the TV and enter its IP in the installer. To restart, hold the remote’s
+   **Power button for at least 5 seconds**. If the TV stays off, press Power again.
 2. The installer downloads `izumi-companion.wgt` and `izumi-updater.wgt` from
    the latest stable release of `nickEatsBread/izumiCompanion`. No WGT chooser is
    needed. Companion-only installation remains available for older TVs.
    **Connect TV** checks the connection and installed Companion version first,
    without downloading or installing. **Install on TV** starts the selected setup.
+   The computer address list puts active Wi-Fi/Ethernet connections first, ahead
+   of virtual adapters. **Installation logs** retains Samsung command output and
+   errors after success or failure; logs can be copied, saved or reopened later
+   with **Open saved logs**. Log files are kept in the installer's app-data `logs/`
+   directory, separate from the signing identity.
 3. Samsung sign-in creates the TV-specific author/distributor identity on the
    first installation. Later installs preserve it. If an existing installation
    has no matching saved identity, the installer asks for the original backup
@@ -27,8 +33,9 @@ builds and checks do not depend on it.
 6. The desktop sends an encrypted signing-identity envelope over the TV's developer
    connection. The updater saves the decrypted identity in private app storage
    and returns a signed receipt that the installer verifies.
-7. Set Developer Mode **Host PC IP to `127.0.0.1`**, then restart the TV. This
-   manual setting enables the updater's local developer connection. It cannot
+7. Set Developer Mode **Host PC IP to `127.0.0.1`**, then restart the TV using
+   the Power-button steps above. This manual setting enables the updater's
+   local developer connection. It cannot
    be changed through the normal public TV application API.
 
 Companion checks for updates after startup and every six hours while active.

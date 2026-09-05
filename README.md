@@ -66,7 +66,8 @@ still pending. See the [hardware verification](docs/tv-updater.md#hardware-verif
 1. Find the computer's local IPv4 address and the TV's IP address in their network settings.
 2. On the TV, open **Apps** (or **Apps Settings**, depending on the model) and enter **12345** with
    the remote's number keypad. Turn **Developer Mode** on, set **Host PC IP** to the computer's
-   address, confirm, and restart the TV. Samsung documents this in its
+   address, and confirm. To restart, hold the remote’s **Power button for at least 5 seconds**.
+   If the TV stays off, press Power again to turn it on. Samsung documents TV connection in its
    [TV connection guide](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html).
 3. Open **izumi Companion Installer** on the computer and enter the **TV's IP address**.
    Choose **Connect TV** to check the connection. On the next screen, keep **Updates on your TV**
@@ -77,7 +78,8 @@ still pending. See the [hardware verification](docs/tv-updater.md#hardware-verif
    Wait for confirmation that encrypted setup succeeded. Keep a backup of the original Samsung
    signing identity; future versions must use the same identity.
 6. After that confirmation, return to **Apps → 12345**, change **Host PC IP** to **127.0.0.1**,
-   and restart the TV. This enables the updater to install future Companion versions on the TV.
+   and restart using the Power-button steps above. This enables the updater to install future
+   Companion versions on the TV.
 7. Open **izumi companion** from TV Apps and pair it with izumi using the on-screen code or QR code.
 
 For Tizen 2.3 TVs, leave **Updates on your TV** unchecked. Install Companion only and keep
@@ -93,6 +95,13 @@ To repair or update the updater itself from the computer, change Developer Mode 
 to the computer's address and restart the TV before running the desktop installer. After confirmed
 setup, restore **127.0.0.1** and restart again. Having Companion open alone does not enable the
 developer connection needed for installation.
+
+Use the same restart steps each time: hold the remote’s **Power button for at least 5 seconds**,
+then press Power again if the TV stays off.
+
+If setup fails, choose **View installation logs** below the error. Samsung's command output and
+error codes are kept for review. **Copy logs** and **Save logs…** include the full session, including
+retries; **Open saved logs** also lets you find logs after closing and reopening the installer.
 
 Developer builds, signing storage and current test limitations are documented in
 [TV updater setup](docs/tv-updater.md). Keep TV credentials out of public packages and source control.

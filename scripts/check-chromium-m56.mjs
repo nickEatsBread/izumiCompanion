@@ -1371,6 +1371,7 @@ async function main() {
     await capture('m56-updater-setup.png')
     await evaluate("Object.assign(window.__UPDATER_STATE,{provisioned:true,stage:'ready',message:'A new version of izumi is ready.',setupCode:'',updateAvailable:true})")
     await waitFor("document.getElementById('primary').textContent === 'Update now'")
+    assert(await evaluate("document.getElementById('help').getBoundingClientRect().bottom < document.querySelector('footer').getBoundingClientRect().top - 12"), 'Updater restart guidance overlaps the footer.')
     assert(await evaluate("window.__UPDATER_ACTIONS.indexOf('/update') === -1"), 'Opening the updater directly started an installation.')
     await capture('m56-updater-ready.png')
     await press('ArrowRight'); assert(await evaluate("document.activeElement.id === 'open'"), 'Updater remote focus did not reach Open izumi.')
