@@ -31,7 +31,7 @@ or provide a media catalogue of its own.
 ## What you need
 
 - A **Samsung Tizen TV running Tizen 2.3 or newer**.
-- A Windows, macOS or Linux computer on the **same local network** as the TV.
+- A Windows, macOS or Linux computer, or an Android/iPhone installer, on the **same local network** as the TV. The iPhone IPA needs signing through a sideloading tool.
 - A **Samsung account** for first-time installation.
 - izumi on your phone or computer to pair with the TV.
 

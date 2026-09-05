@@ -18,6 +18,8 @@ const expected = [
   `izumi-Companion-Installer-${version}-arm64.dmg`,
   `izumi-Companion-Installer-${version}-x64.dmg`,
   `izumi-Companion-Installer-${version}-Linux.AppImage`,
+  `izumi-Companion-Installer-${version}-Android.apk`,
+  `izumi-Companion-Installer-${version}-iOS-unsigned.ipa`,
 ]
 const files = await readdir(directory)
 const hashes = new Map()
@@ -45,4 +47,4 @@ for (let attempt = 0; attempt < 6; attempt++) {
 // GitHub may use temporary "untagged" URLs for drafts. Validate the eventual public
 // metadata here; the publication workflow checks the actual URLs and downloads.
 releaseInfo({ ...metadata, draft: false, assets: metadata.assets.map(asset => ({ ...asset, browser_download_url: `https://github.com/${REPOSITORY}/releases/download/${tag}/${asset.name}` })) })
-console.log(`Draft ${tag} is complete: both WGTs, all desktop installers and verified GitHub digests. Publish it to make it available to update checks.`)
+console.log(`Draft ${tag} is complete: both WGTs, desktop/mobile installers and verified GitHub digests. Publish it to make it available to update checks.`)

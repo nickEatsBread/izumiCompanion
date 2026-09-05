@@ -1,14 +1,21 @@
 name: Build mobile installer
 on:
   workflow_dispatch:
+  workflow_call:
+    secrets:
+      IZUMI_MOBILE_ANDROID_KEYSTORE:
+        required: false
+      IZUMI_MOBILE_ANDROID_PASSWORD:
+        required: false
   push:
+    branches: [main]
     paths: ['mobile/**', 'installer/**', 'updater/runtime/**', '.github/workflows/mobile.yml']
   pull_request:
     paths: ['mobile/**', 'installer/**', 'updater/runtime/**', '.github/workflows/mobile.yml']
 permissions:
   contents: read
 concurrency:
-  group: mobile-${{ github.ref }}
+  group: mobile-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -52,10 +59,32 @@ jobs:
           java-version: 21
       - uses: android-actions/setup-android@v3
         if: matrix.platform == 'Android'
-      - name: Build Android testing APK
+      - uses: gradle/actions/setup-gradle@v4
+        if: matrix.platform == 'Android'
+      - name: Build Android APK
         if: matrix.platform == 'Android'
         working-directory: mobile/android
-        run: bash gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+        env:
+          MOBILE_KEYSTORE: ${{ github.event_name != 'pull_request' && secrets.IZUMI_MOBILE_ANDROID_KEYSTORE || '' }}
+          IZUMI_ANDROID_STORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.IZUMI_MOBILE_ANDROID_PASSWORD || '' }}
+          IZUMI_ANDROID_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.IZUMI_MOBILE_ANDROID_PASSWORD || '' }}
+          IZUMI_ANDROID_KEY_ALIAS: izumi-installer
+        run: |
+          variant=debug
+          if [ -n "$MOBILE_KEYSTORE" ]; then
+            umask 077
+            export IZUMI_ANDROID_STORE_FILE="$RUNNER_TEMP/izumi-installer.p12"
+            printf '%s' "$MOBILE_KEYSTORE" | base64 --decode > "$IZUMI_ANDROID_STORE_FILE"
+            trap 'rm -f "$IZUMI_ANDROID_STORE_FILE"' EXIT
+            bash gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+            variant=release
+          else
+            if [ "${{ github.ref_type }}" = tag ]; then echo 'Release signing is not configured.' >&2; exit 1; fi
+            bash gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+          fi
+          version=$(node -p "require('../package.json').version")
+          mkdir -p ../dist
+          cp "app/build/outputs/apk/$variant/app-$variant.apk" "../dist/izumi-Companion-Installer-$version-Android.apk"
       - name: Build unsigned iPhone app
         if: matrix.platform == 'iOS'
         working-directory: mobile/ios
@@ -65,11 +94,12 @@ jobs:
           mkdir -p unsigned/Payload
           cp -R build/Build/Products/Release-iphoneos/IzumiInstaller.app unsigned/Payload/
           cd unsigned
-          zip -qry izumi-Companion-Installer-iOS-unsigned.ipa Payload
+          version=$(node -p "require('../../package.json').version")
+          zip -qry "izumi-Companion-Installer-$version-iOS-unsigned.ipa" Payload
       - uses: actions/upload-artifact@v4
         with:
           name: izumi-installer-${{ matrix.platform }}
           path: |
-            mobile/android/app/build/outputs/apk/debug/*.apk
+            mobile/dist/*.apk
             mobile/ios/unsigned/*.ipa
           if-no-files-found: error

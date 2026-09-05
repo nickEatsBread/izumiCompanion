@@ -10,7 +10,7 @@ The signing identity is saved in the app's private data directory, outside bundl
 
 ## Builds
 
-The **Build mobile installer** GitHub Actions workflow builds an Android testing APK and an unsigned iPhone IPA. Android testing builds include the JavaScript bundle and run without Metro. An unsigned IPA must be signed by a sideloading tool before a standard iPhone can install it. The workflow does not use an Apple account or signing credentials.
+The **Build mobile installer** GitHub Actions workflow builds a signed Android APK and an unsigned iPhone IPA. Android release signing uses encrypted repository secrets and the same identity for every update. Pull requests use disposable testing signatures; those APKs are for development. Both include the JavaScript bundle and run without Metro. An unsigned IPA must be signed by a sideloading tool before a standard iPhone can install it. The workflow does not use an Apple account or Apple signing credentials. Tagged releases include both mobile downloads alongside the TV and desktop packages.
 
 From the repository root:
 
@@ -27,10 +27,12 @@ npm run typecheck --prefix mobile
 npm test --prefix mobile
 ```
 
-Android requires Java 21, the Android SDK, and the NDK version declared in `android/build.gradle`. Run `android/gradlew assembleDebug` from `mobile/android` (or `gradlew.bat` on Windows). `reactNativeArchitectures` can limit a local build to `arm64-v8a` or `x86_64`.
+Android requires Java 21, the Android SDK, and the NDK version declared in `android/build.gradle`. Run `./gradlew assembleDebug` from `mobile/android` (or `gradlew.bat` on Windows). `reactNativeArchitectures` can limit a local build to `arm64-v8a` or `x86_64`. On Windows, use a short checkout path to stay within native build tools' path limits.
 
 On macOS, run `pod install` in `mobile/ios`, then build the `IzumiInstaller` workspace. Set `NODEJS_MOBILE_BUILD_NATIVE_MODULES=0`; the packaged installer dependencies are JavaScript. The iOS workflow shows the complete unsigned archive command.
 
 Production Android signing accepts `IZUMI_ANDROID_STORE_FILE`, `IZUMI_ANDROID_STORE_PASSWORD`, `IZUMI_ANDROID_KEY_ALIAS`, and `IZUMI_ANDROID_KEY_PASSWORD` from the build environment. Signing files and credentials must remain outside Git.
+
+GitHub Actions uses `IZUMI_MOBILE_ANDROID_KEYSTORE` (base64 PKCS#12, alias `izumi-installer`) and `IZUMI_MOBILE_ANDROID_PASSWORD`. Keep a private backup: replacing the signing key prevents existing Android installations from upgrading.
 
 The mobile host uses React Native with Node.js Mobile. Its bundled Node process handles TCP and signing; the WebView has only scoped installer or Cloudflare messages. Samsung sign-in stays in a separate WebView with no installer bridge. Android's native network API supplies active connection addresses; iPhone uses native interface enumeration.

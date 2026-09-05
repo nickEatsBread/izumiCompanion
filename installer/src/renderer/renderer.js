@@ -110,6 +110,6 @@ api.getConfig().then(config => {
     item.textContent = address
     return item
   }))
-  if (!addresses.length) $('host-ip').textContent = 'Check this computer’s network settings'
+  if (!addresses.length) $('host-ip').textContent = config.mobile ? 'Check this phone’s network settings' : 'Check this computer’s network settings'
   $('app-version').textContent = config.version ? 'v' + config.version : ''
 }).catch(fail)

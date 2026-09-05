@@ -24,6 +24,17 @@ export async function releaseVersion({ base = root, requireInstaller = false, ta
     const lock = await json(base, 'installer/package-lock.json')
     versions.set('installer/package-lock.json', lock.version); versions.set('installer/package-lock.json root', lock.packages?.['']?.version)
   }
+  let mobile = false
+  try { await access(resolve(base, 'mobile/package.json')); mobile = true } catch {}
+  if (mobile) {
+    versions.set('mobile/package.json', (await json(base, 'mobile/package.json')).version)
+    const lock = await json(base, 'mobile/package-lock.json')
+    versions.set('mobile/package-lock.json', lock.version); versions.set('mobile/package-lock.json root', lock.packages?.['']?.version)
+    const android = await readFile(resolve(base, 'mobile/android/app/build.gradle'), 'utf8')
+    versions.set('mobile Android versionName', android.match(/versionName\s+"([^"]+)"/)?.[1])
+    const ios = await readFile(resolve(base, 'mobile/ios/IzumiInstaller.xcodeproj/project.pbxproj'), 'utf8')
+    for (const [index, match] of [...ios.matchAll(/MARKETING_VERSION\s*=\s*([^;]+);/g)].entries()) versions.set('mobile iOS configuration ' + index, match[1])
+  }
   for (const [file, actual] of versions) if (actual !== version) throw new Error(`${file} is ${actual}; all release packages must be ${version}.`)
   if (tag && tag !== 'v' + version) throw new Error(`Release tag ${tag} does not match package version v${version}.`)
   return { version, tag: 'v' + version, installer }

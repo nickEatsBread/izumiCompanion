@@ -81,8 +81,12 @@ jobs:
             installer/dist/*.dmg
             installer/dist/*.AppImage
           if-no-files-found: error
+  mobile:
+    needs: packages
+    uses: ./.github/workflows/mobile.yml
+    secrets: inherit
   draft:
-    needs: [packages, installers]
+    needs: [packages, installers, mobile]
     runs-on: ubuntu-latest
     permissions:
       contents: write
