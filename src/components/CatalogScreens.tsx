@@ -1,4 +1,5 @@
 import {
+  ArrowDown,
   ArrowLeft,
   Bookmark,
   Captions,
@@ -734,8 +735,11 @@ export function SeriesScreen({
             </button>
           })}
         </div>
-        {contributors.length > 0 && <p class="contributor-entry-hint"><UserRound size={18} /><span>Down for Cast &amp; Crew</span></p>}
       </section>}
+
+      {view === 'overview' && !trailerOpen && contributors.length > 0 && <p class="contributor-entry-hint" aria-label="Press Down for Cast and Crew">
+        <span>Cast &amp; Crew</span><ArrowDown aria-hidden="true" />
+      </p>}
 
       {view === 'episodes' && <section class="series-library" aria-label={`${selected.title} episodes`}>
         <aside class="season-options" aria-label="Choose season">
@@ -1102,8 +1106,10 @@ export function DetailScreen({
             </button>
           ))}
         </div>
-        {(contributors.length > 0 || relations.length > 0) && <p class="contributor-entry-hint"><UserRound size={18} /><span>Down for {contributors.length ? 'Cast & Crew' : 'Similar Titles'}</span></p>}
       </section>
+      {focus.zone === 'detail' && !trailerOpen && (contributors.length > 0 || relations.length > 0) && <p class="contributor-entry-hint" aria-label={`Press Down for ${contributors.length ? 'Cast and Crew' : 'Similar Titles'}`}>
+        <span>{contributors.length ? 'Cast & Crew' : 'Similar Titles'}</span><ArrowDown aria-hidden="true" />
+      </p>}
       {media.poster && <img class="detail-poster" src={media.poster} alt="" />}
       {focus.zone === 'person' && contributors.length > 0 && <ContributorBrowser
         media={media}

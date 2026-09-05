@@ -2402,8 +2402,22 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 .contributor-strip > button.is-focused,
 .contributor-strip > button:hover { outline: 0; background: #232323; box-shadow: 0 0 0 .24vw #f4f4f1, 0 18px 42px rgba(0,0,0,.58); transform: translateY(-.7vh); }
 .contributor-hint { margin: .4vh 0 0; display: flex; align-items: center; gap: .5vw; color: #a8a8a8; font-size: .92vw; }
-.contributor-entry-hint { margin: 2.5vh 0 0; display: flex; align-items: center; gap: .5vw; color: #aaa; font-size: 1.15vw; font-weight: 650; }
-.contributor-entry-hint svg, .detail-reason svg { flex: 0 0 auto; width: 1.3vw; height: 1.3vw; }
+.contributor-entry-hint {
+  position: absolute;
+  z-index: 4;
+  bottom: 4.6vh;
+  left: 50%;
+  margin: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #bdbdbd;
+  font-size: 1.1vw;
+  font-weight: 650;
+}
+.contributor-entry-hint svg { width: 1.6vw; height: 1.6vw; margin-top: .65vh; }
+.detail-reason svg { flex: 0 0 auto; width: 1.3vw; height: 1.3vw; }
 
 .detail-screen.is-people .detail-copy { visibility: hidden; }
 .detail-screen.is-people .detail-poster { opacity: 0; }
@@ -6019,7 +6033,6 @@ body,
 .series-trailer-action > * + * { margin-left: .65vw; }
 .contributor-strip > button + button { margin-left: .78vw; }
 .contributor-hint > * + * { margin-left: .5vw; }
-.contributor-entry-hint > * + * { margin-left: .5vw; }
 .series-current > * + *,
 .loading-rating-copy > * + * { margin-top: .25vh; }
 .season-options > * + * { margin-left: .35vw; }
@@ -6116,7 +6129,6 @@ body,
   .series-trailer-hud header > * + *,
   .contributor-strip > button + button,
   .contributor-hint > * + *,
-  .contributor-entry-hint > * + *,
   .series-trailer-action > * + *,
   .series-current > * + *,
   .loading-rating-copy > * + *,
