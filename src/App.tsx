@@ -1,4 +1,6 @@
 import { DiscoveryScreen } from './components/DiscoveryScreen'
+import { UpdatePrompt, useUpdatePrompt } from './components/UpdatePrompt'
+import { launchUpdater } from './lib/updates'
 import { DISCOVERY_REMOTE, DISCOVERY_CHANGED } from './lib/discovery'
 import { ProfileScreen, PROFILE_REMOTE } from './components/ProfileScreen'
 import { PROFILES_CHANGED, tvHousehold, tvProfileReady, tvProfileId } from './lib/profiles'
@@ -406,6 +408,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [exitConfirmation, setExitConfirmation] = useState(false)
   const [exitFocus, setExitFocus] = useState(0)
   const [focusRestoreEpoch, setFocusRestoreEpoch] = useState(0)
+  const updatePrompt = useUpdatePrompt(
+    ['home', 'trending', 'series-home', 'movies', 'my-list', 'watch-history', 'settings', 'details', 'series'].includes(screen)
+      && navigationPhase === 'idle' && !trailerOpen && !exitConfirmation && !settingsConfirmation && !profilesOpen,
+    () => setFocusRestoreEpoch((value) => value + 1),
+  )
 
   const receiverRef = useRef<CompanionReceiver>()
   const tvLinkReceiverRef = useRef<TvLinkReceiver>()
@@ -1242,6 +1249,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     const element = document.querySelector<HTMLElement>(`[data-focus-id="${focusId(focus)}"]`)
+    if (updatePrompt.visible) return
     if (!element || ['ready', 'loading', 'player', 'postplay', 'error'].includes(screen)) return
     const previous = appliedFocusRef.current
     appliedFocusRef.current = { focus, screen }
@@ -2693,6 +2701,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         return
       }
       if (index === 7) return openIndependentSetup()
+      if (index === 10) { void launchUpdater(false).catch((error: Error) => showNotice(error.message)); return }
       setSettingsConfirmation(index === 8 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
       return
@@ -2734,11 +2743,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     } else if (focus.zone === 'setting') {
       if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
       else if (action === 'up') changeFocus({ zone: 'setting', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(9, focus.index + 1) })
+      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(10, focus.index + 1) })
     }
   }
 
   const handleRemote = (action: RemoteAction) => {
+    if (updatePrompt.handleRemote(action)) return
     if (profilesOpenRef.current) { window.dispatchEvent(new CustomEvent(PROFILE_REMOTE, { detail: action })); return }
     if (screen === 'discover') { window.dispatchEvent(new CustomEvent(DISCOVERY_REMOTE, { detail: action })); return }
     markRemoteInput(action)
@@ -3440,6 +3450,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       {navigationPhase !== 'idle' && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'settings'].includes(screen) && (
         <NavigationSkeleton screen={screen} leaving={navigationPhase === 'leaving'} />
       )}
+      <UpdatePrompt prompt={updatePrompt} />
       {exitConfirmation && (
         <ExitConfirmation
           focus={exitFocus}

@@ -1,0 +1,49 @@
+name: Build TV release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            updater/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix updater --ignore-scripts
+      - run: npm run check
+      - run: npm run build:all
+      - run: node scripts/package-companion.mjs
+      - run: node scripts/verify-release.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: izumi-tv-widgets
+          path: artifacts/*.wgt
+  draft:
+    needs: [packages]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Read release version
+        id: version
+        run: node -e "const fs=require('fs');const v=require('./updater/package.json').version;if(!/^\d+\.\d+\.\d+$/.test(v))throw Error('Invalid version');fs.appendFileSync(process.env.GITHUB_OUTPUT,'tag=v'+v+'\n')"
+      - name: Create a draft for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: gh release create "$RELEASE_TAG" release-assets/* --draft --target "$GITHUB_SHA" --title "izumi TV $RELEASE_TAG" --generate-notes

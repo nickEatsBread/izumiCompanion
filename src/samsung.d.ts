@@ -92,10 +92,16 @@ interface Window {
     voiceinteraction?: SamsungVoiceInteraction
   }
   tizen?: {
+    ApplicationControl?: new (operation: string, uri: string | null, mime: string | null, category: string | null, data: unknown[], launchMode: 'SINGLE' | 'GROUP') => unknown
+    ApplicationControlData?: new (key: string, value: string[]) => unknown
     VoiceControlCommand?: new (command: string, type?: 'FOREGROUND') => SamsungVoiceControlCommand
     tvinputdevice?: SamsungTvInputDevice
     tvaudiocontrol?: SamsungTvAudioControl
-    application?: { getCurrentApplication(): { exit(): void } }
+    application?: {
+      getCurrentApplication(): { exit(): void; appInfo?: { version: string } }
+      getAppInfo?(id: string): { id: string; version: string }
+      launchAppControl?(control: unknown, id: string, success: () => void, error: (error: { message?: string }) => void): void
+    }
     voicecontrol?: { getVoiceControlClient(): SamsungVoiceControlClient }
   }
   msf?: {

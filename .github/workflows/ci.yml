@@ -18,5 +18,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm ci --prefix updater --ignore-scripts
       - run: npm run check
-      - run: npm run build
+      - run: npm run build:all
+      - run: node scripts/package-companion.mjs
+      - run: node scripts/verify-release.mjs

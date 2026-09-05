@@ -1185,7 +1185,7 @@ async function main() {
     await capture('m56-post-play.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=settings` })
-    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 10")
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 11")
     await waitFor("!document.getElementById('startup-splash')")
     const settings = await evaluate(`(() => ({
       options: document.querySelectorAll('.settings-options > button').length,
@@ -1195,11 +1195,11 @@ async function main() {
       panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(settings.options === 10 && settings.toggles === 7, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.options === 11 && settings.toggles === 7, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
     assert(settings.videoPreviewLabel === 'Video previews' && settings.videoPreviewsEnabled === 'true', `Video-preview preference is missing or defaults incorrectly: ${JSON.stringify(settings)}.`)
     assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
     assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
-    for (let row = 0; row < 9; row += 1) await press('ArrowDown')
+    for (let row = 0; row < 10; row += 1) await press('ArrowDown')
     await waitFor("document.querySelector('.settings-panel').scrollTop > 0 && document.querySelector('.settings-options > button.is-focused').getBoundingClientRect().bottom <= document.querySelector('.settings-panel').getBoundingClientRect().bottom")
     const settingsScroll = await evaluate(`(() => {
       const panel = document.querySelector('.settings-panel').getBoundingClientRect()
@@ -1314,6 +1314,46 @@ async function main() {
     await waitFor("document.querySelector('.tv-discovery h1').textContent !== " + JSON.stringify(discoveryTitle))
     await press('Backspace')
     await waitFor("document.querySelector('.app-shell.screen-my-list')")
+
+    // Exercise the real packaged update dialog with a deterministic release and Tizen launcher.
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home` })
+    await waitFor("document.querySelector('.home-screen') && !document.getElementById('startup-splash')")
+    await evaluate(`(function () {
+      localStorage.removeItem('izumi.tv.update-dismissed');
+      window.tizen = {
+        ApplicationControl: function(operation, uri, mime, category, data, launchMode) { this.operation=operation; this.data=data; this.launchMode=launchMode; },
+        ApplicationControlData: function(key, value) { this.key=key; this.value=value; },
+        application: {
+          getCurrentApplication: function() { return { appInfo: { version: '0.2.34' }, exit: function() {} }; },
+          getAppInfo: function(id) { return { id:id, version:'0.2.35' }; },
+          launchAppControl: function(control, id, success) { window.__UPDATE_LAUNCH={control:control,id:id}; success(); }
+        }
+      };
+      var open=XMLHttpRequest.prototype.open, send=XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open=function(method,url) {
+        if(url==='https://api.github.com/repos/nickEatsBread/izumiCompanion/releases/latest') this.__updateFixture=true;
+        else return open.apply(this,arguments);
+      };
+      XMLHttpRequest.prototype.send=function() {
+        if(!this.__updateFixture) return send.apply(this,arguments);
+        Object.defineProperty(this,'status',{value:200});
+        Object.defineProperty(this,'responseText',{value:JSON.stringify({tag_name:'v0.2.35',assets:['izumi-companion.wgt','izumi-updater.wgt'].map(function(name){return {name:name,digest:'sha256:'+'a'.repeat(64),browser_download_url:'https://github.com/nickEatsBread/izumiCompanion/releases/download/v0.2.35/'+name};})})});
+        var xhr=this; setTimeout(function(){if(xhr.onload)xhr.onload();},10);
+      };
+      document.dispatchEvent(new Event('visibilitychange'));
+    })()`)
+    await waitFor("document.querySelector('.tv-update-dialog')")
+    const updateGeometry = await evaluate(`(function(){var d=document.querySelector('.tv-update-dialog').getBoundingClientRect();return {width:d.width,bottom:d.bottom,buttons:Array.from(document.querySelectorAll('.tv-update-actions button')).map(function(b){return {text:b.textContent,width:b.clientWidth,content:b.scrollWidth};})};})()`)
+    assert(updateGeometry.width >= 900 && updateGeometry.bottom < 1080 && updateGeometry.buttons.every((button) => button.content <= button.width), 'Update dialog or button text is clipped: ' + JSON.stringify(updateGeometry))
+    await press('ArrowRight')
+    assert(await evaluate("document.activeElement.textContent === 'Later'"), 'Update dialog did not capture remote focus.')
+    await press('ArrowLeft')
+    await capture('m56-update-prompt.png')
+    await press('Enter')
+    await waitFor("window.__UPDATE_LAUNCH && !document.querySelector('.tv-update-dialog')")
+    const updateLaunch = await evaluate('window.__UPDATE_LAUNCH')
+    assert(updateLaunch.id === 'IzumiUP001.Updater' && updateLaunch.control.launchMode === 'SINGLE' && updateLaunch.control.data[0].value[0] === 'install-and-return', 'Update now did not launch the helper with the return intent.')
+    await waitFor("document.activeElement.hasAttribute('data-focus-id')")
 
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))

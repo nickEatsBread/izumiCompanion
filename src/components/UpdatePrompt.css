@@ -1,0 +1,7 @@
+.tv-update-backdrop{position:fixed;top:0;right:0;bottom:0;left:0;z-index:1800;display:flex;align-items:center;justify-content:center;background:rgba(5,5,9,.86)}
+.tv-update-dialog{width:980px;padding:64px;border:2px solid #635260;border-radius:26px;background:#211c24;box-shadow:0 30px 100px rgba(0,0,0,.4)}
+.tv-update-eyebrow{margin:0 0 22px;font-size:20px;font-weight:800;letter-spacing:3px;color:#e6abcd}
+.tv-update-dialog h2{margin:0 0 24px;font-size:49px;line-height:1.2;color:#fff}
+.tv-update-dialog #tv-update-message{min-height:88px;margin:0;font-size:28px;line-height:1.5;color:#d9cfd9}
+.tv-update-actions{display:flex;margin-top:42px}.tv-update-actions button{min-width:225px;min-height:82px;padding:18px 28px;border:3px solid transparent;border-radius:12px;background:#39313f;color:#fff;font:800 27px 'Nunito Sans',sans-serif;white-space:normal}
+.tv-update-actions button+button{margin-left:22px}.tv-update-actions button:first-child{background:#e6abcd;color:#21131e}.tv-update-actions button.is-focused,.tv-update-actions button:focus{outline:none;border-color:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.2)}.tv-update-actions button:disabled{opacity:.65}

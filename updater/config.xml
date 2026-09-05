@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://github.com/nickEatsBread/izumiCompanion/updater" version="0.2.36" viewmodes="maximized">
+  <tizen:application id="IzumiUP001.Updater" package="IzumiUP001" required_version="3.0"/>
+  <content src="index.html"/>
+  <tizen:app-control>
+    <tizen:src name="index.html" reload="disable"/>
+    <tizen:operation name="http://tizen.org/appcontrol/operation/view"/>
+  </tizen:app-control>
+  <name>izumi Updater</name>
+  <icon src="icon.png"/>
+  <feature name="http://tizen.org/feature/screen.size.all"/>
+  <feature name="http://tizen.org/feature/web.service"/>
+  <access origin="*" subdomains="true"/>
+  <tizen:profile name="tv-samsung"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
+  <tizen:privilege name="http://tizen.org/privilege/filesystem.read"/>
+  <tizen:privilege name="http://tizen.org/privilege/filesystem.write"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/network.public"/>
+  <tizen:service id="IzumiUP001.Service">
+    <tizen:content src="service/index.js"/>
+    <tizen:name>izumi Update Service</tizen:name>
+    <tizen:description>Verifies and installs izumi Companion updates.</tizen:description>
+  </tizen:service>
+  <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="enable" encryption="disable" install-location="auto" hwkey-event="enable"/>
+</widget>

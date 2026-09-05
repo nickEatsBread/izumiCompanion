@@ -39,6 +39,7 @@ A Samsung Tizen companion for browsing and playing from a paired izumi client.
 - **Simple pairing** — scan the on-screen QR code or enter its short pairing code from izumi on desktop.
 - **Useful browser preview** — test every major state with a mouse, keyboard, or the built-in screen switcher before packaging for a television.
 - **Older-TV support** — legacy JavaScript chunks, prefixed CSS, and fallbacks target the older Chromium engine used by Tizen 2.3 televisions.
+- **TV update support** — a desktop installer bootstraps Companion and a separate updater, with an in-app update prompt and preserved Samsung signing identity. See [setup, release instructions and hardware verification](docs/tv-updater.md).
 
 ## Device support
 

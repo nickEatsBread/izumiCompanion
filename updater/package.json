@@ -1,0 +1,16 @@
+{
+  "name": "@izumi/tv-updater",
+  "version": "0.2.36",
+  "private": true,
+  "description": "Standalone Samsung Tizen update service and shared signing runtime",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.11",
+    "jszip": "^3.10.1",
+    "node-forge": "^1.4.0",
+    "tizen": "https://github.com/reisxd/tizen.js/archive/45b00106149d0c8eff74ead4a979c909dd80efd6.tar.gz"
+  }
+}

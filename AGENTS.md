@@ -6,8 +6,9 @@
 - The full izumi desktop/mobile client is the sibling `anAnimeThemeForStremio` repository. Do not
   copy the TV source tree back into that repository.
 - The sibling `izumi-companion` directory (with a hyphen) is legacy installer tooling, not the TV
-  application source. Its tested signing/transport code is currently used for local physical-TV
-  deployment.
+  application source. Shared signing and transport source lives in `updater/runtime/` here.
+- The desktop `installer/` is currently local work awaiting review. Do not add it to commits.
+- Commit as `nickEatsBread <281274910+nickEatsBread@users.noreply.github.com>`.
 - Preserve unrelated working-tree changes and commit focused changes in this repository.
 
 ## Verification and build
@@ -16,8 +17,9 @@ Run from this repository root:
 
 ```powershell
 npm install
+npm ci --prefix updater
 npm run check
-npm run build
+npm run build:all
 powershell -ExecutionPolicy Bypass -File .\scripts\package-tizen.ps1
 ```
 
@@ -31,6 +33,8 @@ existing TV pairing/storage upgrade path.
 
 ## Deploying to the development TV
 
+- Current updater test: deploy only `izumi-updater.wgt`. Keep Companion at 0.2.35
+  so the helper can install 0.2.36. Push and GitHub publication are on hold for user review.
 - Last-known TV address: `192.0.2.10`.
 - The TV's Developer Mode Host PC IP must match this workstation's current Wi-Fi IPv4 address
   (`Get-NetIPAddress -InterfaceAlias 'Wi-Fi' -AddressFamily IPv4`). The last-known value is
@@ -41,16 +45,23 @@ existing TV pairing/storage upgrade path.
 - Saved TV-specific signing material is under
   `$env:APPDATA\izumi-tv-installer\samsung-certificates`. Never commit or copy it into this repo.
 
-After packaging, install with the tested local installer helper:
+After packaging, install Companion without launching it:
 
 ```powershell
-node ..\izumi-companion\installer\src\install-only.cjs `
+node installer\src\install-only.cjs `
   --ip 192.0.2.10 `
   --package "$PWD\artifacts\izumi-companion.wgt" `
   --certificate-dir "$env:APPDATA\izumi-tv-installer\samsung-certificates"
 ```
 
 That helper signs for the connected TV and verifies the installed package. It deliberately does not
-launch automatically. Launch `IzumiTV001.IzumiTV` from the TV Apps screen, or use the legacy
+launch automatically. Launch `IzumiTV001.IzumiTV` from the TV Apps screen, or use the desktop
 installer UI's Launch action after installation. Confirm the TV opens the newly built pairing/home
 screen before reporting deployment complete.
+
+For Companion plus updater installation and provisioning, use `installer/src/setup-local.cjs`
+from the local desktop tooling as documented in `docs/tv-updater.md`. That tooling is not yet
+committed. The first transfer requires the code shown on the TV.
+Do not change Developer Mode Host PC IP to loopback until provisioning has been confirmed;
+doing so earlier prevents the desktop from finishing installation. Never report an end-to-end
+on-TV update as tested until the loopback installation and Companion relaunch have actually run.

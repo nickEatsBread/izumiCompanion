@@ -1177,7 +1177,8 @@ export function SettingsScreen({
     { title: 'Keep the current source', detail: 'Prefer the same provider when the next episode is available.', icon: History, enabled: playbackSettings.preferBingeSource },
     { title: 'Use TV without izumi open', detail: independentReady ? 'Connected to your private Worker and ready for independent playback.' : 'One-time setup for private sync and most compatible sources.', icon: Cloud },
     { title: 'Unpair this TV', detail: 'Disconnect this TV from your izumi sync group.', icon: Link2Off },
-    { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
+      { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
+      { title: 'App updates', detail: 'Open izumi Updater to check and install the latest TV version.', icon: RotateCcw },
   ]
   return (
     <main class="utility-screen settings-screen">
