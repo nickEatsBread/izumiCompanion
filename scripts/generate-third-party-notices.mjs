@@ -46,6 +46,13 @@ entries.push({
   ).trim(),
 })
 
+entries.push({
+  name: 'ISO 639-2 language registry (wooorm/iso-639-2)',
+  version: '2026-09-05',
+  licence: 'MIT',
+  text: (await readFile(resolve(project, 'src/shared/iso-639-2-LICENSE.txt'), 'utf8')).trim(),
+})
+
 entries.sort((left, right) => left.name.localeCompare(right.name))
 
 const sections = entries.map(
