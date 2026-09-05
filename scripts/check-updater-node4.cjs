@@ -96,5 +96,15 @@ try {
   }).then(function (result) {
     assert.equal(result.status, 403)
     return get(18763, '/state', fs.readFileSync(path.join(privateDir, 'api-token'), 'utf8'))
-  }).then(function (result) { assert.equal(result.status, 200); finish() }).catch(finish)
+  }).then(function (result) {
+    assert.equal(result.status, 200)
+    service.exports.onRequest()
+    return delay(750).then(waitForSetup)
+  }).then(function (result) {
+    assert.notEqual(result.value.challenge, handshake.challenge, 'Reopening must renew setup')
+    return get(18763, '/state', fs.readFileSync(path.join(privateDir, 'api-token'), 'utf8'))
+  }).then(function (result) {
+    assert(!/EADDRINUSE/.test(result.value.message), result.value.message)
+    finish()
+  }).catch(finish)
 } catch (error) { finish(error) }

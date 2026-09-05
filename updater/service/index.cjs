@@ -5,6 +5,7 @@ const http = require('http')
 const crypto = require('crypto')
 const forge = require('node-forge')
 const { Sdb, installationProgress } = require('../runtime/sdb.cjs')
+const { connectToTV } = require('../runtime/tv-connection.cjs')
 const releases = require('../runtime/releases.cjs')
 const { signWidget, validateCertificate, authorFingerprint } = require('../runtime/widget.cjs')
 const { decryptSetup, parseSetupTransfer, SETUP_PATH, PUBLIC_PATH, RECEIPT_PATH } = require('../runtime/provisioning.cjs')
@@ -39,8 +40,8 @@ function publishState() {
 }
 async function connect() {
   if (transport) return transport
-  try { transport = await Sdb.connect('127.0.0.1'); return transport }
-  catch (_) { throw new Error('Finish TV update setup: open Apps, enter 12345, set Developer Mode Host PC IP to 127.0.0.1, then restart the TV. To repair from a computer, set it back to that computer’s IP.') }
+  try { transport = await connectToTV(Sdb); return transport }
+  catch (error) { throw new Error('Could not connect to the TV installation service: ' + error.message + ' Your saved signing identity is still present. Check Developer Mode Host PC IP is 127.0.0.1 and restart the TV by holding remote Power for at least 5 seconds, then pressing Power again if it stays off.') }
 }
 async function preflight() {
   if (!certificate) throw new Error('Connect the izumi desktop installer once to set up TV updates.')
@@ -189,7 +190,7 @@ module.exports.onRequest = () => {
   if (!engine || engine.busy || setupStarting) return
   if (setupTimer) clearInterval(setupTimer)
   const restart = () => startSetup().catch((error) => engine.report('setup-error', error.message))
-  if (setupServer && setupServer.listening) setupServer.close(restart)
+  if (setupServer && setupServer.address()) setupServer.close(restart)
   else restart()
 }
 module.exports.onStop = () => { if (server) server.close(); if (setupServer) setupServer.close(); if (setupTimer) clearInterval(setupTimer); if (transport) transport.close() }
