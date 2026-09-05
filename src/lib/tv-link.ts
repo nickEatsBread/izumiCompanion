@@ -2,6 +2,7 @@ import type { CompanionCloudflareTransport } from '../types'
 
 const RELAY_URL = 'wss://tv-link.izumi.watch/v1/pair'
 const ROOM_LIFETIME_MS = 10 * 60_000
+const APPROVED_SETUP_LIFETIME_MS = 30 * 60_000
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{16,80}$/
@@ -257,7 +258,10 @@ export class TvLinkReceiver {
   private info: TvLinkInfo = { code: '', expiresAt: 0, phase: 'preparing' }
   private reconnectTimer?: number
   private expiryTimer?: number
+  private heartbeatTimer?: number
   private generation = 0
+  private handshake = 0
+  private approvedExpiresAt = 0
   private pairingChallenge = ''
   private linkSecret = ''
   private pairingTicket = ''
@@ -279,8 +283,10 @@ export class TvLinkReceiver {
     this.generation += 1
     if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer)
     if (this.expiryTimer) window.clearTimeout(this.expiryTimer)
+    if (this.heartbeatTimer) window.clearInterval(this.heartbeatTimer)
     this.reconnectTimer = undefined
     this.expiryTimer = undefined
+    this.heartbeatTimer = undefined
     const socket = this.socket
     this.socket = undefined
     try { socket?.close(1000, 'TV setup closed') } catch { /* already closed */ }
@@ -295,6 +301,10 @@ export class TvLinkReceiver {
   approveSession(): boolean {
     if (this.stopped || this.finished || this.info.phase !== 'confirming' || !this.session) return false
     this.session.approved = true
+    // The short invitation lifetime must not cut off an already approved setup wizard.
+    if (!this.approvedExpiresAt) this.approvedExpiresAt = Date.now() + APPROVED_SETUP_LIFETIME_MS
+    this.update({ expiresAt: this.approvedExpiresAt })
+    this.scheduleExpiry()
     this.send({ type: 'tv.confirmed', protocol: 2, sessionId: this.session.id })
     this.update({
       phase: 'approved',
@@ -319,10 +329,16 @@ export class TvLinkReceiver {
     const generation = ++this.generation
     if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer)
     if (this.expiryTimer) window.clearTimeout(this.expiryTimer)
+    if (this.heartbeatTimer) window.clearInterval(this.heartbeatTimer)
+    this.reconnectTimer = undefined
+    this.expiryTimer = undefined
+    this.heartbeatTimer = undefined
     const socket = this.socket
     this.socket = undefined
     try { socket?.close(1000, 'Pairing code refreshed') } catch { /* already closed */ }
     this.session = undefined
+    this.handshake += 1
+    this.approvedExpiresAt = 0
     this.installing = false
     const code = createTvLinkCode()
     const linkSecret = createTvLinkSecret()
@@ -341,12 +357,20 @@ export class TvLinkReceiver {
       this.publicKey = publicKey
       this.pairingTicket = pairingTicket
       this.update({ phase: 'waiting', message: 'Scan the QR code or enter the TV code on your phone.' })
-      this.expiryTimer = window.setTimeout(() => { if (!this.stopped && !this.finished) void this.startRound() }, ROOM_LIFETIME_MS)
+      this.scheduleExpiry()
       this.connect(generation)
     } catch (error) {
       if (this.stopped || generation !== this.generation) return
       this.update({ phase: 'error', message: error instanceof Error ? error.message : 'This TV could not create a secure setup link.' })
     }
+  }
+
+  private scheduleExpiry(): void {
+    if (this.expiryTimer) window.clearTimeout(this.expiryTimer)
+    this.expiryTimer = window.setTimeout(() => {
+      this.expiryTimer = undefined
+      if (!this.stopped && !this.finished) void this.startRound()
+    }, Math.max(0, this.info.expiresAt - Date.now()))
   }
 
   private connect(generation: number): void {
@@ -362,10 +386,16 @@ export class TvLinkReceiver {
       if (this.socket !== socket || generation !== this.generation) return
       this.update({ phase: 'waiting', message: 'Scan the QR code or enter the TV code on your phone.' })
       this.sendHello()
+      this.heartbeatTimer = window.setInterval(() => this.send({ type: 'ping' }), 20_000)
     })
     socket.addEventListener('message', (event) => { if (this.socket === socket) void this.receive(event.data) })
     socket.addEventListener('close', () => {
-      if (this.socket === socket) this.socket = undefined
+      if (this.socket !== socket) return
+      this.socket = undefined
+      if (this.heartbeatTimer) window.clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = undefined
+      this.session = undefined
+      this.handshake += 1
       if (!this.stopped && !this.finished && generation === this.generation) this.scheduleReconnect(generation)
     })
     socket.addEventListener('error', () => {
@@ -413,15 +443,22 @@ export class TvLinkReceiver {
       if (message.connected === true) {
         this.update({ phase: 'phone-connected', message: 'Phone connected. Creating matching confirmation numbers…' })
         this.sendHello()
-      } else if (this.session) void this.startRound()
-      else this.update({ phase: 'waiting', message: 'Scan the QR code or enter the TV code on your phone.' })
+      } else {
+        // A phone may suspend its socket while the viewer fetches a token in another app.
+        // Keep the invitation until expiry, but require fresh approval when it reconnects.
+        this.session = undefined
+        this.handshake += 1
+        this.update({ phase: 'waiting', confirmation: undefined, message: 'Phone disconnected. Reconnect from the setup page to continue.' })
+      }
       return
     }
     if (message.type === 'browser.hello') {
       if (!this.privateKey) return
+      const generation = this.generation
+      const handshake = ++this.handshake
       try {
         const session = await deriveTvLinkSession(this.privateKey, this.info.code, this.pairingChallenge, this.linkSecret, message)
-        if (this.stopped || this.finished) return
+        if (this.stopped || this.finished || generation !== this.generation || handshake !== this.handshake) return
         this.session = session
         this.update({
           phase: 'confirming',
@@ -429,6 +466,7 @@ export class TvLinkReceiver {
           message: 'Check that this number matches your phone before you deploy.',
         })
       } catch {
+        if (this.stopped || this.finished || generation !== this.generation || handshake !== this.handshake) return
         this.update({ phase: 'error', message: 'The phone could not establish a secure session. Creating a new code…' })
         window.setTimeout(() => { if (!this.stopped && !this.finished) void this.startRound() }, 900)
       }
@@ -441,16 +479,21 @@ export class TvLinkReceiver {
       return
     }
     this.installing = true
+    const session = this.session
+    const generation = this.generation
     this.update({ phase: 'installing', message: 'Verifying and saving your private Cloudflare Worker…' })
     try {
-      const transport = await decryptTvLinkSetup(this.session, this.info.code, this.pairingChallenge, message)
+      const transport = await decryptTvLinkSetup(session, this.info.code, this.pairingChallenge, message)
+      if (this.stopped || generation !== this.generation) return
       await verifyWorker(transport)
+      if (this.stopped || generation !== this.generation) return
       await this.events.onSetup(transport)
       if (this.stopped || this.finished) return
-      this.send({ type: 'tv.complete', protocol: 2, sessionId: this.session.id })
+      this.send({ type: 'tv.complete', protocol: 2, sessionId: session.id })
       this.finished = true
       if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer)
       if (this.expiryTimer) window.clearTimeout(this.expiryTimer)
+      if (this.heartbeatTimer) window.clearInterval(this.heartbeatTimer)
       this.update({ phase: 'complete', message: 'Setup complete. Loading your Cloudflare catalogue…' })
       window.setTimeout(() => {
         const socket = this.socket
@@ -458,8 +501,9 @@ export class TvLinkReceiver {
         try { socket?.close(1000, 'TV setup complete') } catch { /* already closed */ }
       }, 500)
     } catch (error) {
+      if (this.stopped || generation !== this.generation) return
       const messageText = error instanceof Error ? error.message : 'The TV could not save the Cloudflare setup.'
-      this.send({ type: 'tv.error', protocol: 2, sessionId: this.session.id, message: messageText.slice(0, 240) })
+      this.send({ type: 'tv.error', protocol: 2, sessionId: session.id, message: messageText.slice(0, 240) })
       this.update({ phase: 'error', message: messageText })
       this.installing = false
     }
