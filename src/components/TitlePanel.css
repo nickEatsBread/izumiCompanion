@@ -1,0 +1,50 @@
+.title-panel-backdrop {
+  position: absolute;
+  z-index: 110;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .8);
+}
+
+.title-panel {
+  width: 68vw;
+  padding: 3vw;
+  border-radius: .45vw;
+  background: #181818;
+  box-shadow: 0 1.5vw 5vw rgba(0, 0, 0, .5);
+}
+
+.title-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2.5vh; }
+.title-panel-header h2 { margin: 0; font-size: 2.3vw; line-height: 1.2; letter-spacing: -.025em; }
+.title-panel button { color: #f5f5f5; border: 0; cursor: pointer; }
+.title-panel-close { display: flex; align-items: center; justify-content: center; flex: 0 0 3.5vw; width: 3.5vw; height: 3.5vw; padding: 0; border-radius: 50%; background: #353535; }
+.title-panel-close svg { width: 1.8vw; height: 1.8vw; }
+.title-panel button.is-focused { outline: .16vw solid #fff; outline-offset: .3vw; }
+.title-panel-close.is-focused { color: #111; background: #fff; }
+.title-panel button:active { transform: scale(.98); }
+.title-panel-body { height: 49vh; padding-right: 2vw; overflow-y: auto; overflow-wrap: break-word; }
+.title-panel-body::-webkit-scrollbar { width: .35vw; }
+.title-panel-body::-webkit-scrollbar-track { background: #303030; }
+.title-panel-body::-webkit-scrollbar-thumb { border-radius: .2vw; background: #999; }
+.title-panel-body h3 { margin: 0 0 1.5vh; font-size: 2.4vw; line-height: 1.2; }
+.title-panel-meta, .title-panel-genres { color: #aaa; font-size: 1.25vw; line-height: 1.5; }
+.title-panel-description { margin: 2vh 0 0; color: #e5e5e5; font-size: 1.65vw; line-height: 1.55; white-space: pre-line; }
+.title-panel-footer { margin-top: 3vh; display: flex; align-items: center; justify-content: space-between; color: #bdbdbd; font-size: 1.15vw; }
+.title-panel-scroll { display: flex; align-items: center; }
+.title-panel-scroll svg { width: 1.35vw; height: 1.35vw; margin-right: .5vw; color: #555; }
+.title-panel-scroll svg.is-available { color: #fff; }
+.title-panel.is-rating { width: 47vw; }
+.title-panel-rating-title { margin: 0; color: #bdbdbd; font-size: 1.35vw; line-height: 1.4; max-height: 3.8vw; overflow: hidden; }
+.title-rating-choices { display: flex; margin: 4vh 0 1vh; }
+.title-rating-choices button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 2.4vh 1vw; border-radius: .3vw; background: #242424; }
+.title-rating-choices button + button { margin-left: 1.2vw; }
+.title-rating-icon { width: 4.8vw; height: 4.8vw; display: flex; align-items: center; justify-content: center; border: .12vw solid #888; border-radius: 50%; }
+.title-rating-icon svg { width: 2.4vw; height: 2.4vw; }
+.title-rating-choices strong { margin-top: 1.8vh; font-size: 1.5vw; white-space: nowrap; }
+.title-rating-choices small { margin-top: .8vh; color: #aaa; font-size: 1vw; white-space: nowrap; }
+.title-rating-choices .is-focused .title-rating-icon, .title-rating-choices .is-selected .title-rating-icon { color: #161616; background: #fff; border-color: #fff; }

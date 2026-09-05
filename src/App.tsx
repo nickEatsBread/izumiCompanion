@@ -29,6 +29,7 @@ import {
 } from './components/CatalogScreens'
 import { HomeScreen, trailerNeedsEnglishCaptions } from './components/HomeScreen'
 import { NavigationSkeleton } from './components/NavigationSkeleton'
+import { TitlePanel, TITLE_PANEL_REMOTE, type TitlePanelKind } from './components/TitlePanel'
 import { PreviewToolbar } from './components/PreviewToolbar'
 import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, StandaloneLinkScreen, type IndependentSetupPhase } from './components/StateScreens'
 import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRail'
@@ -59,7 +60,7 @@ import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { TvLinkReceiver, type TvLinkInfo } from './lib/tv-link'
 import { installVoiceSearch } from './lib/voice-search'
-import { mediaRatingKey, readMediaRatings, writeMediaRating, type MediaRating } from './lib/media-rating'
+import { hasStartedWatching, mediaRatingKey, readMediaRatings, writeMediaRating, type MediaRating } from './lib/media-rating'
 import {
   activeSkipSegment,
   nextEpisodeFor,
@@ -402,6 +403,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [catalogMenuFocus, setCatalogMenuFocus] = useState(0)
   const [navigationPhase, setNavigationPhase] = useState<'idle' | 'loading' | 'leaving'>('idle')
   const [trailerOpen, setTrailerOpen] = useState(false)
+  const [titlePanel, setTitlePanel] = useState<TitlePanelKind | null>(null)
   const [trailerSource, setTrailerSource] = useState<{ requestId?: string; url: string }>()
   const [trailerError, setTrailerError] = useState('')
   const [homeTrailerPreview, setHomeTrailerPreview] = useState<{ mediaKey: string; requestId?: string; url: string }>()
@@ -410,7 +412,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [focusRestoreEpoch, setFocusRestoreEpoch] = useState(0)
   const updatePrompt = useUpdatePrompt(
     ['home', 'trending', 'series-home', 'movies', 'my-list', 'watch-history', 'settings', 'details', 'series'].includes(screen)
-      && navigationPhase === 'idle' && !trailerOpen && !exitConfirmation && !settingsConfirmation && !profilesOpen,
+      && navigationPhase === 'idle' && !trailerOpen && !titlePanel && !exitConfirmation && !settingsConfirmation && !profilesOpen,
     () => setFocusRestoreEpoch((value) => value + 1),
   )
 
@@ -480,6 +482,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const focusRef = useRef<FocusLocation>(focus)
   const screenRef = useRef<ScreenName>(screen)
   const appliedFocusRef = useRef<{ focus: FocusLocation; screen: ScreenName }>()
+  const lastTitleActionRef = useRef({ detail: 0, series: 0 })
   const remoteHandlerRef = useRef<(action: RemoteAction) => void>()
   const seekHoldKeyDownRef = useRef<(action: RemoteAction, repeated: boolean) => boolean>()
   const seekHoldKeyUpRef = useRef<(action: RemoteAction) => void>()
@@ -500,6 +503,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const setFocusLocation = (next: FocusLocation) => {
     focusRef.current = next
+    if (next.zone === 'detail') lastTitleActionRef.current.detail = next.index
+    if (next.zone === 'series-action') lastTitleActionRef.current.series = next.index
     setFocus((current) => focusId(current) === focusId(next) ? current : next)
   }
 
@@ -1249,7 +1254,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     const element = document.querySelector<HTMLElement>(`[data-focus-id="${focusId(focus)}"]`)
-    if (updatePrompt.visible) return
+    if (updatePrompt.visible || titlePanel) return
     if (!element || ['ready', 'loading', 'player', 'postplay', 'error'].includes(screen)) return
     const previous = appliedFocusRef.current
     appliedFocusRef.current = { focus, screen }
@@ -1393,6 +1398,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const openDetails = (media: CompanionMedia) => {
+    media = mediaWithPlaybackProgress(media, snapshotRef.current)
     closeTrailer()
     pushCurrentNavigation()
     setSelected(media)
@@ -1646,6 +1652,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     return () => window.clearTimeout(timer)
   }, [focusedHomeMediaKey, focusedHomeMedia?.title, focusedHomeMedia?.trailer?.id, focusedHomeMedia?.trailer?.site, focusedHomeMedia?.trailer?.language, playbackSettings.videoPreviewsEnabled, screen, showPreviewTools])
   const allMedia = collections.search
+  const selectedCanRate = hasStartedWatching(selected, snapshot)
+  const activeTitlePanel = (screen === 'details' || screen === 'series') && titlePanel
+  const closeTitlePanel = () => {
+    setTitlePanel(null)
+    setFocusRestoreEpoch((value) => value + 1)
+  }
+  const openTitlePanel = (kind: TitlePanelKind) => {
+    if (kind !== 'rating' || selectedCanRate) setTitlePanel(kind)
+  }
+  useEffect(() => { setTitlePanel(null) }, [screen, selected.ref.provider, selected.ref.type, selected.ref.id])
   const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
   const ratingFor = (media: CompanionMedia): MediaRating | undefined => mediaRatings[mediaRatingKey(media)]?.value
   const rateMedia = (media: CompanionMedia, value: MediaRating, toggle = true) => {
@@ -2470,9 +2486,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       openTrailer(selected)
       return
     }
-    if (action === 'like' || action === 'dislike') {
-      rateMedia(selected, action === 'like' ? 'up' : 'down')
-      showNotice(action === 'like' ? 'Rating updated' : 'Recommendations adjusted')
+    if (action === 'info' || action === 'rate') {
+      openTitlePanel(action === 'info' ? 'info' : 'rating')
       return
     }
     if (action === 'relations' && relatedTitlesFor(selected).length) changeFocus({ zone: 'relation', index: 0 })
@@ -2481,20 +2496,20 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const moveSeriesFocus = (action: RemoteAction) => {
     const focus = focusRef.current
     const counts = episodeCountsFor(selected)
-    const overviewActions = seriesOverviewActionsFor(selected)
+    const overviewActions = seriesOverviewActionsFor(selected, selectedCanRate)
     if (focus.zone === 'series-action') {
-      if (action === 'up') changeFocus({ zone: 'series-action', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') {
-        if (focus.index >= overviewActions.length - 1 && contributorsFor(selected).length) changeFocus({ zone: 'person', index: 0 })
-        else changeFocus({ zone: 'series-action', index: Math.min(overviewActions.length - 1, focus.index + 1) })
-      }
+      if (action === 'left') changeFocus({ zone: 'series-action', index: Math.max(0, focus.index - 1) })
+      else if (action === 'right') changeFocus({ zone: 'series-action', index: Math.min(overviewActions.length - 1, focus.index + 1) })
+      else if (action === 'down' && contributorsFor(selected).length) changeFocus({ zone: 'person', index: 0 })
+      else if (action === 'down' && counts.length) changeFocus({ zone: 'episode', index: 0 })
+      else if (action === 'down' && relatedTitlesFor(selected).length) changeFocus({ zone: 'relation', index: 0 })
       return
     }
     if (focus.zone === 'person') {
       const contributors = contributorsFor(selected)
       if (action === 'left') return changeFocus({ zone: 'person', index: Math.max(0, focus.index - 1) })
       if (action === 'right') return changeFocus({ zone: 'person', index: Math.min(contributors.length - 1, focus.index + 1) })
-      if (action === 'up') return changeFocus({ zone: 'series-action', index: overviewActions.length - 1 })
+      if (action === 'up') return changeFocus({ zone: 'series-action', index: Math.min(lastTitleActionRef.current.series, overviewActions.length - 1) })
       return
     }
     if (!counts.length && focus.zone !== 'relation') return
@@ -2753,6 +2768,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (screen === 'discover') { window.dispatchEvent(new CustomEvent(DISCOVERY_REMOTE, { detail: action })); return }
     markRemoteInput(action)
     const focus = focusRef.current
+    if (activeTitlePanel) {
+      window.dispatchEvent(new CustomEvent<RemoteAction>(TITLE_PANEL_REMOTE, { detail: action }))
+      return
+    }
     if (exitConfirmation) {
       if (action === 'left' || action === 'up') setExitFocus(0)
       else if (action === 'right' || action === 'down') setExitFocus(1)
@@ -2814,7 +2833,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (screen === 'series') {
       if (['up', 'down', 'left', 'right'].includes(action)) moveSeriesFocus(action)
       else if (action === 'select') {
-        if (focus.zone === 'series-action') activateSeriesOverviewAction(seriesOverviewActionsFor(selected)[focus.index] ?? 'play')
+        if (focus.zone === 'series-action') activateSeriesOverviewAction(seriesOverviewActionsFor(selected, selectedCanRate)[focus.index] ?? 'play')
         else if (focus.zone === 'series-season') changeFocus({ zone: 'episode', index: 0 })
         else if (focus.zone === 'episode') playSeriesEpisode(focus.index)
         else if (focus.zone === 'relation') {
@@ -2826,10 +2845,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           if (person) openPersonSearch(person)
         }
       } else if (action === 'back') {
-        const actions = seriesOverviewActionsFor(selected)
+        const actions = seriesOverviewActionsFor(selected, selectedCanRate)
         if (focus.zone === 'series-season' || focus.zone === 'episode') changeFocus({ zone: 'series-action', index: Math.max(0, actions.indexOf('episodes')) })
         else if (focus.zone === 'relation') changeFocus({ zone: 'series-action', index: Math.max(0, actions.indexOf('relations')) })
-        else if (focus.zone === 'person') changeFocus({ zone: 'series-action', index: actions.length - 1 })
+        else if (focus.zone === 'person') changeFocus({ zone: 'series-action', index: Math.min(lastTitleActionRef.current.series, actions.length - 1) })
         else {
           if (!restorePreviousNavigation()) restoreHomeNavigation()
         }
@@ -2873,13 +2892,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (screen === 'details') {
-      const actions = detailActionsFor(selected)
+      const actions = detailActionsFor(selected, selectedCanRate)
       const contributors = contributorsFor(selected)
       const relations = relatedTitlesFor(selected)
       if (focus.zone === 'person') {
         if (action === 'left') changeFocus({ zone: 'person', index: Math.max(0, focus.index - 1) })
         else if (action === 'right') changeFocus({ zone: 'person', index: Math.min(contributors.length - 1, focus.index + 1) })
-        else if (action === 'up' || action === 'back') changeFocus({ zone: 'detail', index: 0 })
+        else if (action === 'up' || action === 'back') changeFocus({ zone: 'detail', index: Math.min(lastTitleActionRef.current.detail, actions.length - 1) })
         else if (action === 'down' && relations.length) changeFocus({ zone: 'relation', index: 0 })
         else if (action === 'select' && contributors[focus.index]) openPersonSearch(contributors[focus.index])
         return
@@ -2902,10 +2921,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         const selectedAction = actions[focus.index] ?? 'play'
         if (selectedAction === 'play') playMedia(selected)
         else if (selectedAction === 'trailer') openTrailer(selected)
-        else if (selectedAction === 'like' || selectedAction === 'dislike') {
-          rateMedia(selected, selectedAction === 'like' ? 'up' : 'down')
-          showNotice(selectedAction === 'like' ? 'Rating updated' : 'Recommendations adjusted')
-        }
+        else if (selectedAction === 'info' || selectedAction === 'rate') openTitlePanel(selectedAction === 'info' ? 'info' : 'rating')
         else closeDetails()
       }
       else if (action === 'back') closeDetails()
@@ -3207,7 +3223,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onRelationFocus={(index) => changeFocus({ zone: 'relation', index })}
           onRelationSelect={selectRelatedMedia}
           rating={ratingFor(selected)}
-          onRate={(value) => rateMedia(selected, value)}
+          canRate={selectedCanRate}
+          onPanel={openTitlePanel}
         />
       )}
       {screen === 'search' && (
@@ -3265,6 +3282,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onPersonFocus={(index) => changeFocus({ zone: 'person', index })}
           onPersonSelect={openPersonSearch}
           rating={ratingFor(selected)}
+          canRate={selectedCanRate}
           trailerOpen={trailerOpen}
           trailerSource={trailerSource?.url}
           trailerError={trailerError}
@@ -3450,6 +3468,19 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       {navigationPhase !== 'idle' && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'settings'].includes(screen) && (
         <NavigationSkeleton screen={screen} leaving={navigationPhase === 'leaving'} />
       )}
+      {activeTitlePanel && <TitlePanel
+        kind={activeTitlePanel}
+        media={selected}
+        rating={ratingFor(selected)}
+        onRate={(value) => {
+          if (!selectedCanRate) return closeTitlePanel()
+          const removing = ratingFor(selected) === value
+          rateMedia(selected, value)
+          closeTitlePanel()
+          showNotice(removing ? 'Rating removed' : value === 'up' ? 'Added to your likes' : 'Rating saved: not for me')
+        }}
+        onClose={closeTitlePanel}
+      />}
       <UpdatePrompt prompt={updatePrompt} />
       {exitConfirmation && (
         <ExitConfirmation

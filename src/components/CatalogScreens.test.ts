@@ -70,13 +70,13 @@ describe('series overview actions', () => {
   }
 
   it('keeps play as the primary action and exposes only supported destinations', () => {
-    expect(seriesOverviewActionsFor(media)).toEqual(['play', 'trailer', 'like', 'dislike'])
+    expect(seriesOverviewActionsFor(media)).toEqual(['play', 'trailer', 'info'])
     expect(seriesOverviewActionsFor({
       ...media,
       seasonEpisodeCounts: [12, 10],
       trailer: { id: 'Iwr1aLEDpe4', site: 'youtube' },
       relations: [{ relationType: 'SEQUEL', media }],
-    })).toEqual(['play', 'episodes', 'trailer', 'like', 'dislike', 'relations'])
+    })).toEqual(['play', 'episodes', 'trailer', 'info', 'relations'])
   })
 
   it('combines explicit franchise relations with provider recommendations without duplicates', () => {
@@ -87,7 +87,7 @@ describe('series overview actions', () => {
       ['SEQUEL', 'Example series 2'],
       ['SIMILAR', 'Similar series'],
     ])
-    expect(seriesOverviewActionsFor({ ...media, recommendations: [similar] })).toEqual(['play', 'trailer', 'like', 'dislike', 'relations'])
+    expect(seriesOverviewActionsFor({ ...media, recommendations: [similar] })).toEqual(['play', 'trailer', 'info', 'relations'])
   })
 
   it('keeps cast and crew identities available for filtered discovery', () => {
@@ -102,8 +102,16 @@ describe('series overview actions', () => {
   })
 
   it('does not expose unsupported trailer providers', () => {
-    expect(seriesOverviewActionsFor({ ...media, trailer: { id: '12345', site: 'vimeo' } })).toEqual(['play', 'trailer', 'like', 'dislike'])
-    expect(detailActionsFor(media)).toEqual(['play', 'trailer', 'like', 'dislike', 'close'])
+    expect(seriesOverviewActionsFor({ ...media, trailer: { id: '12345', site: 'vimeo' } })).toEqual(['play', 'trailer', 'info'])
+    expect(detailActionsFor(media)).toEqual(['play', 'trailer', 'info', 'close'])
+  })
+
+  it('offers a single rating destination only after watching starts', () => {
+    expect(detailActionsFor({ ...media, resumePositionSeconds: 4 })).toEqual(['play', 'trailer', 'info', 'rate', 'close'])
+    expect(seriesOverviewActionsFor({ ...media, episodes: [{ season: 1, episode: 1, watched: true }] }))
+      .toEqual(['play', 'episodes', 'trailer', 'info', 'rate'])
+    expect(detailActionsFor(media, true)).toContain('rate')
+    expect(seriesOverviewActionsFor(media, true)).toContain('rate')
   })
 
   it('accepts only canonical YouTube IDs or URLs', () => {

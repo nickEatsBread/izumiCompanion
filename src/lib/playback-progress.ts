@@ -173,6 +173,7 @@ export function mediaWithPlaybackProgress(
   }
   let result = linked ? {
     ...media,
+    progress: linked.progress ?? media.progress,
     season: linked.season ?? media.season,
     episode: linked.episode ?? media.episode,
     episodeProgress: linked.episodeProgress,

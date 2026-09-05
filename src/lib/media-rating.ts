@@ -1,4 +1,4 @@
-import type { CompanionMedia } from '../types'
+import type { CompanionHomeSnapshot, CompanionMedia } from '../types'
 
 export type MediaRating = 'up' | 'down'
 
@@ -14,6 +14,16 @@ export type MediaRatings = Record<string, StoredMediaRating>
 
 export function mediaRatingKey(media: CompanionMedia): string {
   return `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
+}
+
+/** A selected episode or saved rating alone is not evidence of watching a title. */
+export function hasStartedWatching(media: CompanionMedia, snapshot?: CompanionHomeSnapshot): boolean {
+  const positive = (value?: number) => typeof value === 'number' && Number.isFinite(value) && value > 0
+  if (positive(media.progress) || positive(media.episodeProgress) || positive(media.resumePositionSeconds)
+    || media.episodes?.some((episode) => episode.watched === true || positive(episode.progress))) return true
+  const key = mediaRatingKey(media)
+  return Boolean(snapshot?.history?.some((item) => mediaRatingKey(item) === key)
+    || snapshot?.rows.some((row) => row.kind === 'continue' && row.items.some((item) => mediaRatingKey(item) === key)))
 }
 
 export function readMediaRatings(): MediaRatings {

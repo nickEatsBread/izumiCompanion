@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { checkTitleScreen } from './title-screen-checks.mjs'
 
 const revision = '433064'
 const expectedBrowser = 'Chrome/56.0.2924.0'
@@ -284,6 +285,18 @@ async function main() {
         type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code,
       })
       await wait(120)
+    }
+
+    if (process.argv.includes('--titles-only')) {
+      await waitFor("document.readyState === 'complete' && !document.getElementById('startup-splash')")
+      for (const kind of ['detail', 'series']) {
+        await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=${kind === 'detail' ? 'details' : kind}` })
+        await waitFor(`document.querySelector('${kind === 'detail' ? '.detail-actions .is-focused' : '.series-action.is-focused'}') && !document.getElementById('startup-splash')`)
+        await evaluate("document.documentElement.style.pointerEvents = 'none'")
+        await checkTitleScreen({ kind, cdp, evaluate, waitFor, press, capture })
+      }
+      process.stdout.write('Chromium 56 title checks passed: 720p/1080p/4K horizontal actions, long text bounds, remote description scrolling, focus restoration, and rating add/change/remove.\n')
+      return
     }
 
     await waitFor("document.getElementById('startup-splash')")
@@ -646,7 +659,7 @@ async function main() {
     })()`)
     assert(verifiedTitleLogo.alt === 'Attack on Titan' && verifiedTitleLogo.title.includes('Attack on Titan')
       && verifiedTitleLogo.source.includes('attack-on-titan-logo')
-      && verifiedTitleLogo.natural[0] > 0 && JSON.stringify(verifiedTitleLogo.box) === '[460,130]',
+      && verifiedTitleLogo.natural[0] > 0 && Math.abs(verifiedTitleLogo.box[0] - 460) < .1 && Math.abs(verifiedTitleLogo.box[1] - 130) < .1,
       `Title-specific logo artwork did not paint for its matching card: ${JSON.stringify(verifiedTitleLogo)}.`)
     await capture('m56-matching-title-logo.png')
 
@@ -773,7 +786,7 @@ async function main() {
     assert(seriesSelection.title && seriesTitle.includes(seriesSelection.title) && seriesSelection.actions > 0, `The selected series page did not open: ${JSON.stringify({ seriesTitle, seriesSelection })}.`)
     await capture('m56-series-selection.png')
     const relationAction = await evaluate(`(() => {
-      var button = Array.from(document.querySelectorAll('.series-action')).find(function (item) { return item.textContent.indexOf('More in This Franchise') >= 0; });
+      var button = Array.from(document.querySelectorAll('.series-action')).find(function (item) { return item.textContent.trim() === 'Related'; });
       if (!button) return false;
       button.click();
       return true;
@@ -820,9 +833,10 @@ async function main() {
         return parseFloat(getComputedStyle(button.querySelector('span')).marginLeft || '0');
       })
     }))()`)
-    assert(detailPage.descriptionSize >= 28 && detailPage.actions.some(function (label) { return label.includes('Play Trailer'); }), `Film detail presentation is incomplete: ${JSON.stringify(detailPage)}.`)
-    assert(detailPage.actionLabelSpacing.every(function (spacing) { return spacing >= 25; }), `Film detail action icons still crowd their labels: ${JSON.stringify(detailPage)}.`)
-    await evaluate("Array.from(document.querySelectorAll('.detail-actions button')).find(function (button) { return button.textContent.includes('Play Trailer'); }).click()")
+    assert(detailPage.descriptionSize >= 28 && detailPage.actions.includes('Trailer'), `Film detail presentation is incomplete: ${JSON.stringify(detailPage)}.`)
+    assert(detailPage.actionLabelSpacing.every(function (spacing) { return spacing >= 13; }), `Film detail action icons crowd their labels: ${JSON.stringify(detailPage)}.`)
+    await checkTitleScreen({ kind: 'detail', cdp, evaluate, waitFor, press, capture })
+    await evaluate("Array.from(document.querySelectorAll('.detail-actions button')).find(function (button) { return button.textContent.trim() === 'Trailer'; }).click()")
     await waitFor("document.querySelector('.series-trailer-overlay iframe')")
     const trailerWithoutCaptions = await evaluate(`(() => {
       var overlay = document.querySelector('.series-trailer-overlay');
@@ -1042,7 +1056,7 @@ async function main() {
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=series` })
     await waitFor("document.querySelector('.series-action.is-focused') && !document.getElementById('startup-splash')")
     const resumeLabel = await evaluate("document.querySelector('.series-action').textContent.trim()")
-    assert(resumeLabel === 'Resume Season 1: Episode 12', `Series action ignores viewing progress: ${resumeLabel}.`)
+    assert(resumeLabel === 'Resume S1 · E12', `Series action ignores viewing progress: ${resumeLabel}.`)
     const buttonsFit = await evaluate(`Array.from(document.querySelectorAll('.series-action')).every(function (button) {
       var label = button.querySelector('span');
       var bounds = button.getBoundingClientRect();
@@ -1051,7 +1065,8 @@ async function main() {
     })`)
     assert(buttonsFit, 'Series action text overflows its button.')
     await capture('m56-series-resume.png')
-    await press('ArrowDown')
+    await checkTitleScreen({ kind: 'series', cdp, evaluate, waitFor, press, capture })
+    await press('ArrowRight')
     await press('Enter')
     await waitFor("document.querySelector('.series-episode.is-focused')")
     for (let episode = 1; episode < 12; episode += 1) await press('ArrowDown')

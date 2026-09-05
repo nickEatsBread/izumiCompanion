@@ -1362,10 +1362,11 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .detail-copy {
-  position: relative;
+  position: absolute;
   z-index: 3;
-  width: 47vw;
-  padding: 13vh 0 0 10.5vw;
+  top: 18vh;
+  left: 7.3vw;
+  width: 85.4vw;
   animation: hero-copy-enter 330ms cubic-bezier(.2, .75, .2, 1) both;
 }
 
@@ -1375,75 +1376,108 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
   align-items: center;
   gap: .55vw;
   color: #e5e5e5;
-  font-size: 1vw;
+  font-size: 1.15vw;
   font-weight: 700;
 }
 
 .detail-copy h1 {
   margin: 0;
-  font-size: 4.2vw;
-  line-height: .98;
-  letter-spacing: -.05em;
+  max-width: 62vw;
+  font-size: 3.8vw;
+  line-height: 1.08;
+  letter-spacing: -.035em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-height: 8.21vw;
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 
 .detail-meta {
   margin: 2.2vh 0 0;
   color: #ededed;
-  font-size: 1.08vw;
+  max-width: 60vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 1.3vw;
   font-weight: 800;
 }
 
 .detail-description {
-  max-width: 42vw;
+  max-width: 53vw;
   margin: 1.5vh 0 0;
   color: #d5d5d5;
   font-size: 1.5vw;
   font-weight: 600;
   line-height: 1.5;
   display: -webkit-box;
-  max-height: 9vw;
+  max-height: 6.75vw;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
+  overflow-wrap: break-word;
 }
 
-.detail-actions {
-  margin-top: 3.2vh;
+.detail-actions,
+.series-action-list {
+  width: 100%;
+  margin-top: 4vh;
   display: flex;
-  gap: .8vw;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 
-.detail-actions button {
-  min-height: 58px;
-  padding: .8vw 1.5vw;
+.detail-actions button,
+.series-action {
+  flex: 0 0 auto;
+  height: 7.2vh;
+  min-height: 0;
+  padding: 0 1.5vw;
   border: 0;
-  border-radius: 3px;
+  border-radius: .25vw;
   display: flex;
   align-items: center;
-  gap: 1.35vw;
+  justify-content: center;
   color: #fff;
-  background: rgba(60, 60, 60, .86);
-  font-size: 1.02vw;
+  background: rgba(55, 55, 55, .94);
+  font-size: 1.4vw;
   font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  transition: color 140ms ease, background-color 140ms ease;
 }
 
-.detail-actions button:first-child { color: #fff; background: rgba(83, 83, 83, .92); }
-.detail-actions button.is-selected:not(.is-focused) { border-color: #e8e8e8; background: rgba(78,78,78,.94); }
+.detail-actions button > svg,
+.series-action > svg { flex: 0 0 auto; width: 1.7vw; height: 1.7vw; }
+.detail-actions button > span,
+.series-action > span { flex: 0 0 auto; white-space: nowrap; }
+.detail-actions button + button,
+.series-action + .series-action { margin-left: .85vw; }
+.detail-actions button > svg + span,
+.series-action > svg + span { margin-left: .7vw; }
+.detail-actions button:first-child,
+.series-action:first-child { color: #141414; background: #d8d8d8; }
+.detail-actions button.is-selected:not(.is-focused),
+.series-action.is-selected:not(.is-focused) { box-shadow: inset 0 -.18vw #c7c7c7; }
 .detail-actions button.is-focused,
-.detail-actions button:hover {
+.detail-actions button:hover,
+.series-action.is-focused,
+.series-action:hover {
   color: var(--control-focus-ink);
   background: var(--control-focus-bg);
-  outline: 0;
-  box-shadow: var(--control-focus-shadow);
+  outline: .16vw solid #fff;
+  outline-offset: .3vw;
 }
+.detail-actions button:active, .series-action:active { transform: scale(.98); }
 
 .detail-poster {
   position: absolute;
   z-index: 2;
   right: 8vw;
-  bottom: 7vh;
+  bottom: 31vh;
   width: 12vw;
   max-height: 45vh;
   border: 1px solid rgba(255,255,255,.28);
@@ -1687,6 +1721,18 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 
 .series-title-block.is-long-title h1 { font-size: 2.15vw; }
 
+.series-screen.is-overview .series-title-block { top: 14vh; width: 65vw; }
+.series-screen.is-overview .series-title-block h1 {
+  font-size: 3.4vw;
+  line-height: 1.1;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-height: 7.48vw;
+  overflow-wrap: break-word;
+}
+
 .series-meta {
   margin-top: 1.4vh;
   display: flex;
@@ -1709,97 +1755,38 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 .series-overview {
   position: absolute;
   z-index: 4;
-  top: 19.2vh;
+  top: 36vh;
   left: 7.3vw;
-  width: 39vw;
-  max-height: 75vh;
-  padding-right: .8vw;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
+  width: 85.4vw;
   animation: hero-copy-enter 300ms cubic-bezier(.2, .75, .2, 1) both;
 }
 
-.series-overview::-webkit-scrollbar { width: 0; }
-
 .series-summary {
-  width: 38vw;
+  width: 53vw;
   margin: 0;
   color: #c5c5c5;
-  font-size: 1.72vw;
+  font-size: 1.5vw;
   font-weight: 400;
-  line-height: 1.35;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  max-height: 6.75vw;
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 
 .series-descriptors {
-  width: 31vw;
-  margin: 2.5vh 0 0;
+  width: 53vw;
+  margin: 1.8vh 0 0;
   color: #929292;
   font-size: 1.2vw;
   font-style: italic;
   line-height: 1.38;
-}
-
-.series-action-list {
-  width: 100%;
-  margin-top: 4.2vh;
-}
-
-.series-action {
-  width: auto;
-  max-width: 100%;
-  min-height: 6.05vh;
-  padding: 1.1vh 1.2vw;
-  display: flex;
-  align-items: center;
-  gap: .82vw;
   overflow: hidden;
-  border: 0;
-  border-radius: 3px;
-  color: #ababab;
-  background: transparent;
-  font-size: 1.5vw;
-  font-weight: 400;
-  text-align: left;
-  cursor: pointer;
-  transition: color 120ms ease, background-color 120ms ease;
-}
-
-.series-action > svg {
-  flex: 0 0 auto;
-  color: #b9b9b9;
-  stroke-width: 2.4;
-}
-
-.series-action > span {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  line-height: 1.25;
-}
-
-.series-action > small {
-  max-width: 9vw;
-  overflow: hidden;
-  color: inherit;
-  font-size: .83vw;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.series-action.is-focused,
-.series-action:hover {
-  color: #161616;
-  background: linear-gradient(#f4f4f4, #bdbdbd);
-  outline: 0;
-}
-
-.series-action.is-selected:not(.is-focused) { color: #f4f4f4; background: rgba(255,255,255,.1); }
-
-.series-action.is-focused > svg,
-.series-action:hover > svg { color: #404040; }
-
-.series-action + .series-action { margin-top: .35vh; }
 
 .series-library {
   position: absolute;
@@ -2415,7 +2402,8 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 .contributor-strip > button.is-focused,
 .contributor-strip > button:hover { outline: 0; background: #232323; box-shadow: 0 0 0 .24vw #f4f4f1, 0 18px 42px rgba(0,0,0,.58); transform: translateY(-.7vh); }
 .contributor-hint { margin: .4vh 0 0; display: flex; align-items: center; gap: .5vw; color: #a8a8a8; font-size: .92vw; }
-.contributor-entry-hint { margin: 1.8vh 0 0; display: flex; align-items: center; gap: .5vw; color: #aaa; font-size: .92vw; font-weight: 650; }
+.contributor-entry-hint { margin: 2.5vh 0 0; display: flex; align-items: center; gap: .5vw; color: #aaa; font-size: 1.15vw; font-weight: 650; }
+.contributor-entry-hint svg, .detail-reason svg { flex: 0 0 auto; width: 1.3vw; height: 1.3vw; }
 
 .detail-screen.is-people .detail-copy { visibility: hidden; }
 .detail-screen.is-people .detail-poster { opacity: 0; }
@@ -6027,11 +6015,8 @@ body,
 .series-meta > * + * { margin-left: .55vw; }
 .hero-actions > * + * { margin-left: .75vw; }
 .episode-card-meta > * + * { margin-left: .45vw; }
-.detail-actions > * + *,
 .series-trailer-hud header > * + * { margin-left: .8vw; }
-.detail-actions button > * + *,
 .series-trailer-action > * + * { margin-left: .65vw; }
-.detail-actions button > * + * { margin-left: 1.35vw; }
 .contributor-strip > button + button { margin-left: .78vw; }
 .contributor-hint > * + * { margin-left: .5vw; }
 .contributor-entry-hint > * + * { margin-left: .5vw; }
@@ -6039,7 +6024,6 @@ body,
 .loading-rating-copy > * + * { margin-top: .25vh; }
 .season-options > * + * { margin-left: .35vw; }
 .series-episode-list > * + * { margin-top: 2.35vh; }
-.series-action > * + * { margin-left: .82vw; }
 .series-episode > * + *,
 .series-relation-row > * + * { margin-left: 1.3vw; }
 .series-back-hint > * + * { margin-left: .48vw; }
@@ -6129,9 +6113,7 @@ body,
   .series-meta > * + *,
   .hero-actions > * + *,
   .episode-card-meta > * + *,
-  .detail-actions > * + *,
   .series-trailer-hud header > * + *,
-  .detail-actions button > * + *,
   .contributor-strip > button + button,
   .contributor-hint > * + *,
   .contributor-entry-hint > * + *,
@@ -6140,7 +6122,6 @@ body,
   .loading-rating-copy > * + *,
   .season-options > * + *,
   .series-episode-list > * + *,
-  .series-action > * + *,
   .series-episode > * + *,
   .series-relation-row > * + *,
   .series-back-hint > * + *,

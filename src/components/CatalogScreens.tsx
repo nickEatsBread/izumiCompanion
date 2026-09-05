@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   Bookmark,
   Captions,
   ChevronRight,
@@ -6,6 +7,7 @@ import {
   Delete,
   Film,
   History,
+  Info,
   Link2Off,
   Mic,
   Pause,
@@ -26,7 +28,8 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { CompanionMedia, CompanionPerson, CompanionRelation, FocusLocation } from '../types'
 import { episodeCountsFor, episodeDetailsFor, episodeProgressFor, seriesPlaybackTarget, seasonNumberFor } from '../lib/catalog'
 import type { PlaybackExperienceSettings } from '../lib/playback-experience'
-import type { MediaRating } from '../lib/media-rating'
+import { hasStartedWatching, type MediaRating } from '../lib/media-rating'
+import type { TitlePanelKind } from './TitlePanel'
 import { gridWindow, linearWindow } from '../lib/windowing'
 import { NavRail } from './NavRail'
 
@@ -536,7 +539,7 @@ export function relatedTitlesFor(media: CompanionMedia): CompanionRelation[] {
   }).slice(0, 24)
 }
 
-export type SeriesOverviewAction = 'play' | 'episodes' | 'trailer' | 'like' | 'dislike' | 'relations'
+export type SeriesOverviewAction = 'play' | 'episodes' | 'trailer' | 'info' | 'rate' | 'relations'
 
 export function youtubeTrailerId(media: CompanionMedia): string | undefined {
   const raw = media.trailer?.id?.trim()
@@ -549,19 +552,20 @@ export function youtubeTrailerId(media: CompanionMedia): string | undefined {
   } catch { return undefined }
 }
 
-export function seriesOverviewActionsFor(media: CompanionMedia): SeriesOverviewAction[] {
+export function seriesOverviewActionsFor(media: CompanionMedia, canRate = hasStartedWatching(media)): SeriesOverviewAction[] {
   const actions: SeriesOverviewAction[] = ['play']
   if (episodeCountsFor(media).length) actions.push('episodes')
   actions.push('trailer')
-  actions.push('like', 'dislike')
+  actions.push('info')
+  if (canRate) actions.push('rate')
   if (relatedTitlesFor(media).length) actions.push('relations')
   return actions
 }
 
-export type DetailAction = 'play' | 'trailer' | 'like' | 'dislike' | 'close'
+export type DetailAction = 'play' | 'trailer' | 'info' | 'rate' | 'close'
 
-export function detailActionsFor(_media: CompanionMedia): DetailAction[] {
-  return ['play', 'trailer', 'like', 'dislike', 'close']
+export function detailActionsFor(media: CompanionMedia, canRate = hasStartedWatching(media)): DetailAction[] {
+  return ['play', 'trailer', 'info', ...(canRate ? ['rate' as const] : []), 'close']
 }
 
 export function contributorsFor(media: CompanionMedia): CompanionPerson[] {
@@ -622,6 +626,7 @@ export function SeriesScreen({
   onPersonFocus,
   onPersonSelect,
   rating,
+  canRate,
   trailerOpen,
   trailerSource,
   trailerError,
@@ -641,6 +646,7 @@ export function SeriesScreen({
   onPersonFocus(index: number): void
   onPersonSelect(person: CompanionPerson): void
   rating?: MediaRating
+  canRate: boolean
   trailerOpen: boolean
   trailerSource?: string
   trailerError?: string
@@ -661,7 +667,7 @@ export function SeriesScreen({
   const episodeFocus = focus.zone === 'episode' ? focus.index : 0
   const episodeWindow = linearWindow(episodes.length, episodeFocus, 4)
   const trailerId = youtubeTrailerId(selected)
-  const overviewActions = seriesOverviewActionsFor(selected)
+  const overviewActions = seriesOverviewActionsFor(selected, canRate)
   const view = focus.zone === 'series-season' || focus.zone === 'episode'
     ? 'episodes'
     : focus.zone === 'relation'
@@ -701,22 +707,21 @@ export function SeriesScreen({
           {overviewActions.map((action, index) => {
             const focused = focus.zone === 'series-action' && focus.index === index
             const label = action === 'play'
-              ? playbackTarget.label
+              ? playbackTarget.label.replace(/Season (\d+): Episode (\d+)/, 'S$1 · E$2')
               : action === 'episodes'
-                ? 'More Episodes'
+                ? 'Episodes'
                 : action === 'trailer'
-                  ? 'Play Trailer'
-                  : action === 'like'
-                    ? rating === 'up' ? 'Liked' : 'I Like This'
-                    : action === 'dislike'
-                      ? rating === 'down' ? 'Not for Me' : 'Not for Me'
-                      : 'More in This Franchise'
-            const Icon = action === 'play' ? Play : action === 'episodes' ? Tv : action === 'trailer' ? Film : action === 'like' ? ThumbsUp : action === 'dislike' ? ThumbsDown : Bookmark
-            const selectedRating = action === 'like' && rating === 'up' || action === 'dislike' && rating === 'down'
+                  ? 'Trailer'
+                  : action === 'info' ? 'More info'
+                    : action === 'rate' ? rating === 'up' ? 'Liked' : rating === 'down' ? 'Disliked' : 'Rate'
+                      : 'Related'
+            const Icon = action === 'play' ? Play : action === 'episodes' ? Tv : action === 'trailer' ? Film : action === 'info' ? Info : action === 'rate' ? rating === 'down' ? ThumbsDown : ThumbsUp : Bookmark
+            const selectedRating = action === 'rate' && Boolean(rating)
             return <button
               type="button"
               class={`series-action${focused ? ' is-focused' : ''}${selectedRating ? ' is-selected' : ''}`}
-              aria-pressed={action === 'like' || action === 'dislike' ? selectedRating : undefined}
+              aria-label={action === 'play' ? playbackTarget.label : action === 'rate' ? `${label}. Rate this title` : label}
+              aria-haspopup={action === 'rate' || action === 'info' ? 'dialog' : undefined}
               data-focus-id={`series-action-${index}`}
               tabIndex={focused ? 0 : -1}
               onFocus={() => onSeriesActionFocus(index)}
@@ -729,7 +734,7 @@ export function SeriesScreen({
             </button>
           })}
         </div>
-        {contributors.length > 0 && <p class="contributor-entry-hint"><UserRound size={18} /> Down for Cast &amp; Crew</p>}
+        {contributors.length > 0 && <p class="contributor-entry-hint"><UserRound size={18} /><span>Down for Cast &amp; Crew</span></p>}
       </section>}
 
       {view === 'episodes' && <section class="series-library" aria-label={`${selected.title} episodes`}>
@@ -1032,7 +1037,8 @@ export function DetailScreen({
   onRelationFocus,
   onRelationSelect,
   rating,
-  onRate,
+  canRate,
+  onPanel,
 }: {
   media: CompanionMedia
   focus: FocusLocation
@@ -1048,14 +1054,15 @@ export function DetailScreen({
   onRelationFocus(index: number): void
   onRelationSelect(media: CompanionMedia): void
   rating?: MediaRating
-  onRate(value: MediaRating): void
+  canRate: boolean
+  onPanel(kind: TitlePanelKind): void
 }) {
   const reason = media.placement
     ? `${media.placement.position ? `#${media.placement.position} in ` : ''}${media.placement.label}`
     : 'Selected for you'
   const ReasonIcon = media.placement?.kind === 'continue' ? History : TrendingUp
   const trailerId = youtubeTrailerId(media)
-  const actions = detailActionsFor(media)
+  const actions = detailActionsFor(media, canRate)
   const contributors = contributorsFor(media)
   const relations = relatedTitlesFor(media)
   return (
@@ -1065,7 +1072,7 @@ export function DetailScreen({
         <span />
       </div>
       <section class="detail-copy">
-        <p class="detail-reason"><ReasonIcon size={19} /> {reason}</p>
+        <p class="detail-reason"><ReasonIcon size={19} /><span>{reason}</span></p>
         <h1>{media.title}</h1>
         <p class="detail-meta">{[media.subtitle, media.contentRating].filter(Boolean).join(' · ')}</p>
         <p class="detail-description">{media.description || 'Open this title to continue watching or start from the beginning.'}</p>
@@ -1073,28 +1080,29 @@ export function DetailScreen({
           {actions.map((action, index) => (
             <button
               type="button"
-              class={`${focus.zone === 'detail' && focus.index === index ? 'is-focused' : ''}${action === 'like' && rating === 'up' || action === 'dislike' && rating === 'down' ? ' is-selected' : ''}`}
-              aria-pressed={action === 'like' || action === 'dislike' ? action === 'like' && rating === 'up' || action === 'dislike' && rating === 'down' : undefined}
+              class={`${focus.zone === 'detail' && focus.index === index ? 'is-focused' : ''}${action === 'rate' && rating ? ' is-selected' : ''}`}
+              aria-label={action === 'rate' ? `${rating === 'up' ? 'Liked' : rating === 'down' ? 'Disliked' : 'Unrated'}. Rate this title` : undefined}
+              aria-haspopup={action === 'rate' || action === 'info' ? 'dialog' : undefined}
               data-focus-id={`detail-${index}`}
               tabIndex={focus.zone === 'detail' && focus.index === index ? 0 : -1}
               onFocus={() => onFocus(index)}
               onMouseEnter={() => onFocus(index)}
-              onClick={() => action === 'play' ? onPlay(media) : action === 'trailer' ? onTrailer(media) : action === 'like' ? onRate('up') : action === 'dislike' ? onRate('down') : onClose()}
+              onClick={() => action === 'play' ? onPlay(media) : action === 'trailer' ? onTrailer(media) : action === 'info' ? onPanel('info') : action === 'rate' ? onPanel('rating') : onClose()}
               key={action}
             >
               {action === 'play'
-                ? <><Play size={25} fill="currentColor" /><span>{media.progress ? 'Resume' : 'Play'}</span></>
+                ? <><Play size={25} fill="currentColor" /><span>{(media.resumePositionSeconds || media.episodeProgress || media.progress || 0) > 0 && (media.episodeProgress ?? media.progress ?? 0) < 1 ? 'Resume' : 'Play'}</span></>
                 : action === 'trailer'
-                  ? <><Film size={25} /><span>Play Trailer</span></>
-                  : action === 'like'
-                    ? <><ThumbsUp size={25} fill={rating === 'up' ? 'currentColor' : 'none'} /><span>{rating === 'up' ? 'Liked' : 'I Like This'}</span></>
-                    : action === 'dislike'
-                      ? <><ThumbsDown size={25} fill={rating === 'down' ? 'currentColor' : 'none'} /><span>Not for Me</span></>
-                      : <><X size={25} /><span>Back to browse</span></>}
+                  ? <><Film size={25} /><span>Trailer</span></>
+                  : action === 'info'
+                    ? <><Info size={25} /><span>More info</span></>
+                    : action === 'rate'
+                      ? <>{rating === 'down' ? <ThumbsDown size={25} fill="currentColor" /> : <ThumbsUp size={25} fill={rating === 'up' ? 'currentColor' : 'none'} />}<span>{rating === 'up' ? 'Liked' : rating === 'down' ? 'Disliked' : 'Rate'}</span></>
+                      : <><ArrowLeft size={25} /><span>Back</span></>}
             </button>
           ))}
         </div>
-        {(contributors.length > 0 || relations.length > 0) && <p class="contributor-entry-hint"><UserRound size={18} /> Down for {contributors.length ? 'Cast & Crew' : 'Similar Titles'}</p>}
+        {(contributors.length > 0 || relations.length > 0) && <p class="contributor-entry-hint"><UserRound size={18} /><span>Down for {contributors.length ? 'Cast & Crew' : 'Similar Titles'}</span></p>}
       </section>
       {media.poster && <img class="detail-poster" src={media.poster} alt="" />}
       {focus.zone === 'person' && contributors.length > 0 && <ContributorBrowser

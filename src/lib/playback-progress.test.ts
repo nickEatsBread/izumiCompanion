@@ -75,6 +75,12 @@ describe('TV playback progress', () => {
     expect(mediaWithPlaybackProgress(media('1'), base, [])).toMatchObject({ season: 3, episode: 5, episodeProgress: .45, resumePositionSeconds: 450 })
   })
 
+  it('keeps movie watch progress when fresh provider details have none', () => {
+    const base = snapshot()
+    base.history = [{ ...media('1'), progress: .4 }]
+    expect(mediaWithPlaybackProgress(media('1'), base, [])).toMatchObject({ progress: .4 })
+  })
+
   it('stores a compact, exact checkpoint that survives a reload', () => {
     savePlaybackProgress({ ...media(), season: 2, episode: 4 }, status(347), 10_000)
 
