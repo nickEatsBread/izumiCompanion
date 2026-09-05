@@ -1,5 +1,7 @@
+import { DiscoveryScreen } from './components/DiscoveryScreen'
+import { DISCOVERY_REMOTE, DISCOVERY_CHANGED } from './lib/discovery'
 import { ProfileScreen, PROFILE_REMOTE } from './components/ProfileScreen'
-import { PROFILES_CHANGED, tvHousehold, tvProfileReady } from './lib/profiles'
+import { PROFILES_CHANGED, tvHousehold, tvProfileReady, tvProfileId } from './lib/profiles'
 import QRCode from 'qrcode'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
@@ -257,7 +259,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'watch-history', 'settings', 'independent-setup', 'standalone-link', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'discover', 'watch-history', 'settings', 'independent-setup', 'standalone-link', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -1438,6 +1440,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   // Focus moves many times per second on a remote. None of these catalogue/search projections
   // depend on focus, so keep their arrays stable until the paired device sends a new snapshot.
   const cinematicScreen = ['home', 'trending', 'series-home', 'movies'].includes(screen)
+  useEffect(() => {
+    const changed = () => setSnapshot(value => ({ ...value }))
+    window.addEventListener(DISCOVERY_CHANGED, changed)
+    return () => window.removeEventListener(DISCOVERY_CHANGED, changed)
+  }, [])
   const collections = useMemo(() => catalogCollections(snapshot), [snapshot])
   const homeRows = useMemo(() => orderedHomeRows(snapshot.rows), [snapshot.rows])
   const browseRows = useMemo(() => browseCategoryRows(snapshot), [snapshot])
@@ -2042,7 +2049,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const selectNav = (index: number) => {
-    if (index === 8 && tvHousehold().enabled) { closeTrailer(); setProfilesOpen(true); return }
+    if (index === navItemCount() - 1 && tvHousehold().enabled) { closeTrailer(); setProfilesOpen(true); return }
     if (index === -1) return openCatalogMenu()
     closeTrailer()
     clearNavigationHistory()
@@ -2719,6 +2726,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const handleRemote = (action: RemoteAction) => {
     if (profilesOpenRef.current) { window.dispatchEvent(new CustomEvent(PROFILE_REMOTE, { detail: action })); return }
+    if (screen === 'discover') { window.dispatchEvent(new CustomEvent(DISCOVERY_REMOTE, { detail: action })); return }
     markRemoteInput(action)
     const focus = focusRef.current
     if (exitConfirmation) {
@@ -3254,6 +3262,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           key={name}
         />
       ))}
+      {screen === 'discover' && <DiscoveryScreen key={tvProfileId()} snapshot={snapshot} receiver={receiverRef.current} onDetails={selectCatalogMedia} onBack={() => selectNav(navIndexFor('my-list'))} />}
       {screen === 'settings' && (
         <SettingsScreen
           focus={focus}

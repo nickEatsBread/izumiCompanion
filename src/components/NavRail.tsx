@@ -20,6 +20,7 @@ const items: Array<{ label: string; icon: typeof House; destination: ScreenName 
   { label: 'Series', icon: Tv, destination: 'series-home' },
   { label: 'Movies', icon: Film, destination: 'movies' },
   { label: 'My List', icon: Bookmark, destination: 'my-list' },
+  { label: 'Discover', icon: Compass, destination: 'discover' },
   { label: 'Watch History', icon: History, destination: 'watch-history' },
   { label: 'Settings', icon: Settings, destination: 'settings' },
 ]

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CompanionMedia } from '../types'
 import { chooseTvProfile, resetTvHousehold, updateTvHousehold } from './profiles'
 import { CompanionReceiver, type ReceiverEvents } from './receiver'
+import { persistDiscoveryChoice, readDiscoveryChoices, discoveryKey } from './discovery'
 
 const credential = 'ab'.repeat(32)
 const transport = {
@@ -139,6 +140,23 @@ afterEach(() => {
 })
 
 describe('companion play routing', () => {
+  it('acknowledges an offline discovery choice only when the linked snapshot contains that exact decision', async () => {
+    storage.removeItem('izumi.companion.cloudflare')
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, { msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) } })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+    const at = Date.now()
+    persistDiscoveryChoice({ profileId: 'default', media, action: 'save', at, pending: true })
+    const view = { app: 'izumi', kind: 'companion-home', version: 1, revision: '1', generatedAt: at, catalog: { screen: 'tmdb', label: 'Home' }, rows: [],
+      discovery: { version: 2, candidates: [], excluded: [], decisions: [{ key: discoveryKey(media), action: 'save', at }] } }
+    channel.emit('izumi.companion.snapshot', { credential: 'wrong', snapshot: view })
+    expect(readDiscoveryChoices()[discoveryKey(media)].pending).toBe(true)
+    channel.emit('izumi.companion.snapshot', { credential, snapshot: view })
+    expect(readDiscoveryChoices()[discoveryKey(media)].pending).toBe(false)
+    receiver.disconnect()
+  })
+
   it('restores child cloud progress without importing a main-profile checkpoint', async () => {
     storage.setItem('izumi.companion.cloudflare', JSON.stringify({ ...transport, tvToken: 'b'.repeat(43) }))
     const household = { enabled: true, profiles: [

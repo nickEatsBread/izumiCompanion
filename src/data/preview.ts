@@ -281,7 +281,13 @@ export const previewSnapshot: CompanionHomeSnapshot = {
     ],
   },
   hero: frieren,
-  history: placed(popular.slice(0, 10), 'Watch History', 'catalog'),
+  history: placed(popular.slice(0, 3), 'Watch History', 'catalog'),
+  discovery: {
+    version: 2, excluded: [], decisions: [],
+    candidates: popular.slice(3).map(item => ({ ...item, recommendation: {
+      reason: 'Explore your anime catalogs', evidence: ['Preview deck — connect Izumi to see explanations based on your own taste.'], exploration: true,
+    } })),
+  },
   rows: [
     { id: 'continue', title: 'Continue Watching', kind: 'continue', items: placed(continueItems, 'Continue Watching', 'continue') },
     { id: 'popular', title: 'Popular This Week', kind: 'catalog', items: placed(popular.slice(3).concat(popular.slice(0, 3)), 'Popular This Week', 'ranking') },

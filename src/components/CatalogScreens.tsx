@@ -56,7 +56,7 @@ function trailerTime(value: number): string {
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function TrailerPlayer({
+export function TrailerPlayer({
   videoId,
   source,
   title,

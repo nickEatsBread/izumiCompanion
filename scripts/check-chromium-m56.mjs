@@ -693,7 +693,7 @@ async function main() {
       heroReceding: document.querySelector('.hero').classList.contains('is-receding')
     }))()`)
     assert(navigation.width >= 370 && navigation.width <= 430, `Navigation drawer width is ${navigation.width}px.`)
-    assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","Series","Movies","My List","Watch History","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
+    assert(JSON.stringify(navigation.items) === '["Home","Search","Browse","Series","Movies","My List","Discover","Watch History","Settings"]', `Unexpected navigation destinations: ${navigation.items}.`)
     assert(navigation.secondaryLabels === 0, 'Navigation still renders secondary description text.')
     assert(Math.max(...navigation.labelLefts) - Math.min(...navigation.labelLefts) <= 1, `Navigation labels are not aligned: ${navigation.labelLefts}.`)
     assert(navigation.retainedRow === 1 && navigation.retainedIndex === 0 && navigation.retainedRowTop === 52, `Opening the sidebar reset the active rail: ${JSON.stringify(navigation)}.`)
@@ -1245,10 +1245,36 @@ async function main() {
     await waitFor("document.querySelector('.standalone-confirm-actions button:last-child').classList.contains('is-focused')")
     await capture('m56-standalone-confirmation.png')
 
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=discover` })
+    await waitFor("document.querySelector('.tv-discovery h1') && !document.querySelector('.tv-discovery-actions button:nth-child(3)').disabled")
+    await waitFor("!document.getElementById('startup-splash')")
+    const discoveryTitle = await evaluate("document.querySelector('.tv-discovery h1').textContent")
+    const discoveryGeometry = await evaluate(`(() => ({
+      width: document.querySelector('.tv-discovery').getBoundingClientRect().width,
+      shade: getComputedStyle(document.querySelector('.tv-discovery-shade')).backgroundImage,
+      buttonFill: getComputedStyle(document.querySelector('.tv-discovery-actions button:nth-child(3)')).backgroundColor,
+      actions: document.querySelectorAll('.tv-discovery-actions button').length,
+      why: document.querySelector('.tv-discovery-why h2').textContent,
+      lastBottom: document.querySelector('.tv-discovery-notice').getBoundingClientRect().bottom
+    }))()`)
+    assert(discoveryGeometry.width === 1920 && discoveryGeometry.actions === 8 && discoveryGeometry.lastBottom < 1080, 'Discover is clipped: ' + JSON.stringify(discoveryGeometry))
+    assert(discoveryGeometry.why === 'Why this pick', 'Discover has no explanation.')
+    assert(discoveryGeometry.shade !== 'none' && discoveryGeometry.buttonFill.includes('34, 37, 43'), 'Discover contrast layers are missing: ' + JSON.stringify(discoveryGeometry))
+    await capture('m56-discover.png')
+    await evaluate("document.querySelector('.tv-discovery-actions button:nth-child(3)').click()")
+    await waitFor("document.querySelector('.tv-discovery h1').textContent !== " + JSON.stringify(discoveryTitle))
+    await evaluate("document.querySelector('.tv-discovery-actions button:nth-child(6)').click()")
+    await waitFor("document.querySelector('.tv-discovery h1').textContent === " + JSON.stringify(discoveryTitle))
+    await evaluate("document.querySelector('.tv-discovery-actions button:nth-child(4)').focus()")
+    await press('Enter')
+    await waitFor("document.querySelector('.tv-discovery h1').textContent !== " + JSON.stringify(discoveryTitle))
+    await press('Backspace')
+    await waitFor("document.querySelector('.app-shell.screen-my-list')")
+
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, secure TV-side confirmation, unpaired phone handoff, and no application runtime errors.\n`)
+    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, secure TV-side confirmation, unpaired phone handoff, Discover explanations/save/undo/remote navigation, and no application runtime errors.\n`)
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()

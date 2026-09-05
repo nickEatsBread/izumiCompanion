@@ -1,3 +1,4 @@
+import { readDiscoveryChoices } from './discovery'
 import type {
   CompanionEpisode,
   CompanionHomeSnapshot,
@@ -39,7 +40,7 @@ export function catalogCollections(snapshot: CompanionHomeSnapshot): CatalogColl
     trending,
     series: uniqueMedia(snapshot.views?.series ?? search.filter((item) => item.ref.type !== 'movie')),
     movies: uniqueMedia(snapshot.views?.movies ?? search.filter((item) => item.ref.type === 'movie')),
-    myList: uniqueMedia(snapshot.views?.myList ?? search.filter((item) => item.inMyList === true)),
+    myList: uniqueMedia([...(snapshot.views?.myList ?? search.filter((item) => item.inMyList === true)), ...Object.values(readDiscoveryChoices()).filter(choice => choice.action === 'save').map(choice => choice.media)]),
     history: uniqueMedia(snapshot.history ?? []),
   }
 }

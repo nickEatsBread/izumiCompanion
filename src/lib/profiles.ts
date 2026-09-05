@@ -88,6 +88,6 @@ export function snapshotMatchesTvProfile(snapshot: CompanionHomeSnapshot): boole
 }
 export function filterTvSnapshot(snapshot: CompanionHomeSnapshot): CompanionHomeSnapshot {
   const rows = snapshot.rows.map((row) => ({ ...row, items: row.items.filter(tvAllowsMedia) })).filter((row) => row.items.length)
-  return { ...snapshot, rows, hero: snapshot.hero && tvAllowsMedia(snapshot.hero) ? snapshot.hero : rows[0]?.items[0], history: snapshot.history?.filter(tvAllowsMedia),
+  return { ...snapshot, rows, discovery: snapshot.discovery ? { ...snapshot.discovery, candidates: snapshot.discovery.candidates.filter(tvAllowsMedia) } : undefined, hero: snapshot.hero && tvAllowsMedia(snapshot.hero) ? snapshot.hero : rows[0]?.items[0], history: snapshot.history?.filter(tvAllowsMedia),
     views: snapshot.views ? Object.fromEntries(Object.entries(snapshot.views).map(([key, items]) => [key, items?.filter(tvAllowsMedia)])) : undefined }
 }

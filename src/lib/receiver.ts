@@ -1,3 +1,4 @@
+import { readDiscoveryChoices, persistDiscoveryChoice, validDiscoveryChoice, discoveryKey, type DiscoveryChoice } from './discovery'
 import type {
   CastControlRequest,
   CastLoadRequest,
@@ -942,6 +943,46 @@ export class CompanionReceiver {
     return true
   }
 
+  async sendDiscoveryChoice(choice: DiscoveryChoice): Promise<boolean> {
+    if (!validDiscoveryChoice(choice) || !tvProfileReady()) return false
+    if (this.credential && this.connected) {
+      this.publish('izumi.companion.discovery', { credential: this.credential, choices: [choice] }, 'broadcast')
+    }
+    const transport = this.cloudflare
+    if (!transport || !crypto.subtle) return false
+    const mediaKey = bytesToBase64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(choice.profileId + ':' + discoveryKey(choice.media)))))
+    const payload = await encryptTvPayload(transport, `discovery:${mediaKey}`, choice)
+    await workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/discovery`, 'PUT', { mediaKey, payload, at: choice.at })
+    return true
+  }
+
+  async syncDiscoveryChoices(): Promise<void> {
+    const profile = tvProfileId(), transport = this.cloudflare
+    const choices = Object.values(readDiscoveryChoices())
+    if (this.credential && this.connected) this.publish('izumi.companion.discovery', { credential: this.credential, choices: choices.slice(0, 100) }, 'broadcast')
+    if (!transport || !tvProfileReady()) return
+    for (const choice of choices.filter(choice => choice.pending).slice(0, 20)) {
+      if (profile !== tvProfileId()) return
+      try { if (await this.sendDiscoveryChoice(choice) && profile === tvProfileId()) persistDiscoveryChoice({ ...choice, pending: false }) } catch { break }
+    }
+    const result = await workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/discovery`, 'GET')
+    for (const row of (Array.isArray(result.records) ? result.records : []).slice(0, 500)) {
+      if (profile !== tvProfileId()) return
+      if (typeof row?.mediaKey !== 'string' || typeof row.payload !== 'string') continue
+      const choice = await decryptTvPayload<DiscoveryChoice>(transport, `discovery:${row.mediaKey}`, row.payload)
+      if (profile === tvProfileId() && validDiscoveryChoice(choice)) persistDiscoveryChoice({ ...choice, pending: false })
+    }
+  }
+
+  /** Read a merged cloud catalog without navigating away or replacing the active Home screen. */
+  async discoveryCandidates(): Promise<CompanionMedia[]> {
+    const profile = tvProfileId()
+    if (!this.cloudflare || !tvProfileReady()) return []
+    const result = await workerRequest(this.cloudflare, `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/catalog`, 'POST', { screen: 'merged' }, 20_000)
+    if (profile !== tvProfileId() || !isCompanionSnapshot(result.snapshot) || !snapshotMatchesTvProfile(result.snapshot)) return []
+    return result.snapshot.rows.flatMap(row => row.items).filter(tvAllowsMedia)
+  }
+
   async requestDetails(media: CompanionMedia, presentationOnly = false): Promise<CompanionMedia | null> {
     const viewer = tvProfileId()
     if (!tvProfileReady() || !tvAllowsMedia(media)) return null
@@ -1483,6 +1524,11 @@ export class CompanionReceiver {
     updateTvHousehold(snapshot.household)
     if (!tvProfileReady() || !snapshotMatchesTvProfile(snapshot)) return false
     const safe = filterTvSnapshot(mergePlaybackProgress(snapshot))
+    const choices = readDiscoveryChoices()
+    for (const decision of safe.discovery?.decisions ?? []) {
+      const local = choices[decision.key]
+      if (local?.pending && local.at === decision.at && local.action === decision.action) persistDiscoveryChoice({ ...local, pending: false })
+    }
     storeSnapshot(safe)
     this.events.onSnapshot(safe)
     return true

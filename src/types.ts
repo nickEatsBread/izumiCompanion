@@ -5,6 +5,7 @@ export type ScreenName =
   | 'series-home'
   | 'series'
   | 'movies'
+  | 'discover'
   | 'my-list'
   | 'watch-history'
   | 'settings'
@@ -25,6 +26,7 @@ export interface MediaRef {
 }
 
 export interface CompanionMedia {
+  recommendation?: { reason: string; evidence: string[]; exploration: boolean }
   ref: MediaRef
   /** Stable identity supplied by Izumi so TV checkpoints merge into normal watch sync. */
   mediaId?: number
@@ -163,6 +165,12 @@ export interface CompanionCatalogOption {
 }
 
 export interface CompanionHomeSnapshot {
+  discovery?: {
+    version: 2
+    candidates: CompanionMedia[]
+    excluded: string[]
+    decisions: Array<{ key: string; action: 'save' | 'skip' | 'dismiss' | 'undo'; at: number }>
+  }
   profileId?: string
   household?: import('./lib/profiles').TvHousehold
   app: 'izumi'
