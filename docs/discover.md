@@ -27,4 +27,4 @@ also acknowledges a local-network sync.
 
 Run `npm run check` and `npm run check:m56`. The compatibility suite checks Discover geometry,
 explanations, save/undo and remote navigation at Tizen's fixed 1920x1080 CSS viewport.
-Package with the existing Tizen script. Verify installation and playback on a physical TV.
+Package with the existing Tizen script and verify installation and playback on a physical TV.

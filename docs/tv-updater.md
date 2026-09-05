@@ -141,7 +141,8 @@ the version upgrade through the updater. Publishing remains a separate action.
 For local maintainer deployment with an existing identity:
 
 ```powershell
-node installer/src/setup-local.cjs --ip 192.0.2.10 `
+if (!$env:IZUMI_TV_IP) { throw 'Set IZUMI_TV_IP to the TV address from Network Status.' }
+node installer/src/setup-local.cjs --ip "$env:IZUMI_TV_IP" `
   --updater artifacts/izumi-updater.wgt `
   --certificate-dir "$env:APPDATA\izumi-tv-installer\samsung-certificates"
 ```

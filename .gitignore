@@ -12,6 +12,21 @@ vite.config.d.ts
 *.pfx
 profiles.xml
 .tizen/
+*.key
+*.pem
+*.csr
+
+# Local submission material and internal research
+/docs/certification/
+/docs/compliance/
+/docs/tv-app-updates.md
+/brand/samsung-seller/
+
+# Local legacy tooling, backups and logs
+/izucomp/
+/izucomp.zip
+*.bundle
+*.log
 
 # Local environment and OS files
 .env
@@ -19,7 +34,3 @@ profiles.xml
 !.env.example
 .DS_Store
 Thumbs.db
-/docs/certification/
-/docs/compliance/
-/docs/tv-app-updates.md
-/brand/samsung-seller/

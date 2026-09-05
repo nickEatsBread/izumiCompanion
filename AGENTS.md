@@ -35,10 +35,10 @@ existing TV pairing/storage upgrade path.
 
 - Current updater test: deploy only `izumi-updater.wgt`. Keep Companion at 0.2.35
   so the helper can install 0.2.36. Push and GitHub publication are on hold for user review.
-- Last-known TV address: `192.0.2.10`.
-- The TV's Developer Mode Host PC IP must match this workstation's current Wi-Fi IPv4 address
-  (`Get-NetIPAddress -InterfaceAlias 'Wi-Fi' -AddressFamily IPv4`). The last-known value is
-  `192.0.2.20`; do not assume it is permanent.
+- Read the TV's current IPv4 address from its Network Status screen and set `IZUMI_TV_IP`
+  in the local shell before running deployment commands. Never commit device addresses.
+- The TV's Developer Mode Host PC IP must match the computer's active Wi-Fi/Ethernet IPv4
+  address. Use the installer address list or the operating system's network settings.
 - If port 26101 refuses the connection, open Apps on the TV, enter `12345`, enable Developer Mode,
   update the Host PC IP, and restart the TV before retrying. Ports 8001/8002 identify the Samsung TV
   but cannot install a widget.
@@ -48,8 +48,9 @@ existing TV pairing/storage upgrade path.
 After packaging, install Companion without launching it:
 
 ```powershell
+if (!$env:IZUMI_TV_IP) { throw 'Set IZUMI_TV_IP to the TV address from Network Status.' }
 node installer\src\install-only.cjs `
-  --ip 192.0.2.10 `
+  --ip "$env:IZUMI_TV_IP" `
   --package "$PWD\artifacts\izumi-companion.wgt" `
   --certificate-dir "$env:APPDATA\izumi-tv-installer\samsung-certificates"
 ```
