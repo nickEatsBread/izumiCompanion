@@ -34,8 +34,11 @@ existing TV pairing/storage upgrade path.
 
 ## Deploying to the development TV
 
-- Current updater test: deploy only `izumi-updater.wgt`. Keep Companion at 0.2.35
-  so the helper can install 0.2.36 from the public GitHub release.
+- The on-TV updater successfully installed Companion 0.2.36 from public GitHub
+  releases over the existing 0.2.35 installation, and Companion reopened manually.
+  Preserve that baseline: deploy only `izumi-updater.wgt` for helper fixes. Use a
+  newer published release for the next Companion update test, including the in-app
+  update prompt and automatic return flow, which have not yet been tested on the TV.
 - Read the TV's current IPv4 address from its Network Status screen and set `IZUMI_TV_IP`
   in the local shell before running deployment commands. Never commit device addresses.
 - The TV's Developer Mode Host PC IP must match the computer's active Wi-Fi/Ethernet IPv4
