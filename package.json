@@ -15,7 +15,7 @@
     "dev": "vite --host 127.0.0.1 --port 4173",
     "notices": "node scripts/generate-third-party-notices.mjs",
     "build": "npm run notices && npm run typecheck && node scripts/build-tizen.mjs && node scripts/stage-tizen.mjs",
-    "test": "vitest run --exclude izucomp/** --exclude installer/** --exclude updater/** --maxWorkers 2",
+    "test": "vitest run --exclude \"izucomp/**\" --exclude \"installer/**\" --exclude \"updater/**\" --maxWorkers 2",
     "check": "npm run typecheck && npm run test && npm run test:updater",
     "check:m56": "npm run build:all && node scripts/check-chromium-m56.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
