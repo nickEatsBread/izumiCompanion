@@ -16,6 +16,7 @@ From the repository root:
 
 ```sh
 npm ci
+npm ci --prefix updater --ignore-scripts
 npm ci --prefix installer
 npm run assets --prefix installer
 npm run cloudflare --prefix installer
