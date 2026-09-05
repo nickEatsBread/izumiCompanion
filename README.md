@@ -16,7 +16,7 @@ A Samsung Tizen companion for browsing and playing from a paired izumi client.
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](#technology)
 [![MIT](https://img.shields.io/badge/License-MIT-5CEAD8?style=for-the-badge)](LICENSE)
 
-[Features](#features) · [Local preview](#local-preview) · [Tizen build](#tizen-build)
+[Features](#features) · [Installation](#installation) · [Local preview](#local-preview) · [Tizen build](#tizen-build) · [Releases](#releases)
 </div>
 
 <br>
@@ -50,6 +50,52 @@ to emulate Samsung's media pipeline.
 Devices on the same local network can discover and cast to the receiver. Pairing stores the owner's
 catalogue and preferences so the companion opens into the same library on later launches.
 
+## Installation
+
+The desktop installer is currently available as a local test build; a public installer download has
+not been published yet. Its automatic downloads require a published release containing both izumi
+WGT packages. An unpublished or draft release will appear as unavailable.
+
+You need a Samsung Tizen TV, a computer on the same local network, and a Samsung account for
+first-time signing. Companion supports Tizen 2.3+; the separate updater requires Tizen 3.0+ with
+Web service support. The updater has been exercised on a Tizen 4.0 TV, but its full upgrade test is
+still pending. See the [hardware verification](docs/tv-updater.md#hardware-verification).
+
+### First-time TV setup
+
+1. Find the computer's local IPv4 address and the TV's IP address in their network settings.
+2. On the TV, open **Apps** (or **Apps Settings**, depending on the model) and enter **12345** with
+   the remote's number keypad. Turn **Developer Mode** on, set **Host PC IP** to the computer's
+   address, confirm, and restart the TV. Samsung documents this in its
+   [TV connection guide](https://developer.samsung.com/smarttv/develop/getting-started/using-sdk/tv-device.html).
+3. Open **izumi Companion Installer** on the computer and enter the **TV's IP address**. Keep
+   **Enable updates on the TV** selected on supported TVs, then choose **Set up izumi**.
+4. Complete Samsung sign-in when prompted. The installer downloads, verifies, signs and installs
+   Companion and its updater. You do not need to select or upload a WGT manually.
+5. When **izumi Updater** opens on the TV, enter its **Desktop setup code** in the desktop installer.
+   Wait for confirmation that encrypted setup succeeded. Keep a backup of the original Samsung
+   signing identity; future versions must use the same identity.
+6. After that confirmation, return to **Apps → 12345**, change **Host PC IP** to **127.0.0.1**,
+   and restart the TV. This enables the updater to install future Companion versions on the TV.
+7. Open **izumi companion** from TV Apps and pair it with izumi using the on-screen code or QR code.
+
+For Tizen 2.3 TVs, leave **Enable updates on the TV** unchecked. Install Companion only and keep
+Host PC IP set to the computer; the separate on-TV updater is not available on that runtime.
+
+### Updating and reconnecting
+
+Companion offers **Update now** when a newer published version is available. Accepting opens the
+updater, displays download and installation progress, and returns to Companion after the update.
+You can also open **izumi Updater** directly, or choose **Settings → App updates**, to check manually.
+
+To repair or update the updater itself from the computer, change Developer Mode **Host PC IP** back
+to the computer's address and restart the TV before running the desktop installer. After confirmed
+setup, restore **127.0.0.1** and restart again. Having Companion open alone does not enable the
+developer connection needed for installation.
+
+Developer builds, signing storage and current test limitations are documented in
+[TV updater setup](docs/tv-updater.md). Keep TV credentials out of public packages and source control.
+
 ## Local preview
 
 ```powershell
@@ -70,20 +116,36 @@ http://127.0.0.1:4173/?preview=1&screen=ready
 ## Tizen build
 
 ```powershell
-npm run build
+npm ci
+npm ci --prefix updater
+npm run check
+npm run build:all
+node scripts/package-companion.mjs
+node scripts/verify-release.mjs
 ```
 
 The completed `dist/` directory contains the production app, `config.xml`, icon, Samsung Smart
-View receiver library, legacy browser chunks, license notices, and the AVPlay bootstrap. Package
-it as an unsigned Tizen widget with:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\package-tizen.ps1
-```
+View receiver library, legacy browser chunks, license notices, and the AVPlay bootstrap. The commands
+above produce unsigned `artifacts/izumi-companion.wgt` and `artifacts/izumi-updater.wgt` packages.
 
 The resulting `artifacts/izumi-companion.wgt` must be signed for the target Samsung TV before it is
 installed. Local development-TV prerequisites and the verified signing/deployment commands are in
 [`AGENTS.md`](AGENTS.md); signing keys remain outside this repository.
+
+## Releases
+
+[CI](.github/workflows/ci.yml) runs automatically for pushes to `main` and pull requests. It checks
+types, runs the Companion and updater tests, builds both WGTs, and verifies package identities and
+versions.
+
+The [Build TV release](.github/workflows/release.yml) GitHub Actions workflow is started manually
+from the Actions tab. It runs the same checks and builds, then creates a **draft GitHub release**
+with both WGTs. Set matching versions in `config.xml`, `updater/config.xml`, and
+`updater/package.json` and its lockfile before running it. Review the draft and publish it when ready;
+the installer and TV update checks only discover complete, stable, published releases.
+
+Desktop installer source remains local work awaiting review, so Windows, macOS and Linux installer
+binaries are not currently built by this workflow. It publishes no release automatically on a push.
 
 ## Technology
 
@@ -100,8 +162,10 @@ and playback constraints require a smaller, purpose-built companion.
 
 ## License
 
-[MIT](LICENSE) © izumi contributors. Bundled libraries, fonts, and icons remain under their own
-licenses; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Companion is [MIT licensed](LICENSE) © izumi contributors. The separate TV updater and its shared
+signing runtime are [AGPL-3.0-or-later](updater/LICENSE). Bundled libraries, fonts, and icons remain
+under their own licenses; see [Companion notices](THIRD-PARTY-NOTICES.md) and
+[updater notices](updater/THIRD-PARTY-NOTICES.md).
 
 Samsung and Tizen are trademarks of Samsung Electronics. AniList, Stremio, and other service names
 belong to their respective owners.
