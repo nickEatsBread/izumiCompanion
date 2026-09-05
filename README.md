@@ -9,6 +9,11 @@
 
 Browse your library, continue an episode, and watch on your Samsung TV.
 
+[![Samsung Tizen](https://img.shields.io/badge/Samsung%20Tizen-2.3%2B-1428A0?style=for-the-badge&logo=samsung&logoColor=white)](#what-you-need)
+[![Preact](https://img.shields.io/badge/Preact-TV%20UI-673AB8?style=for-the-badge&logo=preact&logoColor=white)](#development)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](#development)
+[![MIT](https://img.shields.io/badge/License-MIT-5CEAD8?style=for-the-badge)](LICENSE)
+
 [Download the installer](https://github.com/nickEatsBread/izumiCompanion/releases/latest) · [Installation](#installation) · [Updates](#updates) · [Troubleshooting](#troubleshooting)
 </div>
 
