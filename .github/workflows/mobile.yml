@@ -99,7 +99,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: izumi-installer-${{ matrix.platform }}
-          path: |
-            mobile/dist/*.apk
-            mobile/ios/unsigned/*.ipa
+          path: ${{ matrix.platform == 'Android' && 'mobile/dist/*.apk' || 'mobile/ios/unsigned/*.ipa' }}
           if-no-files-found: error
