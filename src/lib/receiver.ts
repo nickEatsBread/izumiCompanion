@@ -14,6 +14,7 @@ import type {
 } from '../types'
 import { isCompanionSnapshot } from '../types'
 import { cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
+import { resolveWithTvSourceLookup } from './tv-source-lookup'
 import {
   clearPlaybackProgress,
   mergePlaybackProgress,
@@ -593,6 +594,7 @@ export class CompanionReceiver {
   private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
   private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
   private workerSetupRequestId = ''
+  private cloudPlayGeneration = 0
   private activePlayback?: { sessionId: string; media: CompanionMedia; profileId: string }
   private progressSubscriberId = ''
   private cloudPlayback?: { sessionId: string; media: CompanionMedia; profileId: string }
@@ -1085,6 +1087,7 @@ export class CompanionReceiver {
   }
 
   async requestPlay(media: CompanionMedia): Promise<CompanionPlayResult> {
+    const generation = ++this.cloudPlayGeneration
     const viewer = tvProfileId()
     if (!tvProfileReady() || !tvAllowsMedia(media)) return { kind: 'failed', message: 'This title is unavailable for this profile.' }
     if (!this.credential) return 'open-client'
@@ -1101,24 +1104,24 @@ export class CompanionReceiver {
 
     if (this.cloudflare && playbackMode !== 'device-only') {
       try {
-        const result = await workerRequest(
-          this.cloudflare,
-          `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`,
-          'POST',
+        const transport = this.cloudflare
+        const result = await resolveWithTvSourceLookup(
           cloudResolveRequest(media),
-          30_000,
+          payload => workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`, 'POST', payload, 30_000),
+          () => generation === this.cloudPlayGeneration && viewer === tvProfileId() && tvProfileReady() && this.cloudflare === transport,
         )
         const selection = cloudResolveSelection(result, media, requestId)
         if (selection) return { kind: 'resolved', ...selection }
         const failure = Array.isArray(result.failures) && typeof result.failures[0] === 'string'
           ? result.failures[0].slice(0, 240) : ''
-        if (failure) return { kind: 'failed', message: failure }
+        if (failure && result.fallback !== 'paired-device') return { kind: 'failed', message: failure }
         // A successful Worker response is authoritative. Cloudflare-only never wakes or contacts a
         // linked device; combined mode does so only when the saved profile explicitly requests it.
         if (result.fallback !== 'paired-device') return 'no-source'
       } catch (error) {
         const resolverWasRemoved = error instanceof WorkerRequestError && error.code === 'RESOLVER_NOT_CONFIGURED'
-        if (playbackMode === 'cloud-only' && !resolverWasRemoved) return 'worker-error'
+        if (generation !== this.cloudPlayGeneration || viewer !== tvProfileId()) return 'no-source'
+        if (playbackMode === 'cloud-only' && !resolverWasRemoved) return { kind: 'failed', message: error instanceof Error ? error.message : 'The Worker could not resolve this source.' }
         // Combined mode is also an availability fallback: continue through the linked device when
         // the user's Worker is temporarily unavailable.
       }
@@ -1446,6 +1449,7 @@ export class CompanionReceiver {
   }
 
   disconnect(): void {
+    this.cloudPlayGeneration += 1
     if (this.pairingTimer) window.clearInterval(this.pairingTimer)
     try { this.channel?.disconnect() } catch { /* disconnected already */ }
     this.channel = undefined

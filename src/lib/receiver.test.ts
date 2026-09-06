@@ -140,6 +140,67 @@ afterEach(() => {
 })
 
 describe('companion play routing', () => {
+  it('uses the TV home connection after a blocked Worker lookup, then resolves with the Worker', async () => {
+    const sourceUrl = 'https://torrentio.strem.fun/stream/movie/tt0126029.json'
+    FakeXmlHttpRequest.responder = request => {
+      if (request.url === sourceUrl) return { status: 200, body: { streams: [{
+        infoHash: 'a'.repeat(40), title: 'Shrek 1080p', url: 'https://untrusted.example/video',
+        __cache: 'cached', behaviorHints: { filename: 'Shrek.mkv', proxyHeaders: { request: { Cookie: 'secret' } } },
+      }] } }
+      const body = request.body as Record<string, unknown>
+      if (!body.tvSourceResults) return { status: 200, body: { ok: true, candidates: [],
+        failures: ['Torrentio blocked the Worker (HTTP 403).'], tvSourceLookup: { version: 1, ticket: 'signed-ticket', requests: [{ id: 'torrentio-0-0', url: sourceUrl }] } } }
+      return { status: 200, body: { ok: true, candidates: [{ id: 'torbox', url: 'https://cdn.example/Shrek.mkv', subtitles: [] }] } }
+    }
+    const result = await new CompanionReceiver(events()).requestPlay(media)
+    expect(result).toMatchObject({ kind: 'resolved', request: { url: 'https://cdn.example/Shrek.mkv' } })
+    expect(FakeXmlHttpRequest.sent).toHaveLength(3)
+    const [first, local, resumed] = FakeXmlHttpRequest.sent
+    expect(first.body).toMatchObject({ tvSourceLookup: 1 })
+    expect(local).toMatchObject({ method: 'GET', url: sourceUrl, body: null, headers: { Accept: 'application/json' } })
+    expect(local.headers.Authorization).toBeUndefined()
+    expect(resumed.headers.Authorization).toBe(`Bearer ${transport.tvToken}`)
+    expect(resumed.body).toMatchObject({ tvSourceResults: { ticket: 'signed-ticket', results: [{ id: 'torrentio-0-0', streams: [{ infoHash: 'a'.repeat(40) }] }] } })
+    expect(JSON.stringify(resumed.body)).not.toMatch(/untrusted|__cache|Cookie|secret/)
+    expect(FakeXmlHttpRequest.sent.some(request => request.url.includes('/requests/'))).toBe(false)
+  })
+
+  it.each([
+    'http://127.0.0.1/stream/movie/tt0126029.json',
+    'https://other.example/stream/movie/tt0126029.json',
+    'https://torrentio.strem.fun/torbox=secret/stream/movie/tt0126029.json',
+    'https://torrentio.strem.fun/stream/movie/tt0126029.json?token=secret',
+  ])('rejects an unsafe or credential-bearing source request: %s', async url => {
+    FakeXmlHttpRequest.responder = () => ({ status: 200, body: { ok: true, candidates: [], tvSourceLookup: {
+      version: 1, ticket: 'signed-ticket', requests: [{ id: 'torrentio-0-0', url }],
+    } } })
+    expect(await new CompanionReceiver(events()).requestPlay(media)).toMatchObject({ kind: 'failed', message: expect.stringContaining('unsafe') })
+    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+  })
+
+  it('reports a blocked TV lookup without looping or contacting a closed izumi client', async () => {
+    FakeXmlHttpRequest.responder = request => request.method === 'GET'
+      ? { status: 403, body: {} }
+      : { status: 200, body: { ok: true, candidates: [], tvSourceLookup: { version: 1, ticket: 'signed-ticket',
+        requests: [{ id: 'torrentio-0-0', url: 'https://torrentio.strem.fun/stream/movie/tt0126029.json' }] } } }
+    expect(await new CompanionReceiver(events()).requestPlay(media)).toEqual({ kind: 'failed', message: 'Torrentio returned HTTP 403 to the TV.' })
+    expect(FakeXmlHttpRequest.sent).toHaveLength(2)
+  })
+
+  it('does not resume a source lookup after the receiver disconnects', async () => {
+    const receiver = new CompanionReceiver(events())
+    FakeXmlHttpRequest.responder = request => {
+      if (request.method === 'GET') {
+        receiver.disconnect()
+        return { status: 200, body: { streams: [{ infoHash: 'a'.repeat(40) }] } }
+      }
+      return { status: 200, body: { ok: true, candidates: [], tvSourceLookup: { version: 1, ticket: 'signed-ticket',
+        requests: [{ id: 'torrentio-0-0', url: 'https://torrentio.strem.fun/stream/movie/tt0126029.json' }] } } }
+    }
+    expect(await receiver.requestPlay(media)).toBe('no-source')
+    expect(FakeXmlHttpRequest.sent).toHaveLength(2)
+  })
+
   it('acknowledges an offline discovery choice only when the linked snapshot contains that exact decision', async () => {
     storage.removeItem('izumi.companion.cloudflare')
     const channel = new FakeSmartViewChannel()
