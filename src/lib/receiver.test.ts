@@ -100,6 +100,7 @@ const events = (): ReceiverEvents => ({
   onPaired: vi.fn(),
   onPairingInfo: vi.fn(),
   onSnapshot: vi.fn(),
+  onCatalogError: vi.fn(),
   onSearchResults: vi.fn(),
   onLoad: vi.fn(),
   onControl: vi.fn(),
@@ -199,6 +200,48 @@ describe('companion play routing', () => {
     }
     expect(await receiver.requestPlay(media)).toBe('no-source')
     expect(FakeXmlHttpRequest.sent).toHaveLength(2)
+  })
+
+  it('loads the configured standalone home without a desktop snapshot', async () => {
+    storage.removeItem('izumi.companion.cloudflare')
+    const view = { app: 'izumi', kind: 'companion-home', version: 1, revision: 'cloud-1', generatedAt: Date.now(), catalog: { screen: 'stremio', label: 'Stremio' }, rows: [] }
+    FakeXmlHttpRequest.responder = (request) => request.url.endsWith('/catalog')
+      ? { status: 200, body: { snapshot: view } } : { status: 404, body: {} }
+    const handlers = events()
+    const receiver = new CompanionReceiver(handlers)
+    receiver.adoptStandaloneTransport(transport)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(FakeXmlHttpRequest.sent.find((request) => request.url.endsWith('/catalog'))?.body).toMatchObject({ screen: 'default' })
+    expect(handlers.onSnapshot).toHaveBeenCalledWith(expect.objectContaining({ catalog: view.catalog }))
+    expect(handlers.onCatalogError).not.toHaveBeenCalled()
+    expect(storage.getItem('izumi.companion.cloudflare')).toBe(JSON.stringify(transport))
+  })
+
+  it.each([
+    { status: 409, body: { error: 'Catalogue provider returned HTTP 403.' }, message: 'Catalogue provider returned HTTP 403.' },
+    { status: 200, body: { snapshot: {} }, message: 'The private Worker returned an invalid catalogue. Check its version and retry.' },
+  ])('reports standalone failures with Samsung service connected ($status)', async ({ status, body, message }) => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, { msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) } })
+    FakeXmlHttpRequest.responder = (request) => request.url.endsWith('/catalog')
+      ? { status, body } : { status: 404, body: {} }
+    const handlers = events()
+    const receiver = new CompanionReceiver(handlers)
+    await receiver.connect()
+    receiver.adoptStandaloneTransport(transport)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(handlers.onCatalogError).toHaveBeenCalledWith('default', message)
+    expect(channel.publish.mock.calls.some(([name]) => name === 'izumi.companion.catalog')).toBe(false)
+    expect(storage.getItem('izumi.companion.cloudflare')).toBe(JSON.stringify(transport))
+    receiver.disconnect()
+  })
+
+  it('regenerates the catalogue on restart when the encrypted snapshot is absent', async () => {
+    const handlers = events()
+    new CompanionReceiver(handlers).requestRefresh()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(FakeXmlHttpRequest.sent.some((request) => request.url.endsWith('/catalog'))).toBe(true)
+    expect(handlers.onCatalogError).toHaveBeenCalledOnce()
   })
 
   it('acknowledges an offline discovery choice only when the linked snapshot contains that exact decision', async () => {
@@ -922,6 +965,6 @@ describe('companion play routing', () => {
     expect(JSON.parse(storage.getItem('izumi.companion.cloudflare') || '{}')).toEqual(transport)
     expect(receiverEvents.onPaired).toHaveBeenLastCalledWith(true)
     expect(receiverEvents.onIndependentPlaybackReady).toHaveBeenLastCalledWith(true)
-    expect(FakeXmlHttpRequest.sent.some((request) => request.url.endsWith('/snapshots?screen=auto'))).toBe(true)
+    expect(FakeXmlHttpRequest.sent.some((request) => request.url.endsWith('/snapshots?screen=default'))).toBe(true)
   })
 })

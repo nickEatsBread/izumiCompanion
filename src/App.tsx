@@ -329,6 +329,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [qrCode, setQrCode] = useState<string>()
   const [standaloneQrCode, setStandaloneQrCode] = useState<string>()
   const [tvLinkInfo, setTvLinkInfo] = useState<TvLinkInfo>({ code: '', expiresAt: 0, phase: 'preparing' })
+  const [standaloneCatalogError, setStandaloneCatalogError] = useState('')
+  const [standaloneSaved, setStandaloneSaved] = useState(false)
   const pairingChallenge = normalizeTvLinkCode(pairing?.challenge ?? (showPreviewTools ? 'TV42IZ' : ''))
   const pairingDisplayCode = pairingChallenge
     ? `${pairingChallenge.slice(0, 3)} ${pairingChallenge.slice(3, 6)}`
@@ -1022,8 +1024,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       },
       onPlaybackProgress: setSnapshot,
       onCatalogError: (catalogScreen, message) => {
+        if (screenRef.current === 'standalone-link') {
+          setStandaloneCatalogError(message)
+          return
+        }
         const pendingCatalog = catalogRequestRef.current
-        if (!pendingCatalog || pendingCatalog.screen !== catalogScreen) return
+        if (!pendingCatalog) { showNotice(message); return }
+        if (pendingCatalog.screen !== catalogScreen) return
         window.clearTimeout(pendingCatalog.timer)
         catalogRequestRef.current = undefined
         finishNavigationTransition()
@@ -1169,7 +1176,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       onSetup: (transport) => {
         const activeReceiver = receiverRef.current
         if (!activeReceiver) throw new Error('The TV receiver closed before setup completed.')
+        if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
+        catalogRequestRef.current = undefined
         activeReceiver.adoptStandaloneTransport(transport)
+        setStandaloneSaved(true)
         setPaired(true)
       },
     })
@@ -2727,13 +2737,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const openStandaloneLink = () => {
+    setStandaloneCatalogError('')
+    setStandaloneSaved(false)
     setScreen('standalone-link')
     changeFocus({ zone: 'setting', index: 0 })
   }
 
   const closeStandaloneLink = () => {
-    setScreen('ready')
+    setScreen(standaloneSaved ? 'home' : 'ready')
     changeFocus({ zone: 'setting', index: 0 })
+  }
+
+  const retryStandaloneCatalog = () => {
+    setStandaloneCatalogError('')
+    if (!receiverRef.current?.requestCatalog('default') && tvProfileReady()) {
+      setStandaloneCatalogError('The TV receiver is unavailable. Reopen Companion to load your saved setup.')
+    }
   }
 
   const approveStandaloneLink = () => {
@@ -2932,7 +2951,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (action === 'right' || action === 'down') changeFocus({ zone: 'setting', index: 1 })
         else if (action === 'select') focus.index === 1 ? approveStandaloneLink() : rejectStandaloneLink()
         else if (action === 'back') rejectStandaloneLink()
-      } else if (action === 'select' || action === 'back') closeStandaloneLink()
+      } else if (action === 'select' && standaloneSaved) retryStandaloneCatalog()
+      else if (action === 'select' || action === 'back') closeStandaloneLink()
       return
     }
     if (screen === 'details') {
@@ -3384,15 +3404,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           qrCode={standaloneQrCode}
           pairingCode={tvLinkDisplayCode}
           expiresAt={tvLinkInfo.expiresAt}
-          phase={tvLinkInfo.phase}
-          statusMessage={tvLinkInfo.message}
+          phase={standaloneCatalogError ? 'error' : tvLinkInfo.phase}
+          statusMessage={standaloneCatalogError ? `Your setup is saved, but the catalogue could not load: ${standaloneCatalogError}` : tvLinkInfo.message}
+          setupSaved={standaloneSaved}
           confirmation={tvLinkInfo.confirmation}
           confirmationFocus={focus.index}
           posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
           backFocused={focus.zone === 'setting'}
           onBackFocus={() => changeFocus({ zone: 'setting', index: 0 })}
           onConfirmationFocus={(index) => changeFocus({ zone: 'setting', index })}
-          onBack={closeStandaloneLink}
+          onBack={standaloneSaved ? retryStandaloneCatalog : closeStandaloneLink}
           onApprove={approveStandaloneLink}
           onReject={rejectStandaloneLink}
         />

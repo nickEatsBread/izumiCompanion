@@ -895,10 +895,8 @@ export class CompanionReceiver {
   }
 
   requestRefresh(): void {
-    void this.refreshHousehold()
-    void this.refreshCloudSnapshot() // Latest roster may belong to another profile; never display its personal rows.
-    const screen = storedSnapshot()?.catalog.screen
-    void this.refreshCloudSnapshot(screen)
+    // Fresh standalone Workers have no encrypted desktop snapshots. Regenerate on a cache miss.
+    if (this.cloudflare) void this.refreshHousehold().then(() => this.requestCatalog(storedSnapshot()?.catalog.screen ?? 'default'))
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
   }
 
@@ -932,9 +930,8 @@ export class CompanionReceiver {
     this.events.onPaired(true)
     this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
     this.events.onIndependentPlaybackReady?.(true)
-    // The Worker maps an unsupported "auto" request to the profile's configured default, so this
-    // starts either the AniList, TMDB or Stremio home selected during phone setup.
-    void this.refreshHousehold().then(() => this.requestCatalog('auto'))
+    // "auto" is an actual AniList catalogue. An unknown selector requests defaultScreen.
+    void this.refreshHousehold().then(() => this.requestCatalog('default'))
   }
 
   /** Ask the authenticated, currently linked izumi client to open the private Worker onboarding. */
@@ -1244,14 +1241,17 @@ export class CompanionReceiver {
           )
           if (isCompanionSnapshot(result.snapshot)) {
             updateTvHousehold(result.snapshot.household)
-            if (viewer !== tvProfileId() || !snapshotMatchesTvProfile(result.snapshot)) return
+            if (viewer !== tvProfileId() || !tvProfileReady()) return
+            if (!snapshotMatchesTvProfile(result.snapshot)) throw new Error('The cloud catalogue belongs to another profile. Choose your profile and retry.')
             const snapshot = await this.withCloudProgress(result.snapshot)
             if (viewer === tvProfileId()) this.acceptSnapshot(snapshot)
             return
           }
+          throw new Error('The private Worker returned an invalid catalogue. Check its version and retry.')
         } catch (error) {
           if (viewer !== tvProfileId() || !tvProfileReady()) return
-          if (!this.connected) {
+          // Samsung's receiver service can be online without a paired phone or desktop.
+          if (!this.connected || this.cloudflare?.playbackMode === 'cloud-only') {
             this.events.onCatalogError?.(screen, error instanceof Error ? error.message : 'The cloud catalogue is unavailable.')
             return
           }
