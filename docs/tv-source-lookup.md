@@ -26,5 +26,5 @@ Validation includes receiver routing, credential/URL rejection, disconnect handl
 Worker ticket tampering/expiry/replay checks, and live resolution through TorBox.
 The live harness resolved Shrek and Skinwalker Ranch S01E01 in about three seconds
 and confirmed both media URLs were available. Physical TV decoding and installation
-remain separate checks. The development widget is packaged as
-`artifacts/izumi-companion-tv-source-lookup.wgt`; it is not a published release.
+remain separate checks. Companion 0.2.39 includes the TV-side protocol support;
+the private Worker must also support the assisted continuation.
