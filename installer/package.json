@@ -1,6 +1,6 @@
 {
   "name": "izumi-companion-installer",
-  "version": "0.2.36",
+  "version": "0.2.37",
   "private": true,
   "description": "Desktop installer for izumi Companion on Samsung Tizen TVs",
   "author": "izumi contributors",

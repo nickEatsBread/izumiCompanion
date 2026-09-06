@@ -1,6 +1,6 @@
 {
   "name": "@izumi/tv-updater",
-  "version": "0.2.36",
+  "version": "0.2.37",
   "private": true,
   "description": "Standalone Samsung Tizen update service and shared signing runtime",
   "license": "AGPL-3.0-or-later",
