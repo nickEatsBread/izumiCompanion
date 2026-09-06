@@ -4824,6 +4824,39 @@ body,
 .hero-meta-line .hero-meta { margin: 0; }
 .hero-meta-line > * + * { margin-left: 20px; }
 
+/* The carousel uses the same separated facts as the focused spotlight, followed by a
+ * standalone resume line. Bound the copy so it stays on the scrim above the first rail. */
+.mode-carousel .hero-copy {
+  width: 952px;
+}
+
+.mode-carousel .hero-meta-line {
+  width: 100%;
+  display: block;
+}
+
+.mode-carousel .hero-meta {
+  color: #d5d7dc;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 36px;
+}
+
+.mode-carousel .hero-meta-line > .hero-ratings {
+  margin: 8px 0 0;
+}
+
+.hero-time-left {
+  margin: 12px 0 0;
+  color: #f6f6f6;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: .035em;
+  line-height: 28px;
+  text-transform: uppercase;
+}
+
 .hero-ratings {
   display: flex;
   align-items: center;

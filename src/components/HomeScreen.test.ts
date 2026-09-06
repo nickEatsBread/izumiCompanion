@@ -19,6 +19,7 @@ import {
   homeRowVisible,
   informativeHeroMeta,
   mediaFactTokens,
+  minutesRemaining,
   ratingDisplayValue,
   titleFallbackVisible,
   trailerNeedsEnglishCaptions,
@@ -88,6 +89,27 @@ describe('TV home presentation', () => {
       facts: ['Show', 'Fantasy', '2024', '12 episodes', 'TV-14'],
     })
     expect(mediaFactTokens({ ...media(), mediaKind: 'movie', runtimeMinutes: 95 })).toEqual(['Movie', '1h 35m'])
+  })
+
+  it('shows time left for movies without episode coordinates and prefers the playback runtime', () => {
+    const movie: CompanionMedia = {
+      ...media(),
+      ref: { provider: 'tmdb', type: 'movie', id: '1' },
+      runtimeMinutes: 101,
+      episodeProgress: 12 / 101,
+    }
+    expect(minutesRemaining(movie)).toBe(89)
+    expect(minutesRemaining({ ...movie, episodeRuntimeMinutes: 40, episodeProgress: .5 })).toBe(20)
+    expect(minutesRemaining({ ...movie, episodeProgress: .999 })).toBe(1)
+  })
+
+  it('omits time left for missing, unstarted, finished or invalid watch progress', () => {
+    for (const progress of [undefined, 0, 1, -.1, 1.1, NaN, Infinity]) {
+      expect(minutesRemaining({ ...media(), episodeRuntimeMinutes: 40, episodeProgress: progress })).toBeUndefined()
+    }
+    for (const runtime of [undefined, 0, -1, NaN, Infinity]) {
+      expect(minutesRemaining({ ...media(), episodeRuntimeMinutes: runtime, episodeProgress: .5 })).toBeUndefined()
+    }
   })
 
   it('uses a distinct icon language for different achievement types', () => {

@@ -48,9 +48,12 @@ function episodeLabel(media: CompanionMedia): string {
   return media.season ? `S${media.season} E${media.episode}` : `Episode ${media.episode}`
 }
 
-function minutesRemaining(media: CompanionMedia): number | undefined {
-  if (!media.episodeRuntimeMinutes || !media.episodeProgress) return undefined
-  return Math.max(1, Math.ceil(media.episodeRuntimeMinutes * (1 - media.episodeProgress)))
+export function minutesRemaining(media: CompanionMedia): number | undefined {
+  const runtime = media.episodeRuntimeMinutes ?? media.runtimeMinutes
+  const progress = media.episodeProgress
+  if (runtime == null || !Number.isFinite(runtime) || runtime <= 0
+    || progress == null || !Number.isFinite(progress) || progress <= 0 || progress >= 1) return undefined
+  return Math.max(1, Math.ceil(runtime * (1 - progress)))
 }
 
 export interface HomeCardContext {
@@ -106,6 +109,12 @@ export function homeCardContext(media: CompanionMedia, continueCard: boolean): H
 
 export function informativeHeroMeta(media: CompanionMedia): string {
   return mediaFactTokens(media).filter((fact) => fact !== media.contentRating).join('  ·  ')
+}
+
+function FactTokens({ facts, contentRating }: { facts: string[]; contentRating?: string }) {
+  return <>{facts.map((fact, index) => fact === contentRating
+    ? <CertificationMark value={fact} key={`${fact}-${index}`} />
+    : <span key={`${fact}-${index}`}>{fact}</span>)}</>
 }
 
 export function achievementIconName(kind: NonNullable<CompanionMedia['achievements']>[number]['kind']): string {
@@ -667,9 +676,7 @@ const HomeFocusCard = memo(function HomeFocusCard({
         <span class="home-focus-outline" aria-hidden="true" />
       </span>
       <span class="home-focus-context" key={`context-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
-        <strong class="home-focus-facts">{context.facts.map((fact, factIndex) => fact === item.contentRating
-          ? <CertificationMark value={fact} key={`${fact}-${factIndex}`} />
-          : <span key={`${fact}-${factIndex}`}>{fact}</span>)}</strong>
+        <strong class="home-focus-facts"><FactTokens facts={context.facts} contentRating={item.contentRating} /></strong>
         {context.secondary && <small class="home-focus-secondary">{context.secondary}</small>}
         {item.description && <small class="home-focus-description">{item.description}</small>}
       </span>
@@ -866,7 +873,7 @@ export function HomeScreen({
           {heroLogoImage
             ? <img class="hero-title-logo" src={heroLogoImage} alt={hero.title} decoding="async" onError={onHeroLogoError} />
             : <h1>{hero.title}</h1>}
-          {isContinueHero && hero.episode && (
+          {!carouselLayout && isContinueHero && hero.episode && (
             <div class="hero-resume">
               <p><strong>{episodeLabel(hero)}</strong>{hero.episodeTitle && <span>{hero.episodeTitle}</span>}</p>
               <div class="hero-resume-status">
@@ -876,8 +883,9 @@ export function HomeScreen({
             </div>
           )}
           {(meta || hero.contentRating || ratings.length > 0) && <div class="hero-meta-line">
-            {meta && <p class="hero-meta">{meta}</p>}
-            {hero.contentRating && <CertificationMark value={hero.contentRating} />}
+            {carouselLayout
+              ? <p class="hero-meta home-focus-facts"><FactTokens facts={mediaFactTokens(hero)} contentRating={hero.contentRating} /></p>
+              : <>{meta && <p class="hero-meta">{meta}</p>}{hero.contentRating && <CertificationMark value={hero.contentRating} />}</>}
             {ratings.length > 0 && <div class="hero-ratings" aria-label="Ratings">
               {ratings.map((rating) => <span
                 class="hero-rating"
@@ -889,6 +897,9 @@ export function HomeScreen({
               </span>)}
             </div>}
           </div>}
+          {carouselLayout && heroMinutesRemaining != null && <p class="hero-time-left">
+            {heroMinutesRemaining} {heroMinutesRemaining === 1 ? 'minute' : 'minutes'} left
+          </p>}
           {hero.description && <p class="hero-description">{hero.description}</p>}
           {focus.zone === 'hero' && <div class="hero-actions">
             <button
