@@ -63,6 +63,14 @@ describe('TV home presentation', () => {
     expect(informativeHeroMeta(media('TV · 2024 · 12 Episodes', 'TV-14'))).toBe('Show  ·  2024  ·  12 Episodes')
   })
 
+  it('leaves the next shelf visible beneath landscape Continue Watching cards', () => {
+    const heights = [322, 420, 420]
+    expect(homeCarouselRowTop(1, 0, true, heights)).toBe(346)
+    expect(homeCarouselRowTop(1, 1, true, heights)).toBe(24)
+    expect(homeCarouselRowTop(0, 1, true, heights)).toBe(-298)
+    expect(homeCarouselRowTop(2, 1, true, heights)).toBe(444)
+  })
+
   it('puts episode and time-left copy beneath a focused Continue Watching tile', () => {
     expect(homeCardContext({
       ...media(),

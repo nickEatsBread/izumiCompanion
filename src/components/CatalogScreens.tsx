@@ -33,6 +33,7 @@ import { hasStartedWatching, type MediaRating } from '../lib/media-rating'
 import type { TitlePanelKind } from './TitlePanel'
 import { gridWindow, linearWindow } from '../lib/windowing'
 import { NavRail } from './NavRail'
+import { SETTINGS_SECTIONS } from '../lib/settings-navigation'
 
 export type TrailerControlAction = 'toggle' | 'play' | 'pause' | 'seek-back' | 'seek-forward'
 export const TRAILER_CONTROL_EVENT = 'izumi:trailer-control'
@@ -1155,6 +1156,7 @@ export function DetailScreen({
 
 export function SettingsScreen({
   focus,
+  category,
   activeNav,
   paired,
   connected,
@@ -1165,9 +1167,12 @@ export function SettingsScreen({
   onNav,
   onNavFocus,
   onFocus,
+  onCategoryFocus,
+  onCategorySelect,
   onAction,
 }: {
   focus: FocusLocation
+  category: number
   activeNav: number
   paired: boolean
   connected: boolean
@@ -1178,9 +1183,13 @@ export function SettingsScreen({
   onNav(index: number): void
   onNavFocus(index: number): void
   onFocus(index: number): void
+  onCategoryFocus(index: number): void
+  onCategorySelect(index: number): void
   onAction(index: number): void
 }) {
   const confirmTitle = confirmation === 'unpair' ? 'Unpair this TV?' : 'Reset the companion?'
+  const section = SETTINGS_SECTIONS[category] ?? SETTINGS_SECTIONS[0]
+  const categoryIcons = [Tv, Play, Cloud, ShieldCheck]
   const settingsOptions = [
     { title: 'Cinematic home carousel', detail: 'Keep featured artwork above the rows instead of expanding each focused card.', icon: Tv, enabled: playbackSettings.homeCarouselLayout },
     { title: 'Video previews', detail: 'Play trailers automatically after you pause on a title.', icon: Film, enabled: playbackSettings.videoPreviewsEnabled },
@@ -1197,20 +1206,36 @@ export function SettingsScreen({
   return (
     <main class="utility-screen settings-screen">
       <NavRail activeIndex={activeNav} focus={focus} onFocus={onNavFocus} onSelect={onNav} />
-      <header class="utility-heading">
-        <p><ShieldCheck size={20} /> TV companion</p>
-        <h1>Settings</h1>
-      </header>
-      <section class="settings-panel">
-        <div class="device-summary">
-          <div class={`device-status-dot${connected ? ' online' : ''}`} />
-          <div><p>{paired ? 'Paired with izumi' : 'Not paired'}</p><span>{connected ? 'Receiver online' : 'Waiting for a nearby device'} · TV {deviceId?.slice(-6).toUpperCase() || 'PREVIEW'}</span></div>
-        </div>
-        <div class="settings-options">
-          {settingsOptions.map(({ title, detail, icon: Icon, enabled }, index) => (
+      <section class="settings-workspace" aria-label="Companion settings">
+        <aside class="settings-sidebar">
+          <header><span>TV COMPANION</span><h1>Settings</h1></header>
+          <nav class="settings-categories" aria-label="Settings categories">
+            {SETTINGS_SECTIONS.map((item, index) => {
+              const Icon = categoryIcons[index]
+              return <button type="button" key={item.title}
+                class={`${category === index ? 'is-selected' : ''}${focus.zone === 'settings-category' && focus.index === index && !confirmation ? ' is-focused' : ''}`}
+                aria-current={category === index ? 'page' : undefined}
+                data-focus-id={!confirmation ? `settings-category-${index}` : undefined}
+                tabIndex={!confirmation && focus.zone === 'settings-category' && focus.index === index ? 0 : -1}
+                onFocus={() => onCategoryFocus(index)} onMouseEnter={() => onCategoryFocus(index)} onClick={() => onCategorySelect(index)}
+              ><Icon size={27} /><span>{item.title}</span><ChevronRight size={22} /></button>
+            })}
+          </nav>
+          <div class="settings-device">
+            <p><i class={connected ? 'online' : ''} />{connected ? 'Connected to izumi' : paired ? 'Paired with izumi' : 'Not paired'}</p>
+            <span>TV {deviceId?.slice(-6).toUpperCase() || 'PREVIEW'}</span>
+          </div>
+        </aside>
+        <div class="settings-content">
+          <header><h2>{section.title}</h2><p>{section.description}</p></header>
+          <section class="settings-panel" aria-label={`${section.title} settings`} key={category}>
+          <div class="settings-options">
+          {section.options.map((index) => {
+            const { title, detail, icon: Icon, enabled } = settingsOptions[index]
+            return (
             <button
               type="button"
-              class={`${focus.zone === 'setting' && focus.index === index && !confirmation ? 'is-focused' : ''}${enabled !== undefined ? ' is-toggle' : ''}`}
+              class={`${focus.zone === 'setting' && focus.index === index && !confirmation ? 'is-focused' : ''}${enabled !== undefined ? ' is-toggle' : ''}${index === 8 || index === 9 ? ' is-destructive' : ''}`}
               aria-pressed={enabled}
               data-focus-id={!confirmation ? `setting-${index}` : undefined}
               tabIndex={!confirmation && focus.zone === 'setting' && focus.index === index ? 0 : -1}
@@ -1222,7 +1247,10 @@ export function SettingsScreen({
               <Icon size={28} /><span><strong>{title}</strong><small>{detail}</small></span>
               {enabled !== undefined ? <span class={`settings-toggle${enabled ? ' is-on' : ''}`}><i />{enabled ? 'On' : 'Off'}</span> : <ChevronRight size={24} />}
             </button>
-          ))}
+          )})}
+          </div>
+          </section>
+          <p class="settings-navigation-hint">← Categories <span>OK to change</span></p>
         </div>
       </section>
       {confirmation && (

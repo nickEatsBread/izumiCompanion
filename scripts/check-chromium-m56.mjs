@@ -921,9 +921,9 @@ async function main() {
         })
       };
     })()`)
-    assert(JSON.stringify(carouselHome.hero) === '[0,0,1920,640]', `Cinematic hero geometry is ${carouselHome.hero}.`)
-    assert(JSON.stringify(carouselHome.rows) === '[640,440]', `Cinematic rail geometry is ${carouselHome.rows}.`)
-    assert(JSON.stringify(carouselHome.card) === '[238,340]', `Cinematic card geometry is ${carouselHome.card}.`)
+    assert(JSON.stringify(carouselHome.hero) === '[0,0,1920,580]', `Cinematic hero geometry is ${carouselHome.hero}.`)
+    assert(JSON.stringify(carouselHome.rows) === '[580,500]', `Cinematic rail geometry is ${carouselHome.rows}.`)
+    assert(JSON.stringify(carouselHome.card) === '[416,234]', `Cinematic Continue Watching geometry is ${carouselHome.card}.`)
     assert(carouselHome.cards.length >= 5 && carouselHome.cards.every(function (card) { return card[2]; }), `Cinematic rail did not render its artwork: ${JSON.stringify(carouselHome)}.`)
     assert(!carouselHome.expanded && !carouselHome.receding, 'Cinematic mode expanded a card or hid its hero.')
     assert(carouselHome.cardTitle.includes(carouselHome.heroTitle), 'Focused carousel artwork did not update the hero.')
@@ -956,18 +956,21 @@ async function main() {
       document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing');
       document.querySelector('.hero').classList.add('is-trailer-playing');
     })()`)
-    await wait(220)
+    await wait(460)
     const heroTrailerPresentation = await evaluate(`(() => {
       var trailer = document.querySelector('.hero-feature-card > .home-hover-trailer');
       return {
         rankOpacity: getComputedStyle(document.querySelector('.hero-rank-context')).opacity,
         titleOpacity: getComputedStyle(document.querySelector('.hero-title-logo, .hero h1')).opacity,
+        copyHidden: Array.from(document.querySelectorAll('.hero-copy > *')).every(function (item) { return getComputedStyle(item).opacity === '0'; }),
+        shadeOpacity: getComputedStyle(document.querySelector('.hero-shade')).opacity,
         visibility: getComputedStyle(trailer).visibility,
         trailerTransform: getComputedStyle(trailer).transform,
         heroTransform: getComputedStyle(document.querySelector('.hero')).transform
       };
     })()`)
     assert(heroTrailerPresentation.rankOpacity === '0' && heroTrailerPresentation.titleOpacity === '0', `Hero title or score badge remains over trailer playback: ${JSON.stringify(heroTrailerPresentation)}.`)
+    assert(heroTrailerPresentation.copyHidden && Number(heroTrailerPresentation.shadeOpacity) <= .15, `Hero copy or scrim still obscures the trailer: ${JSON.stringify(heroTrailerPresentation)}.`)
     assert(heroTrailerPresentation.visibility === 'visible' && heroTrailerPresentation.trailerTransform === 'none' && heroTrailerPresentation.heroTransform === 'none',
       `Hero trailer playback still uses an M56 black-frame compositor layer: ${JSON.stringify(heroTrailerPresentation)}.`)
     await capture('m56-home-carousel.png')
@@ -990,7 +993,7 @@ async function main() {
     })()`)
     assert(mergedBrowse.label === 'Browse merged catalogue', `Browse does not identify its merged catalogue: ${JSON.stringify(mergedBrowse)}.`)
     assert(mergedBrowse.catalogue === 'Merged' && mergedBrowse.activeNavigation === 'Browse', `Browse did not select Merged: ${JSON.stringify(mergedBrowse)}.`)
-    assert(JSON.stringify(mergedBrowse.hero) === '[0,0,1920,640]' && mergedBrowse.pips >= 2, `Browse is missing the Home carousel: ${JSON.stringify(mergedBrowse)}.`)
+    assert(JSON.stringify(mergedBrowse.hero) === '[0,0,1920,580]' && mergedBrowse.pips >= 2, `Browse is missing the Home carousel: ${JSON.stringify(mergedBrowse)}.`)
     assert(mergedBrowse.rows.length >= 3 && !mergedBrowse.legacyGrid, `Browse still uses the legacy grid: ${JSON.stringify(mergedBrowse)}.`)
     assert(mergedBrowse.rows.includes('Anime') && mergedBrowse.rows.includes('Fantasy') && mergedBrowse.rows.includes('Action & Adventure'), `Browse did not derive conservative merged categories: ${JSON.stringify(mergedBrowse.rows)}.`)
     await press('ArrowDown')
@@ -1194,23 +1197,26 @@ async function main() {
     await press('ArrowRight')
     await waitFor("document.querySelector('.post-play-rating-actions button.is-focused')")
     await press('Enter')
-    await waitFor("document.querySelector('.post-play-recommendations button')")
+    await waitFor("document.querySelector('.post-play-feature-actions .post-play-primary')")
     const postPlay = await evaluate(`(() => ({
-      heading: document.querySelector('.post-play-recommendation-panel > header > span').textContent.trim(),
-      recommendations: document.querySelectorAll('.post-play-recommendations button').length,
-      actions: document.querySelectorAll('.post-play-actions button').length,
+      heading: document.querySelector('.post-play-feature-copy .state-kicker').textContent.trim(),
+      title: document.querySelector('.post-play-feature-copy h1').getAttribute('aria-label') || document.querySelector('.post-play-feature-copy h1').textContent.trim(),
+      recommendations: Number(document.querySelector('.post-play-count').textContent.split('/')[1]),
+      actions: document.querySelectorAll('.post-play-feature-actions button').length,
+      mini: [document.querySelector('.post-play-mini-player').offsetLeft, document.querySelector('.post-play-mini-player').offsetTop],
       ratingSaved: Object.keys(JSON.parse(localStorage.getItem('izumi.companion.media-ratings') || '{}')).length,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(postPlay.heading === 'You might like', `Post-play heading is ${postPlay.heading}.`)
+    assert(postPlay.heading === 'YOU MIGHT LIKE' && postPlay.title, `Post-play recommendation is incomplete: ${JSON.stringify(postPlay)}.`)
     assert(postPlay.recommendations >= 4, `Post-play has only ${postPlay.recommendations} recommendations.`)
-    assert(postPlay.actions === 2, `Post-play action count is ${postPlay.actions}.`)
+    assert(postPlay.actions === 3, `Post-play action count is ${postPlay.actions}.`)
+    assert(JSON.stringify(postPlay.mini) === '[1260,64]', `Post-play mini-player is not at the top right: ${postPlay.mini}.`)
     assert(postPlay.ratingSaved === 1, 'Post-play rating was not persisted before recommendations appeared.')
     assert(JSON.stringify(postPlay.body) === '[1920,1080]', `Post-play overflowed the TV viewport: ${postPlay.body}.`)
     await capture('m56-post-play.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=settings` })
-    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-options > button').length === 11")
+    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.settings-categories > button').length === 4")
     await waitFor("!document.getElementById('startup-splash')")
     const settings = await evaluate(`(() => ({
       options: document.querySelectorAll('.settings-options > button').length,
@@ -1220,26 +1226,36 @@ async function main() {
       panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(settings.options === 11 && settings.toggles === 7, `Playback settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.options === 2 && settings.toggles === 2, `Appearance settings are incomplete: ${settings.options}/${settings.toggles}.`)
     assert(settings.videoPreviewLabel === 'Video previews' && settings.videoPreviewsEnabled === 'true', `Video-preview preference is missing or defaults incorrectly: ${JSON.stringify(settings)}.`)
     assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
     assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
-    for (let row = 0; row < 10; row += 1) await press('ArrowDown')
-    await waitFor("document.querySelector('.settings-panel').scrollTop > 0 && document.querySelector('.settings-options > button.is-focused').getBoundingClientRect().bottom <= document.querySelector('.settings-panel').getBoundingClientRect().bottom")
+    await press('ArrowLeft')
+    await press('ArrowDown')
+    await press('ArrowRight')
+    for (let row = 0; row < 4; row += 1) await press('ArrowDown')
+    await waitFor("document.querySelector('[data-focus-id=\"setting-6\"].is-focused') && document.querySelector('.settings-options > button.is-focused').getBoundingClientRect().bottom <= document.querySelector('.settings-panel').getBoundingClientRect().bottom")
     const settingsScroll = await evaluate(`(() => {
       const panel = document.querySelector('.settings-panel').getBoundingClientRect()
       const focused = document.querySelector('.settings-options > button.is-focused').getBoundingClientRect()
       return { top: document.querySelector('.settings-panel').scrollTop, focusedBottom: focused.bottom, panelBottom: panel.bottom }
     })()`)
-    assert(settingsScroll.top > 0 && settingsScroll.focusedBottom <= settingsScroll.panelBottom, `Settings did not keep the final remote row visible: ${JSON.stringify(settingsScroll)}.`)
+    assert(settingsScroll.focusedBottom <= settingsScroll.panelBottom, `Settings did not keep the final remote row visible: ${JSON.stringify(settingsScroll)}.`)
     await capture('m56-playback-settings.png')
 
-    await evaluate("document.querySelectorAll('.settings-options > button')[1].click()")
+    await press('ArrowLeft')
+    await press('ArrowUp')
+    await press('ArrowRight')
+    await evaluate("document.querySelector('[data-focus-id=\"setting-1\"]').click()")
     await waitFor("document.querySelectorAll('.settings-options > button')[1].getAttribute('aria-pressed') === 'false'")
     const previewsDisabled = await evaluate("JSON.parse(localStorage.getItem('izumi.companion.playback-experience')).videoPreviewsEnabled === false")
     assert(previewsDisabled, 'The video-preview opt-out was not persisted.')
 
-    await evaluate("document.querySelectorAll('.settings-options > button')[7].click()")
+    await press('ArrowLeft')
+    await press('ArrowDown')
+    await press('ArrowDown')
+    await press('ArrowRight')
+    await press('Enter')
     await waitFor("document.querySelector('.independent-setup-screen .independent-setup-heading h1')")
     const independentSetup = await evaluate(`(() => ({
       title: document.querySelector('.independent-setup-heading h1').textContent.trim(),

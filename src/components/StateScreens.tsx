@@ -34,6 +34,8 @@ import type {
 } from '../types'
 import type { MediaRating } from '../lib/media-rating'
 import type { TvLinkPhase } from '../lib/tv-link'
+import { informativeHeroMeta, displayRatings, ratingDisplayValue } from './HomeScreen'
+import { POST_PLAY_VIDEO_RECT } from '../lib/post-play-layout'
 
 export type IndependentSetupPhase = 'intro' | 'waiting' | 'ready' | 'error'
 
@@ -803,6 +805,8 @@ export function PostPlayScreen({
   ratingTransitioning,
   miniPlayerEnabled,
   nativeVideoAvailable,
+  recommendationIndex,
+  onRecommendationStep,
   onFocus,
   onRate,
   onReturnToPlayer,
@@ -819,6 +823,8 @@ export function PostPlayScreen({
   ratingTransitioning: boolean
   miniPlayerEnabled: boolean
   nativeVideoAvailable: boolean
+  recommendationIndex: number
+  onRecommendationStep(direction: -1 | 1): void
   onFocus(index: number): void
   onRate(value: MediaRating): void
   onReturnToPlayer(): void
@@ -826,15 +832,31 @@ export function PostPlayScreen({
   onHome(): void
   onRecommendation(media: CompanionMedia): void
 }) {
+  const recommendation = recommendations[Math.min(recommendationIndex, recommendations.length - 1)]
+  const featured = stage === 'recommendations' && recommendation ? recommendation : media
+  const identity = `${featured.ref.provider}:${featured.ref.type}:${featured.ref.id}`
+  const [failedLogo, setFailedLogo] = useState('')
+  const { x, y, width, height } = POST_PLAY_VIDEO_RECT
+  const rootRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    rootRef.current?.querySelector<HTMLButtonElement>(`[data-focus-id="post-play-${focus}"]`)?.focus()
+  }, [focus, stage])
+  const focusButton = (index: number) => ({
+    'data-focus-id': `post-play-${index}`,
+    tabIndex: focus === index ? 0 : -1,
+    onFocus: () => onFocus(index),
+    onMouseEnter: () => onFocus(index),
+  })
   return (
-    <main class={`post-play-screen is-${stage}${miniPlayerEnabled ? ' has-mini-player' : ' without-mini-player'}${ratingTransitioning ? ' is-transitioning' : ''}`}>
-      {!nativeVideoAvailable && media.backdrop && <img class="post-play-backdrop" src={media.backdrop} alt="" />}
+    <main ref={rootRef} class={`post-play-screen is-${stage}${miniPlayerEnabled ? ' has-mini-player' : ' without-mini-player'}${ratingTransitioning ? ' is-transitioning' : ''}`}>
+      {(featured.backdrop || featured.poster) && <img key={identity} class="post-play-backdrop" src={featured.backdrop || featured.poster} alt="" />}
       <div class="post-play-shade" />
       {miniPlayerEnabled && <button
         type="button"
         class={`post-play-mini-player${focus === 0 ? ' is-focused' : ''}${nativeVideoAvailable ? ' has-native-video' : ''}`}
+        style={{ left: x, top: y, width, height }}
+        {...focusButton(0)}
         aria-label={`Return to ${media.title}`}
-        onFocus={() => onFocus(0)}
         onClick={onReturnToPlayer}
       >
         {!nativeVideoAvailable && media.backdrop && <img src={media.backdrop} alt="" />}
@@ -844,47 +866,52 @@ export function PostPlayScreen({
       {stage === 'rating' ? <section class="post-play-rating-panel">
         <p class="state-kicker">FINISHED WATCHING</p>
         <h1>Did you like it?</h1>
+        <p class="post-play-watched-title">{media.title}</p>
         <p>Your answer helps izumi shape what appears next.</p>
         <div class="post-play-rating-actions">
           <button
             type="button"
             class={`${focus === 1 ? 'is-focused' : ''}${rating === 'up' ? ' is-selected' : ''}`}
             aria-pressed={rating === 'up'}
-            onFocus={() => onFocus(1)}
+            {...focusButton(1)}
+            disabled={ratingTransitioning}
             onClick={() => onRate('up')}
           ><ThumbsUp size={38} fill={rating === 'up' ? 'currentColor' : 'none'} /><span>Yes</span></button>
           <button
             type="button"
             class={`${focus === 2 ? 'is-focused' : ''}${rating === 'down' ? ' is-selected' : ''}`}
             aria-pressed={rating === 'down'}
-            onFocus={() => onFocus(2)}
+            {...focusButton(2)}
+            disabled={ratingTransitioning}
             onClick={() => onRate('down')}
           ><ThumbsDown size={38} fill={rating === 'down' ? 'currentColor' : 'none'} /><span>No</span></button>
         </div>
         <small>Back returns to the player</small>
-      </section> : <section class="post-play-recommendation-panel">
-        <header>
-          <div><p class="state-kicker">BECAUSE YOU WATCHED</p><h1>{media.title}</h1></div>
-          <span>{authored ? 'You might like' : 'More from your catalogue'}</span>
-        </header>
-        <div class="post-play-actions">
-          <button type="button" class={focus === 1 ? 'is-focused' : ''} onFocus={() => onFocus(1)} onClick={onReplay}><RotateCcw size={21} /><span>Replay</span></button>
-          <button type="button" class={focus === 2 ? 'is-focused' : ''} onFocus={() => onFocus(2)} onClick={onHome}><House size={21} /><span>Back home</span></button>
+      </section> : <section class="post-play-feature-panel">
+        <div class="post-play-feature-copy" key={identity} aria-live="polite">
+          <p class="state-kicker">{authored ? 'YOU MIGHT LIKE' : 'MORE FROM YOUR CATALOGUE'}</p>
+          <p class="post-play-because">Because you watched <strong>{media.title}</strong></p>
+          {recommendation ? <>
+            {featured.logoImage && failedLogo !== featured.logoImage
+              ? <h1 aria-label={featured.title}><img class="post-play-title-logo" src={featured.logoImage} alt="" onError={() => setFailedLogo(featured.logoImage!)} /></h1>
+              : <h1>{featured.title}</h1>}
+            <p class="post-play-feature-meta">{informativeHeroMeta(featured)}{featured.contentRating && <span>{featured.contentRating}</span>}</p>
+            {displayRatings(featured).length > 0 && <p class="post-play-feature-ratings">{displayRatings(featured).map((item) => <span key={item.source}><small>{item.source}</small> <strong>{ratingDisplayValue(item)}</strong></span>)}</p>}
+            {featured.description && <p class="post-play-feature-description">{featured.description}</p>}
+          </> : <><h1>What’s next?</h1><p class="post-play-empty">Your progress is saved. More recommendations will appear after izumi refreshes this catalogue.</p></>}
         </div>
-        {recommendations.length > 0 ? <div class="post-play-recommendations">
-          {recommendations.map((item, index) => (
-            <button
-              type="button"
-              class={focus === index + 3 ? 'is-focused' : ''}
-              onFocus={() => onFocus(index + 3)}
-              onClick={() => onRecommendation(item)}
-              key={`${item.ref.provider}-${item.ref.type}-${item.ref.id}`}
-            >
-              {item.poster ? <img src={item.poster} alt="" /> : <span class="post-play-poster-fallback"><Play size={25} /></span>}
-              <strong>{item.title}</strong>
-            </button>
-          ))}
-        </div> : <p class="post-play-empty">Your progress is saved. More recommendations will appear after izumi refreshes this catalogue.</p>}
+        <div class="post-play-feature-actions">
+          <button type="button" class={`post-play-primary${focus === 1 ? ' is-focused' : ''}`} {...focusButton(1)} onClick={() => recommendation ? onRecommendation(recommendation) : onReplay}><Play size={26} fill="currentColor" /><span>{recommendation ? 'Play' : 'Replay'}</span></button>
+          {recommendation && <>
+            <button type="button" class={`post-play-arrow${focus === 3 ? ' is-focused' : ''}`} {...focusButton(3)} aria-label="Previous recommendation" onClick={() => onRecommendationStep(-1)}><ChevronLeft size={30} /></button>
+            <button type="button" class={`post-play-arrow${focus === 4 ? ' is-focused' : ''}`} {...focusButton(4)} aria-label="Next recommendation" onClick={() => onRecommendationStep(1)}><ChevronRight size={30} /></button>
+            <span class="post-play-count">{recommendationIndex + 1} / {recommendations.length}</span>
+          </>}
+        </div>
+        <div class="post-play-secondary-actions">
+          <button type="button" class={focus === 5 ? 'is-focused' : ''} {...focusButton(5)} onClick={onReplay}><RotateCcw size={20} /><span>Watch again</span></button>
+          <button type="button" class={focus === 2 ? 'is-focused' : ''} {...focusButton(2)} onClick={onHome}><House size={20} /><span>Back home</span></button>
+        </div>
       </section>}
     </main>
   )

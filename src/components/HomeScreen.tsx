@@ -239,10 +239,13 @@ export const HOME_POSTER_STRIDE = 340
 export const HOME_CAROUSEL_POSTER_WIDTH = 238
 export const HOME_CAROUSEL_POSTER_HEIGHT = 340
 export const HOME_CAROUSEL_POSTER_STRIDE = 254
+export const HOME_CONTINUE_WIDTH = 416
+export const HOME_CONTINUE_HEIGHT = 234
+export const HOME_CONTINUE_STRIDE = 432
 export const HOME_FOCUS_WIDTH = Math.round(HOME_POSTER_WIDTH * 3.5)
 
 function rowSpacerDimensions(count: number, stride = HOME_POSTER_STRIDE): { width: string; minWidth: string } {
-  const gap = stride === HOME_CAROUSEL_POSTER_STRIDE ? 16 : 20
+  const gap = stride === HOME_POSTER_STRIDE ? 20 : 16
   const width = Math.max(0, count * stride - (count ? gap : 0))
   return { width: `${width}px`, minWidth: `${width}px` }
 }
@@ -255,9 +258,9 @@ export function homeRowTop(rowIndex: number, activeRow: number, browsing: boolea
   return distance === 1 ? 934 : 1454 + (distance - 2) * 420
 }
 
-export function homeCarouselRowTop(rowIndex: number, activeRow: number, browsing: boolean): number {
-  if (!browsing) return 24 + rowIndex * 420
-  return 24 + (rowIndex - activeRow) * 420
+export function homeCarouselRowTop(rowIndex: number, activeRow: number, browsing: boolean, rowHeights?: number[]): number {
+  const offset = (index: number) => Array.from({ length: index }, (_, i) => rowHeights?.[i] ?? 420).reduce((sum, height) => sum + height, 0)
+  return 24 + offset(rowIndex) - (browsing ? offset(activeRow) : 0)
 }
 
 function eventIndex(event: Event, attribute: string): number | undefined {
@@ -518,6 +521,7 @@ const HomePosterCard = memo(function HomePosterCard({
   rowIndex,
   index,
   episodeCard,
+  landscape = false,
   topTenRow,
   selectedSource,
   focused,
@@ -526,6 +530,7 @@ const HomePosterCard = memo(function HomePosterCard({
   rowIndex: number
   index: number
   episodeCard: boolean
+  landscape?: boolean
   topTenRow: boolean
   selectedSource: boolean
   focused: boolean
@@ -533,10 +538,11 @@ const HomePosterCard = memo(function HomePosterCard({
   const cardProgress = episodeCard ? item.episodeProgress : item.progress
   const inProgress = typeof cardProgress === 'number' && cardProgress > 0 && cardProgress < 1
   const artwork = Array.from(new Set([
-    item.poster,
+    landscape ? item.episodeImage || item.backdrop : item.poster,
     episodeCard ? item.episodeImage : item.backdrop,
     item.backdrop,
     item.episodeImage,
+    item.poster,
   ].filter((value): value is string => Boolean(value))))
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
@@ -550,7 +556,7 @@ const HomePosterCard = memo(function HomePosterCard({
   return (
     <button
       type="button"
-      class={`home-poster-card${episodeCard ? ' is-continue' : ''}${topTenRow ? ' is-top-ten' : ''}${selectedSource ? ' is-selected-source' : ''}${focused ? ' is-focused' : ''}`}
+      class={`home-poster-card${episodeCard ? ' is-continue' : ''}${landscape ? ' is-landscape' : ''}${topTenRow ? ' is-top-ten' : ''}${selectedSource ? ' is-selected-source' : ''}${focused ? ' is-focused' : ''}`}
       data-focus-id={selectedSource ? undefined : `row-${rowIndex}-${index}`}
       data-media-index={index}
       tabIndex={focused ? 0 : -1}
@@ -563,13 +569,22 @@ const HomePosterCard = memo(function HomePosterCard({
               class="home-poster-art"
               src={image}
               alt=""
-              width={HOME_POSTER_WIDTH}
-              height={HOME_POSTER_HEIGHT}
+              width={landscape ? HOME_CONTINUE_WIDTH : HOME_POSTER_WIDTH}
+              height={landscape ? HOME_CONTINUE_HEIGHT : HOME_POSTER_HEIGHT}
               decoding="async"
               onError={() => setArtworkIndex((current) => current + 1)}
             />
           : <span class="home-card-placeholder">{item.title}</span>}
         {rank && <span class="home-poster-rank" aria-hidden="true">{rank}</span>}
+        {landscape && <>
+          <span class="continue-card-shade" aria-hidden="true" />
+          {minutesRemaining(item) != null && <small class="continue-card-status">{minutesRemaining(item)} min left</small>}
+          <span class="continue-card-copy">
+            {item.ref.type !== 'movie' && item.mediaKind !== 'movie' && item.episode && <small>{episodeLabel(item)}</small>}
+            <strong>{item.title}</strong>
+            {item.episodeTitle && <span>{item.episodeTitle}</span>}
+          </span>
+        </>}
         {inProgress && (
           <span class="home-card-progress"><span style={{ width: `${Math.round(cardProgress * 100)}%` }} /></span>
         )}
@@ -942,6 +957,7 @@ export function HomeScreen({
         {snapshot.rows.map((row, rowIndex) => {
           const topTenRow = row.presentation === 'top-10'
           const continueRow = row.kind === 'continue'
+          const rowStride = carouselLayout ? continueRow ? HOME_CONTINUE_STRIDE : HOME_CAROUSEL_POSTER_STRIDE : HOME_POSTER_STRIDE
           const rowVisible = homeRowVisible(rowIndex, activeRow)
           const rowActive = browsingRows && rowIndex === activeRow
           const horizontalWindow = linearWindow(
@@ -964,7 +980,7 @@ export function HomeScreen({
               )
           const focusedItem = rowActive && !carouselLayout ? row.items[horizontalCenter] : undefined
           const rowTop = carouselLayout
-            ? homeCarouselRowTop(rowIndex, activeRow, browsingRows)
+            ? homeCarouselRowTop(rowIndex, activeRow, browsingRows, snapshot.rows.map((item) => item.kind === 'continue' ? 322 : 420))
             : homeRowTop(rowIndex, activeRow, browsingRows)
           return (
           <section
@@ -1024,7 +1040,7 @@ export function HomeScreen({
               {!rowActive && horizontalWindow.start > 0 && (
                 <span
                   class="media-card-spacer"
-                  style={rowSpacerDimensions(horizontalWindow.start, carouselLayout ? HOME_CAROUSEL_POSTER_STRIDE : HOME_POSTER_STRIDE)}
+                  style={rowSpacerDimensions(horizontalWindow.start, rowStride)}
                   aria-hidden="true"
                   key={`leading-${row.id}`}
                 />
@@ -1040,6 +1056,7 @@ export function HomeScreen({
                     rowIndex={rowIndex}
                     index={index}
                     episodeCard={continueRow}
+                    landscape={carouselLayout && continueRow}
                     topTenRow={topTenRow}
                     selectedSource={selectedSource}
                     focused={focusedPoster}
@@ -1049,7 +1066,7 @@ export function HomeScreen({
               {!rowActive && horizontalWindow.end < row.items.length && (
                 <span
                   class="media-card-spacer"
-                  style={rowSpacerDimensions(row.items.length - horizontalWindow.end, carouselLayout ? HOME_CAROUSEL_POSTER_STRIDE : HOME_POSTER_STRIDE)}
+                  style={rowSpacerDimensions(row.items.length - horizontalWindow.end, rowStride)}
                   aria-hidden="true"
                   key={`trailing-${row.id}`}
                 />

@@ -1,6 +1,8 @@
 import { DiscoveryScreen } from './components/DiscoveryScreen'
 import { UpdatePrompt, useUpdatePrompt } from './components/UpdatePrompt'
 import { launchUpdater } from './lib/updates'
+import { moveSettingsContentFocus, settingsSectionForOption } from './lib/settings-navigation'
+import { nextPostPlayFocus, POST_PLAY_VIDEO_RECT } from './lib/post-play-layout'
 import { DISCOVERY_REMOTE, DISCOVERY_CHANGED } from './lib/discovery'
 import { ProfileScreen, PROFILE_REMOTE } from './components/ProfileScreen'
 import { PROFILES_CHANGED, tvHousehold, tvProfileReady, tvProfileId } from './lib/profiles'
@@ -258,6 +260,7 @@ function focusId(focus: FocusLocation): string {
   if (focus.zone === 'grid') return `grid-${focus.index}`
   if (focus.zone === 'keyboard') return `keyboard-${focus.index}`
   if (focus.zone === 'setting') return `setting-${focus.index}`
+  if (focus.zone === 'settings-category') return `settings-category-${focus.index}`
   return `${focus.zone}-${focus.index}`
 }
 
@@ -360,7 +363,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [nextSourceReady, setNextSourceReady] = useState(false)
   const [playerPromptFocus, setPlayerPromptFocus] = useState<'transport' | 'timeline' | 'skip' | 'next'>('transport')
   const [postPlayMedia, setPostPlayMedia] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
-  const [postPlayFocus, setPostPlayFocus] = useState(previewParameters.get('scenario') === 'recommendations' ? 3 : 0)
+  const [postPlayFocus, setPostPlayFocus] = useState(1)
+  const [postPlayRecommendationIndex, setPostPlayRecommendationIndex] = useState(0)
+  const [postPlayPresentation, setPostPlayPresentation] = useState<Record<string, CompanionMedia>>({})
   const [postPlayStage, setPostPlayStage] = useState<'rating' | 'recommendations'>(previewParameters.get('scenario') === 'recommendations' ? 'recommendations' : 'rating')
   const [postPlayRatingTransitioning, setPostPlayRatingTransitioning] = useState(false)
   const [mediaRatings, setMediaRatings] = useState(() => readMediaRatings())
@@ -396,6 +401,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [searchError, setSearchError] = useState('')
   const [seriesSeason, setSeriesSeason] = useState(0)
   const [settingsConfirmation, setSettingsConfirmation] = useState<SettingsConfirmation>(null)
+  const [settingsCategory, setSettingsCategory] = useState(0)
+  const visibleSettingsCategory = !settingsConfirmation && focus.zone === 'setting'
+    ? settingsSectionForOption(focus.index)
+    : focus.zone === 'settings-category' ? focus.index : settingsCategory
+  useEffect(() => { setSettingsCategory(visibleSettingsCategory) }, [visibleSettingsCategory])
   const [independentPlaybackReady, setIndependentPlaybackReady] = useState(false)
   const [independentSetupPhase, setIndependentSetupPhase] = useState<IndependentSetupPhase>('intro')
   const [independentSetupError, setIndependentSetupError] = useState('')
@@ -1192,7 +1202,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     document.body.classList.toggle('avplay-visible', screen === 'player' && nativeVideo)
     document.body.classList.toggle('avplay-mini', miniPlayer)
     if (nativeVideo) {
-      if (miniPlayer) avplayRef.current.setDisplayRect(76, 86, 920, 518)
+      if (miniPlayer) {
+        const { x, y, width, height } = POST_PLAY_VIDEO_RECT
+        avplayRef.current.setDisplayRect(x, y, width, height)
+      }
       else avplayRef.current.setDisplayRect(0, 0, 1920, 1080)
     }
   }, [screen, playbackSettings.postPlayExperienceEnabled])
@@ -1662,7 +1675,27 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (kind !== 'rating' || selectedCanRate) setTitlePanel(kind)
   }
   useEffect(() => { setTitlePanel(null) }, [screen, selected.ref.provider, selected.ref.type, selected.ref.id])
-  const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia), [postPlayMedia, allMedia])
+  const postPlayItems = useMemo(() => postPlayRecommendations(postPlayMedia, allMedia)
+    .map((item) => postPlayPresentation[homeMediaKey(item)] ?? homePresentationCacheRef.current.get(homeMediaKey(item)) ?? item),
+  [postPlayMedia, allMedia, postPlayPresentation])
+  const activePostPlayRecommendationIndex = Math.max(0, Math.min(postPlayRecommendationIndex, postPlayItems.length - 1))
+  const postPlayRecommendationKey = postPlayItems[activePostPlayRecommendationIndex] ? homeMediaKey(postPlayItems[activePostPlayRecommendationIndex]) : ''
+  useEffect(() => {
+    if (screen !== 'postplay' || postPlayStage !== 'recommendations') return
+    const item = postPlayItems[activePostPlayRecommendationIndex]
+    if (!item || item.titleArtSettled) return
+    let active = true
+    // Recommendations often arrive as small catalogue cards. Enrich only the visible title;
+    // retain its usable card data if the paired catalogue is offline or navigation moves on.
+    const request = showPreviewTools ? Promise.resolve(previewDetailsFor(item)) : receiverRef.current?.requestDetails(item, true)
+    void request?.then((details) => {
+      if (!active || !details) return
+      const settled = { ...item, ...details, titleArtSettled: true }
+      cacheHomePresentation(settled)
+      setPostPlayPresentation((current) => ({ ...current, [homeMediaKey(item)]: settled }))
+    }).catch(() => { /* The existing recommendation remains available. */ })
+    return () => { active = false }
+  }, [screen, postPlayStage, postPlayRecommendationKey, showPreviewTools])
   const ratingFor = (media: CompanionMedia): MediaRating | undefined => mediaRatings[mediaRatingKey(media)]?.value
   const rateMedia = (media: CompanionMedia, value: MediaRating, toggle = true) => {
     setMediaRatings((current) => {
@@ -1674,6 +1707,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (postPlayPresentedRef.current) return
     postPlayPresentedRef.current = true
     setPostPlayMedia(media)
+    setPostPlayRecommendationIndex(0)
+    setPostPlayPresentation({})
     setPostPlayStage('rating')
     setPostPlayRatingTransitioning(false)
     setPostPlayFocus(1)
@@ -1687,7 +1722,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     postPlayTransitionTimerRef.current = window.setTimeout(() => {
       setPostPlayRatingTransitioning(false)
       setPostPlayStage('recommendations')
-      setPostPlayFocus(postPlayItems.length ? 3 : 1)
+      setPostPlayFocus(1)
     }, 440)
   }
   const returnToPostPlayPlayer = () => {
@@ -1702,6 +1737,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     setPlayerControlsVisible(true)
     setScreen('player')
+  }
+  const stepPostPlayRecommendation = (direction: -1 | 1) => {
+    setPostPlayRecommendationIndex((index) => postPlayItems.length ? (Math.min(index, postPlayItems.length - 1) + direction + postPlayItems.length) % postPlayItems.length : 0)
   }
   const normalizedSearch = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery])
   const localSearchResults = useMemo(() => allMedia.filter((item) => {
@@ -2754,11 +2792,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (focus.zone === 'nav') {
       if (action === 'up') changeFocus({ zone: 'nav', index: Math.max(-1, focus.index - 1) })
       else if (action === 'down') changeFocus({ zone: 'nav', index: Math.min(navItemCount() - 1, focus.index + 1) })
-      else if (action === 'right') changeFocus({ zone: 'setting', index: 0 })
-    } else if (focus.zone === 'setting') {
-      if (action === 'left') changeFocus({ zone: 'nav', index: activeNav })
-      else if (action === 'up') changeFocus({ zone: 'setting', index: Math.max(0, focus.index - 1) })
-      else if (action === 'down') changeFocus({ zone: 'setting', index: Math.min(10, focus.index + 1) })
+      else if (action === 'right') changeFocus({ zone: 'settings-category', index: settingsCategory })
+    } else if (focus.zone === 'settings-category' && action === 'left') {
+      changeFocus({ zone: 'nav', index: activeNav })
+    } else {
+      changeFocus(moveSettingsContentFocus(focus, action))
     }
   }
 
@@ -2870,8 +2908,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (['up', 'down', 'left', 'right'].includes(action)) moveSettingsFocus(action)
       else if (action === 'select') {
         if (!settingsConfirmation && focus.zone === 'nav') selectNav(focus.index)
+        else if (!settingsConfirmation && focus.zone === 'settings-category') changeFocus(moveSettingsContentFocus(focus, 'select'))
         else if (focus.zone === 'setting') runSettingsAction(focus.index)
-      } else if (action === 'back') settingsConfirmation ? runSettingsAction(0) : selectNav(0)
+      } else if (action === 'back') {
+        if (settingsConfirmation) runSettingsAction(0)
+        else if (focus.zone === 'setting') changeFocus(moveSettingsContentFocus(focus, 'back'))
+        else if (focus.zone === 'settings-category') changeFocus({ zone: 'nav', index: activeNav })
+        else selectNav(0)
+      }
       return
     }
     if (screen === 'independent-setup') {
@@ -3010,46 +3054,27 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (screen === 'postplay') {
       const miniAvailable = playbackSettings.postPlayExperienceEnabled
       if (action === 'back' || action === 'stop') return returnToPostPlayPlayer()
+      if (postPlayRatingTransitioning) return
+      if (['left', 'right', 'up', 'down'].includes(action)) {
+        setPostPlayFocus((index) => nextPostPlayFocus(index, action, postPlayStage, postPlayItems.length > 0, miniAvailable))
+        return
+      }
       if (postPlayStage === 'rating') {
-        if (action === 'left') setPostPlayFocus((index) => index === 2 ? 1 : miniAvailable ? 0 : 1)
-        else if (action === 'right') setPostPlayFocus((index) => index === 0 ? 1 : Math.min(2, index + 1))
-        else if (action === 'up' || action === 'down') setPostPlayFocus((index) => index === 0 ? 0 : index)
-        else if (action === 'select') {
+        if (action === 'select') {
           if (postPlayFocus === 0 && miniAvailable) returnToPostPlayPlayer()
           else answerPostPlayRating(postPlayFocus === 2 ? 'down' : 'up')
         }
         return
       }
-      const firstRecommendation = 3
-      const lastRecommendation = postPlayItems.length ? postPlayItems.length + 2 : 2
-      if (action === 'left') {
-        setPostPlayFocus((index) => {
-          if (index === 1) return miniAvailable ? 0 : 1
-          if (index === 2) return 1
-          return index > firstRecommendation ? index - 1 : index
-        })
-      } else if (action === 'right') {
-        setPostPlayFocus((index) => index === 0 ? 1 : index === 1 ? 2 : Math.min(lastRecommendation, index + 1))
-      } else if (action === 'up') {
-        setPostPlayFocus((index) => index >= firstRecommendation + 3 ? index - 3 : index >= firstRecommendation ? 1 : index)
-      } else if (action === 'down') {
-        setPostPlayFocus((index) => index < firstRecommendation
-          ? postPlayItems.length ? firstRecommendation : index
-          : Math.min(lastRecommendation, index + 3))
-      } else if (action === 'select') {
+      if (action === 'select') {
         if (postPlayFocus === 0 && miniAvailable) returnToPostPlayPlayer()
-        else if (postPlayFocus === 1) void playMedia(postPlayMedia)
+        else if (postPlayFocus === 1) void playMedia(postPlayItems[activePostPlayRecommendationIndex] ?? postPlayMedia)
         else if (postPlayFocus === 2) {
           finishActivePlayback()
           clearNavigationHistory()
           restoreHomeNavigation()
-        } else {
-          const media = postPlayItems[postPlayFocus - firstRecommendation]
-          if (media) {
-            finishActivePlayback()
-            selectCatalogMedia(media)
-          }
-        }
+        } else if (postPlayFocus === 3 || postPlayFocus === 4) stepPostPlayRecommendation(postPlayFocus === 3 ? -1 : 1)
+        else if (postPlayFocus === 5) void playMedia(postPlayMedia)
       }
       return
     }
@@ -3314,6 +3339,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       {screen === 'settings' && (
         <SettingsScreen
           focus={focus}
+          category={visibleSettingsCategory}
           activeNav={activeNav}
           paired={paired}
           connected={connected}
@@ -3324,6 +3350,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onNav={selectNav}
           onNavFocus={(index) => changeFocus({ zone: 'nav', index })}
           onFocus={(index) => changeFocus({ zone: 'setting', index })}
+          onCategoryFocus={(index) => changeFocus({ zone: 'settings-category', index })}
+          onCategorySelect={(index) => changeFocus(moveSettingsContentFocus({ zone: 'settings-category', index }, 'select'))}
           onAction={runSettingsAction}
         />
       )}
@@ -3449,6 +3477,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           ratingTransitioning={postPlayRatingTransitioning}
           miniPlayerEnabled={playbackSettings.postPlayExperienceEnabled}
           nativeVideoAvailable={avplayRef.current.available && Boolean(activeLoadRef.current)}
+          recommendationIndex={activePostPlayRecommendationIndex}
+          onRecommendationStep={stepPostPlayRecommendation}
           onFocus={setPostPlayFocus}
           onRate={answerPostPlayRating}
           onReturnToPlayer={returnToPostPlayPlayer}
@@ -3458,10 +3488,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
             clearNavigationHistory()
             restoreHomeNavigation()
           }}
-          onRecommendation={(media) => {
-            finishActivePlayback()
-            selectCatalogMedia(media)
-          }}
+          onRecommendation={(media) => { void playMedia(media) }}
         />
       )}
       {screen === 'error' && <ErrorScreen message={errorMessage} onRetry={retryPlayback} />}

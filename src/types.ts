@@ -377,6 +377,7 @@ export type FocusLocation =
   | { zone: 'relation'; index: number }
   | { zone: 'person'; index: number }
   | { zone: 'setting'; index: number }
+  | { zone: 'settings-category'; index: number }
   | { zone: 'detail'; index: number }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
