@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import type { CompanionMedia } from '../types'
 import { installVoiceSearch, MAX_VOICE_SEARCH_COMMANDS, voiceSearchCommands, voiceSearchQuery, VOICE_SEARCH_EVENT } from './voice-search'
 
 const media = (title: string): CompanionMedia => ({ ref: { provider: 'test', type: 'movie', id: title }, title })
 
 describe('Samsung TV voice search', () => {
+  it('declares the permissions required by both Samsung voice services', () => {
+    const manifest = readFileSync(new URL('../../config.xml', import.meta.url), 'utf8')
+    expect(manifest).toContain('<tizen:privilege name="http://tizen.org/privilege/recorder"/>')
+    expect(manifest).toContain('<tizen:privilege name="http://developer.samsung.com/privilege/voicecontrol"/>')
+  })
   it('extracts a clean query from common remote utterances', () => {
     expect(voiceSearchQuery('search Dune Part Two')).toBe('Dune Part Two')
     expect(voiceSearchQuery('Search for The Runner on izumi')).toBe('The Runner')

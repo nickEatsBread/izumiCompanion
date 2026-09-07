@@ -18,6 +18,8 @@ The UI distinguishes the current query from its last settled result, keeping ske
 
 Voice Interaction title context and Tizen foreground commands are registered together. Search phrases and recognized bare titles route through the current navigation callback, including closing overlapping in-app panels. Known playback/navigation commands are excluded from bare-title fallback. Duplicate reports from both services are coalesced. Older voice firmware receives bounded search and bare-title command pairs for catalogue titles; its public API does not provide unrestricted microphone dictation.
 
+The widget declares both the Samsung voice-control privilege and the Tizen recorder privilege required by `getVoiceControlClient`. Without the latter, older TVs reject foreground voice initialization before any recognition callback can be installed. The 0.2.41 manifest adds it, with a packaging-contract regression test.
+
 ## Startup and home navigation
 
 Update discovery starts after 500 milliseconds. Failed requests retry after the network has had time to settle, with foreground/online checks and a six-hour interval after success. Dismissal applies to the current launch only. The prompt waits for an eligible screen and does not interrupt playback.
