@@ -14,6 +14,8 @@
   unsigned. Keep mobile package, Android and iOS versions aligned when preparing releases.
 - Commit as `nickEatsBread <281274910+nickEatsBread@users.noreply.github.com>`.
 - Preserve unrelated working-tree changes and commit focused changes in this repository.
+- Use generic source wording in new repository text, user-facing errors, release notes,
+  and commit messages. Do not name upstream stream sources or include their endpoints.
 
 ## Verification and build
 
