@@ -36,6 +36,7 @@ import { TitlePanel, TITLE_PANEL_REMOTE, type TitlePanelKind } from './component
 import { PreviewToolbar } from './components/PreviewToolbar'
 import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, StandaloneLinkScreen, type IndependentSetupPhase } from './components/StateScreens'
 import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRail'
+import { catalogLevel, mergeAccountOptions } from './lib/catalog-navigation'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
@@ -330,6 +331,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [qrCode, setQrCode] = useState<string>()
   const [standaloneQrCode, setStandaloneQrCode] = useState<string>()
   const [tvLinkInfo, setTvLinkInfo] = useState<TvLinkInfo>({ code: '', expiresAt: 0, phase: 'preparing' })
+  const [standaloneCatalogError, setStandaloneCatalogError] = useState('')
+  const [standaloneSaved, setStandaloneSaved] = useState(false)
   const pairingChallenge = normalizeTvLinkCode(pairing?.challenge ?? (showPreviewTools ? 'TV42IZ' : ''))
   const pairingDisplayCode = pairingChallenge
     ? `${pairingChallenge.slice(0, 3)} ${pairingChallenge.slice(3, 6)}`
@@ -411,6 +414,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [independentSetupPhase, setIndependentSetupPhase] = useState<IndependentSetupPhase>('intro')
   const [independentSetupError, setIndependentSetupError] = useState('')
   const [catalogMenuOpen, setCatalogMenuOpen] = useState(false)
+  const [catalogTrail, setCatalogTrail] = useState<CompanionCatalogOption[]>([])
+  const [accountOptionsLoading, setAccountOptionsLoading] = useState(false)
   const [catalogMenuFocus, setCatalogMenuFocus] = useState(0)
   const [navigationPhase, setNavigationPhase] = useState<'idle' | 'loading' | 'leaving'>('idle')
   const [trailerOpen, setTrailerOpen] = useState(false)
@@ -1016,7 +1021,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         setHeroIndex(0)
         const displaySnapshot = cinematicSnapshotFor(next, destination)
         setSelected(displaySnapshot.hero ?? displaySnapshot.rows[0]?.items[0] ?? fallbackMedia)
-        setFocusLocation({ zone: 'hero', index: 0 })
+        setFocusLocation(displaySnapshot.rows.some(row => row.items.length) ? { zone: 'hero', index: 0 } : { zone: 'nav', index: -1 })
         setActiveNav(navIndexFor(destination))
         setScreen(destination)
         if (completedCatalogRequest) finishNavigationTransition()
@@ -1024,8 +1029,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       },
       onPlaybackProgress: setSnapshot,
       onCatalogError: (catalogScreen, message) => {
+        if (screenRef.current === 'standalone-link') {
+          setStandaloneCatalogError(message)
+          return
+        }
         const pendingCatalog = catalogRequestRef.current
-        if (!pendingCatalog || pendingCatalog.screen !== catalogScreen) return
+        if (!pendingCatalog) { showNotice(message); return }
+        if (pendingCatalog.screen !== catalogScreen) return
         window.clearTimeout(pendingCatalog.timer)
         catalogRequestRef.current = undefined
         finishNavigationTransition()
@@ -1171,7 +1181,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       onSetup: (transport) => {
         const activeReceiver = receiverRef.current
         if (!activeReceiver) throw new Error('The TV receiver closed before setup completed.')
+        if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
+        catalogRequestRef.current = undefined
         activeReceiver.adoptStandaloneTransport(transport)
+        setStandaloneSaved(true)
         setPaired(true)
       },
     })
@@ -1768,9 +1781,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const movieItems = collections.movies
   const myListItems = collections.myList
   const watchHistoryItems = collections.history
-  const catalogOptions = useMemo(() => snapshot.catalog.options?.length
+  const rootCatalogOptions = useMemo(() => snapshot.catalog.options?.length
     ? snapshot.catalog.options
     : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }], [snapshot])
+  const catalogOptions = catalogLevel(snapshot.collectionPage?.hasMore
+    ? [{ screen: '__more', label: 'Load more titles', description: snapshot.catalog.label }, ...rootCatalogOptions] : rootCatalogOptions, catalogTrail)
 
   const showHomeHero = (index: number) => {
     const item = homeHeroRail[index]
@@ -1818,6 +1833,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const openCatalogMenu = () => {
+    setCatalogTrail([])
+    const viewer = tvProfileId()
+    setAccountOptionsLoading(!!receiverRef.current && !showPreviewTools)
+    if (!showPreviewTools) void receiverRef.current?.requestAccountOptions().then(options => {
+      if (viewer !== tvProfileId()) return
+      setSnapshot(current => ({ ...current, catalog: { ...current.catalog, options: mergeAccountOptions(current.catalog.options || [], options) } }))
+    }).catch(error => showNotice(error instanceof Error ? error.message : 'Account catalogues are unavailable.'))
+      .finally(() => setAccountOptionsLoading(false))
     const selectedIndex = Math.max(0, catalogOptions.findIndex((option) => option.screen === snapshot.catalog.screen))
     if (screen !== 'home') {
       heroIndexRef.current = 0
@@ -1833,6 +1856,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const closeCatalogMenu = () => {
+    if (catalogTrail.length) {
+      setCatalogTrail(catalogTrail.slice(0, -1)); setCatalogMenuFocus(0); changeFocus({ zone: 'catalog', index: 0 }); return
+    }
     setCatalogMenuOpen(false)
     changeFocus({ zone: 'nav', index: -1 })
   }
@@ -1856,6 +1882,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const requestCatalogOption = (
     option: CompanionCatalogOption,
     destination: 'home' | 'trending',
+    page = 1,
   ) => {
     if (showPreviewTools) {
       const next = previewSnapshotForCatalog(option.screen)
@@ -1864,7 +1891,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       showNotice(`${option.label} catalogue loaded`)
       return
     }
-    if (!receiverRef.current?.requestCatalog(option.screen)) {
+    if (!receiverRef.current?.requestCatalog(option.screen, page)) {
       showNotice('Open izumi on the paired device to change catalogues')
       return
     }
@@ -1875,7 +1902,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       finishNavigationTransition()
       if (destination === 'trending') enterCinematicDestination('home')
       showNotice(`${option.label} did not respond. Still showing ${snapshot.catalog.label}.`)
-    }, 8_000)
+    }, 35_000)
     const previousIndex = Math.max(0, catalogOptions.findIndex((catalog) => catalog.screen === snapshot.catalog.screen))
     catalogRequestRef.current = { screen: option.screen, label: option.label, timer, previousIndex, destination }
     setCatalogMenuOpen(false)
@@ -1889,6 +1916,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const selectCatalogOption = (index: number) => {
     const option = catalogOptions[index]
+    if (option?.screen === '__back') { closeCatalogMenu(); return }
+    if (option?.screen === '__more') { requestCatalogOption({ screen: snapshot.catalog.screen, label: snapshot.catalog.label }, 'home', (snapshot.collectionPage?.page || 1) + 1); return }
+    if (option?.children) { setCatalogTrail([...catalogTrail, option]); setCatalogMenuFocus(0); changeFocus({ zone: 'catalog', index: 0 }); return }
     if (option) requestCatalogOption(option, 'home')
   }
 
@@ -1970,6 +2000,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const playMedia = async (media: CompanionMedia, autoplay = false) => {
+    if (!snapshot.rows.some(row => row.items.length) && /^(account-|nc-|lc-)/.test(snapshot.catalog.screen)) { showNotice('Choose a title from another catalogue first.'); return }
     const generation = ++playRequestGenerationRef.current
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     if (activeLoadRef.current) finishActivePlayback()
@@ -2736,13 +2767,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const openStandaloneLink = () => {
+    setStandaloneCatalogError('')
+    setStandaloneSaved(false)
     setScreen('standalone-link')
     changeFocus({ zone: 'setting', index: 0 })
   }
 
   const closeStandaloneLink = () => {
-    setScreen('ready')
+    setScreen(standaloneSaved ? 'home' : 'ready')
     changeFocus({ zone: 'setting', index: 0 })
+  }
+
+  const retryStandaloneCatalog = () => {
+    setStandaloneCatalogError('')
+    if (!receiverRef.current?.requestCatalog('default') && tvProfileReady()) {
+      setStandaloneCatalogError('The TV receiver is unavailable. Reopen Companion to load your saved setup.')
+    }
   }
 
   const approveStandaloneLink = () => {
@@ -2943,7 +2983,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (action === 'right' || action === 'down') changeFocus({ zone: 'setting', index: 1 })
         else if (action === 'select') focus.index === 1 ? approveStandaloneLink() : rejectStandaloneLink()
         else if (action === 'back') rejectStandaloneLink()
-      } else if (action === 'select' || action === 'back') closeStandaloneLink()
+      } else if (action === 'select' && standaloneSaved) retryStandaloneCatalog()
+      else if (action === 'select' || action === 'back') closeStandaloneLink()
       return
     }
     if (screen === 'details') {
@@ -3226,6 +3267,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           returnFocus={lastHomeContentFocusRef.current}
           activeNav={activeNav}
           catalogOpen={catalogMenuOpen}
+          catalogOptionsOverride={catalogOptions}
+          catalogHeading={catalogTrail[catalogTrail.length - 1]?.label}
+          catalogLoading={accountOptionsLoading}
           catalogFocus={catalogMenuFocus}
           notice={notice}
           trailerPreview={homeTrailerPreview}
@@ -3402,15 +3446,16 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           qrCode={standaloneQrCode}
           pairingCode={tvLinkDisplayCode}
           expiresAt={tvLinkInfo.expiresAt}
-          phase={tvLinkInfo.phase}
-          statusMessage={tvLinkInfo.message}
+          phase={standaloneCatalogError ? 'error' : tvLinkInfo.phase}
+          statusMessage={standaloneCatalogError ? `Your setup is saved, but the catalogue could not load: ${standaloneCatalogError}` : tvLinkInfo.message}
+          setupSaved={standaloneSaved}
           confirmation={tvLinkInfo.confirmation}
           confirmationFocus={focus.index}
           posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
           backFocused={focus.zone === 'setting'}
           onBackFocus={() => changeFocus({ zone: 'setting', index: 0 })}
           onConfirmationFocus={(index) => changeFocus({ zone: 'setting', index })}
-          onBack={closeStandaloneLink}
+          onBack={standaloneSaved ? retryStandaloneCatalog : closeStandaloneLink}
           onApprove={approveStandaloneLink}
           onReject={rejectStandaloneLink}
         />

@@ -13,6 +13,7 @@ import type {
   LinkedDeviceSourceOptions,
 } from '../types'
 import { isCompanionSnapshot } from '../types'
+import { validCatalogOptions } from './catalog-navigation'
 import { cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
 import { resolveWithTvSourceLookup } from './tv-source-lookup'
 import {
@@ -185,7 +186,7 @@ function workerRequest(
   timeoutMs = 10_000,
 ): Promise<Record<string, unknown>> {
   const profileId = tvProfileId()
-  const scoped = method === 'POST' && /\/(catalog|search|details|resolve)$/.test(path)
+  const scoped = method === 'POST' && /\/(catalog|search|details|resolve|accounts)$/.test(path)
   if (scoped && !tvProfileReady()) return Promise.reject(new WorkerRequestError('Choose and unlock a profile first.', 'PROFILE_LOCKED'))
   if (scoped) payload = { ...(payload as Record<string, unknown>), ...tvProfileScope() }
   return new Promise((resolve, reject) => {
@@ -928,10 +929,9 @@ export class CompanionReceiver {
   }
 
   requestRefresh(): void {
-    void this.refreshHousehold()
-    void this.refreshCloudSnapshot() // Latest roster may belong to another profile; never display its personal rows.
-    const screen = storedSnapshot()?.catalog.screen
-    void this.refreshCloudSnapshot(screen)
+    // A newly configured standalone Worker has no encrypted desktop snapshots yet.
+    // Regenerate the catalogue when that cache is missing, including after a TV restart.
+    if (this.cloudflare) void this.refreshHousehold().then(() => this.requestCatalog(storedSnapshot()?.catalog.screen ?? 'default'))
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
   }
 
@@ -967,9 +967,9 @@ export class CompanionReceiver {
     this.events.onPaired(true)
     this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
     this.events.onIndependentPlaybackReady?.(true)
-    // The Worker maps an unsupported "auto" request to the profile's configured default, so this
-    // starts either the AniList, TMDB or Stremio home selected during phone setup.
-    void this.refreshHousehold().then(() => this.requestCatalog('auto'))
+    // "auto" is an actual AniList catalogue, not the configured default. An unknown selector
+    // asks existing Workers to use defaultScreen even when AniList is also enabled.
+    void this.refreshHousehold().then(() => this.requestCatalog('default'))
   }
 
   /** Ask the authenticated, currently linked izumi client to open the private Worker onboarding. */
@@ -1263,30 +1263,48 @@ export class CompanionReceiver {
     }
   }
 
-  requestCatalog(screen: string): boolean {
+  async requestAccountOptions() {
+    if (!this.cloudflare || !tvProfileReady()) return []
+    const transport = this.cloudflare
+    const status = await workerRequest(transport, '/v1/status', 'GET')
+    if (!Array.isArray(status.features) || !status.features.includes('companion-accounts-v1')) return []
+    const result = await workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/accounts`, 'POST', { action: 'options' }, 30_000)
+    return validCatalogOptions(result.options)
+  }
+
+  requestCatalog(screen: string, page = 1): boolean {
     const viewer = tvProfileId()
     if (!tvProfileReady()) { void this.refreshCloudSnapshot(); return false }
     if (!this.credential || !screen || screen.length > 40) return false
     if (this.cloudflare) {
       void (async () => {
-        if (await this.refreshCloudSnapshot(screen)) return
+        if (!/^(account-|nc-|lc-)/.test(screen) && await this.refreshCloudSnapshot(screen)) return
         if (viewer !== tvProfileId() || !tvProfileReady()) return
         try {
           const result = await workerRequest(
             this.cloudflare!,
             `/v1/companion/pairings/${encodeURIComponent(this.cloudflare!.pairingId)}/catalog`,
-            'POST', { screen }, 20_000,
+            'POST', { screen, page, offsets: page > 1 ? storedSnapshot()?.collectionPage?.nextOffsets : undefined }, 30_000,
           )
           if (isCompanionSnapshot(result.snapshot)) {
+            const previous = storedSnapshot()
+            if (page > 1 && previous?.catalog.screen === screen) {
+              result.snapshot.rows = [...previous.rows, ...result.snapshot.rows].slice(-30)
+              if (result.snapshot.views?.myList) result.snapshot.views.myList = [...(previous.views?.myList || []), ...result.snapshot.views.myList].slice(-1000)
+            }
             updateTvHousehold(result.snapshot.household)
-            if (viewer !== tvProfileId() || !snapshotMatchesTvProfile(result.snapshot)) return
+            if (viewer !== tvProfileId() || !tvProfileReady()) return
+            if (!snapshotMatchesTvProfile(result.snapshot)) throw new Error('The cloud catalogue belongs to another profile. Choose your profile and retry.')
             const snapshot = await this.withCloudProgress(result.snapshot)
             if (viewer === tvProfileId()) this.acceptSnapshot(snapshot)
             return
           }
+          throw new Error('The private Worker returned an invalid catalogue. Check its version and retry.')
         } catch (error) {
           if (viewer !== tvProfileId() || !tvProfileReady()) return
-          if (!this.connected) {
+          // Samsung's receiver service can be connected without any paired phone/desktop.
+          // Standalone mode must report Cloudflare failures rather than silently broadcasting.
+          if (!this.connected || this.cloudflare?.playbackMode === 'cloud-only' || /^(account-|nc-|lc-)/.test(screen)) {
             this.events.onCatalogError?.(screen, error instanceof Error ? error.message : 'The cloud catalogue is unavailable.')
             return
           }
@@ -1386,6 +1404,14 @@ export class CompanionReceiver {
       `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/progress`,
       'PUT', { mediaKey, payload }, 8_000,
     )
+    if (active.profileId === tvProfileId() && tvProfileReady()) {
+      const path = `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/accounts`
+      // Check opt-in before sending any unencrypted title/progress data. Older Workers have no endpoint.
+      const state = await workerRequest(transport, path, 'POST', { action: 'status' }, 8_000).catch(() => null)
+      if (state?.playbackSync === true && active.profileId === tvProfileId() && tvProfileReady()) {
+        await workerRequest(transport, path, 'POST', { ...value, action: 'progress' }, 20_000)
+      }
+    }
   }
 
   publishStatus(snapshot: PlaybackSnapshot): void {

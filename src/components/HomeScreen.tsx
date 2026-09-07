@@ -30,6 +30,9 @@ interface HomeScreenProps {
   activeNav: number
   catalogOpen: boolean
   catalogFocus: number
+  catalogOptionsOverride?: CompanionCatalogOption[]
+  catalogHeading?: string
+  catalogLoading?: boolean
   notice?: string
   trailerPreview?: { mediaKey: string; url: string }
   prefetchMedia: CompanionMedia[]
@@ -711,6 +714,9 @@ export function HomeScreen({
   activeNav,
   catalogOpen,
   catalogFocus,
+  catalogOptionsOverride,
+  catalogHeading,
+  catalogLoading,
   notice,
   trailerPreview,
   prefetchMedia,
@@ -723,9 +729,9 @@ export function HomeScreen({
   onCatalogSelect,
   onCatalogClose,
 }: HomeScreenProps) {
-  const catalogOptions: CompanionCatalogOption[] = snapshot.catalog.options?.length
+  const catalogOptions: CompanionCatalogOption[] = catalogOptionsOverride ?? (snapshot.catalog.options?.length
     ? snapshot.catalog.options
-    : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }]
+    : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }])
   const meta = informativeHeroMeta(hero)
   const ratings = displayRatings(hero)
   const isContinueHero = hero.placement?.kind === 'continue'
@@ -845,7 +851,7 @@ export function HomeScreen({
           <button type="button" class="catalog-picker-scrim" aria-label="Close catalogue picker" onClick={onCatalogClose} />
           <section class="catalog-picker" aria-label="Choose catalogue">
             <p>Catalogue</p>
-            <h2>Choose what izumi shows</h2>
+            <h2>{catalogHeading || 'Choose what izumi shows'}</h2>
             <div class="catalog-picker-options">
               {catalogOptions.map((option, index) => {
                 const selectedOption = option.screen === snapshot.catalog.screen
@@ -856,24 +862,27 @@ export function HomeScreen({
                     class={`${selectedOption ? 'is-selected' : ''}${focusedOption ? ' is-focused' : ''}`}
                     data-focus-id={`catalog-${index}`}
                     tabIndex={focusedOption ? 0 : -1}
-                    aria-pressed={selectedOption}
+                    aria-pressed={option.children || option.screen.startsWith('__') ? undefined : selectedOption}
                     onFocus={() => onCatalogFocus(index)}
                     onMouseEnter={() => onCatalogFocus(index)}
                     onClick={() => onCatalogSelect(index)}
                     key={option.screen}
                   >
-                    <span>{option.label}</span>
-                    {selectedOption && <small>Current</small>}
+                    {option.cover ? <img class={`catalog-folder-cover is-${option.shape || 'landscape'}`} src={option.cover} alt="" onError={event => { event.currentTarget.style.visibility = 'hidden' }} /> : option.emoji ? <span class="catalog-folder-emoji">{option.emoji}</span> : null}
+                    <span class="catalog-option-copy">{option.label}{option.description && <small>{option.description}</small>}</span>
+                    {option.children ? <small aria-label="Open folders">›</small> : selectedOption && <small>Current</small>}
                   </button>
                 )
               })}
             </div>
-            <small>The paired izumi client supplies these catalogues.</small>
+            <small role="status">{catalogLoading ? 'Loading connected accounts…' : catalogHeading ? 'Choose a folder. Press Back to go up.' : 'Catalogues and collections from your connected sources.'}</small>
           </section>
         </>
       )}
 
-      <div class="home-motion-track" ref={homeTrackRef}>
+      {snapshot.collectionPage?.errors?.length ? <div class="collection-status" role="status">{snapshot.collectionPage.errors.join(' ')}</div> : null}
+      {!snapshot.rows.some(row => row.items.length) && /^(account-|nc-|lc-)/.test(snapshot.catalog.screen) && <div class="account-empty" role="status"><h2>{snapshot.catalog.label}</h2><p>{snapshot.collectionPage?.errors.length ? 'This folder could not load its sources.' : 'No titles here yet.'}</p><p>Open the izumi logo to choose another catalogue or refresh this one.</p></div>}
+      <div class="home-motion-track" ref={homeTrackRef} style={!snapshot.rows.some(row => row.items.length) && /^(account-|nc-|lc-)/.test(snapshot.catalog.screen) ? { visibility: 'hidden' } : undefined}>
       <section
         class={`hero${browsingRows && !carouselLayout ? ' is-receding' : ''}${browsingRows && carouselLayout ? ' is-contextual' : ''}${carouselLayout && heroTrailerSource && heroTrailerPlaying ? ' is-trailer-playing' : ''}`}
         aria-label={`Featured: ${hero.title}`}

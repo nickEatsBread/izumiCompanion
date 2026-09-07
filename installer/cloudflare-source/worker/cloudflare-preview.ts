@@ -1,5 +1,6 @@
 import { izumiArtifacts } from '../src/generated/izumi-artifacts'
 import { TOKEN_PATTERN } from './validation'
+import { applyD1Migrations } from './migrations'
 
 const API_ROOT = 'https://api.cloudflare.com/client/v4'
 const MAX_REQUEST_BYTES = 1024 * 1024
@@ -93,11 +94,6 @@ function randomHex(bytes: number): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (value) => value.toString(16).padStart(2, '0')).join('')
 }
 
-function executableStatements(source: string): string[] {
-  return source.split(';').map((statement) => statement.trim()).filter((statement) =>
-    statement.split(/\r?\n/).some((line) => line.trim() && !line.trim().startsWith('--')))
-}
-
 async function d1Query(token: string, target: DeploymentTarget, sql: string): Promise<unknown> {
   return apiJson(`/accounts/${target.accountId}/d1/database/${target.databaseId}/query`, {
     method: 'POST',
@@ -107,12 +103,7 @@ async function d1Query(token: string, target: DeploymentTarget, sql: string): Pr
 }
 
 async function applyMigrations(token: string, target: DeploymentTarget): Promise<void> {
-  await d1Query(token, target, 'CREATE TABLE IF NOT EXISTS izumi_deploy_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)')
-  for (const migration of izumiArtifacts.migrations) {
-    // D1 accepts multiple SQL statements. One request per migration also keeps
-    // authenticated deployments within the relay's subrequest budget.
-    await d1Query(token, target, [...executableStatements(migration.sql), `INSERT OR REPLACE INTO izumi_deploy_migrations (name, applied_at) VALUES ('${migration.name.replace(/'/g, "''")}', unixepoch())`].join(';\n') + ';')
-  }
+  await applyD1Migrations(izumiArtifacts.migrations, sql => d1Query(token, target, sql))
 }
 
 async function ensureSubdomain(token: string, accountId: string): Promise<string> {

@@ -161,11 +161,17 @@ export interface CompanionHomeRow {
 }
 
 export interface CompanionCatalogOption {
+  children?: CompanionCatalogOption[]
+  cover?: string
+  emoji?: string
+  shape?: 'poster' | 'landscape' | 'square'
+  description?: string
   screen: string
   label: string
 }
 
 export interface CompanionHomeSnapshot {
+  collectionPage?: { page: number; hasMore: boolean; errors: string[]; nextOffsets?: number[] }
   discovery?: {
     version: 2
     candidates: CompanionMedia[]

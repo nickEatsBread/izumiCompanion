@@ -525,6 +525,16 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .catalog-picker-options > button.is-selected { background: rgba(255, 255, 255, .055); }
+.catalog-folder-cover { width: 96px; height: 60px; object-fit: cover; flex-shrink: 0; margin-right: 18px; border-radius: 5px; }
+.catalog-folder-cover.is-poster { width: 54px; height: 78px; }
+.catalog-folder-cover.is-square { width: 70px; height: 70px; }
+.catalog-folder-emoji { width: 70px; font-size: 36px; flex-shrink: 0; margin-right: 18px; }
+.catalog-option-copy { flex: 1; min-width: 0; }
+.catalog-option-copy > small { display: block; margin-top: 6px; font-size: 14px; font-weight: 400; }
+.collection-status { position: absolute; top: 24px; right: 36px; left: 150px; z-index: 5; padding: 14px 18px; border-radius: 8px; background: #262626; color: #f1dba5; font-size: 18px; }
+.account-empty { position: absolute; top: 28%; left: 16%; max-width: 65%; font-size: 24px; }
+.account-empty h2 { font-size: 44px; }
+.account-empty p { color: #bbb; line-height: 1.6; }
 
 .catalog-picker-options > button.is-selected::before {
   content: '';

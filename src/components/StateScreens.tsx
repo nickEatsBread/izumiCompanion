@@ -692,6 +692,7 @@ export function StandaloneLinkScreen({
   expiresAt,
   phase,
   statusMessage,
+  setupSaved = false,
   confirmation,
   confirmationFocus,
   posters,
@@ -708,6 +709,7 @@ export function StandaloneLinkScreen({
   expiresAt?: number
   phase: TvLinkPhase
   statusMessage?: string
+  setupSaved?: boolean
   confirmation?: string
   confirmationFocus: number
   posters: string[]
@@ -776,7 +778,7 @@ export function StandaloneLinkScreen({
               data-focus-id="setting-0"
               onFocus={onBackFocus}
               onClick={onBack}
-            ><ChevronLeft size={25} aria-hidden="true" /> Back to pairing</button>}
+            ><ChevronLeft size={25} aria-hidden="true" /> {setupSaved ? 'Retry catalogue' : 'Back to pairing'}</button>}
         </div>
         <aside class="standalone-qr-panel">
           {qrCode
