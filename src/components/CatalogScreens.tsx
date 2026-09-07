@@ -880,7 +880,7 @@ export function SearchScreen({
   resultTitle,
 }: {
   query: string
-  suggestions: string[]
+  suggestions: import('../lib/search-suggestions').SearchSuggestion[]
   results: CompanionMedia[]
   loading: boolean
   error: string
@@ -932,23 +932,6 @@ export function SearchScreen({
               </button>
             ))}
           </div>
-          {suggestions.length > 0 && (
-            <div class="search-suggestions" aria-label="Browse genres" key={`suggestions-${query}`}>
-              <p>Genres</p>
-              {suggestions.map((suggestion, index) => (
-                <button
-                  type="button"
-                  class={focus.zone === 'suggestion' && focus.index === index ? 'is-focused' : ''}
-                  data-focus-id={`suggestion-${index}`}
-                  tabIndex={focus.zone === 'suggestion' && focus.index === index ? 0 : -1}
-                  onFocus={() => onSuggestionFocus(index)}
-                  onMouseEnter={() => onSuggestionFocus(index)}
-                  onClick={() => onSuggestion(index)}
-                  key={suggestion}
-                >{suggestion}</button>
-              ))}
-            </div>
-          )}
         </section>
         <section class="search-results" aria-live="polite" aria-busy={loading}>
           <header class="search-query-header">
@@ -957,7 +940,7 @@ export function SearchScreen({
               <input
                 type="text"
                 value={query}
-                maxLength={32}
+                maxLength={80}
                 inputMode="search"
                 autoComplete="off"
                 spellcheck={false}
@@ -966,9 +949,15 @@ export function SearchScreen({
                 data-focus-id="search-input-0"
                 tabIndex={focus.zone === 'search-input' ? 0 : -1}
                 onFocus={onQueryFocus}
-                onInput={(event) => onQueryChange((event.currentTarget as HTMLInputElement).value.slice(0, 32))}
+                onInput={(event) => onQueryChange((event.currentTarget as HTMLInputElement).value.slice(0, 80))}
                 onKeyDown={(event) => {
                   const keyCode = (event as KeyboardEvent).keyCode
+                  if (event.key === 'ArrowDown' || keyCode === 40) {
+                    event.preventDefault(); event.stopPropagation()
+                    event.currentTarget.blur()
+                    if (suggestions.length) onSuggestionFocus(0)
+                    return
+                  }
                   if (event.key === 'Enter' || event.key === 'Escape' || keyCode === 65376 || keyCode === 65385) {
                     event.currentTarget.blur()
                   }
@@ -980,9 +969,27 @@ export function SearchScreen({
               <Mic class="search-query-voice" size={20} aria-hidden="true" />
             </label>
           </header>
+          {suggestions.length > 0 && (
+            <div class="search-suggestions search-title-suggestions" aria-label={query ? 'Search suggestions' : 'Browse genres'}>
+              <p>{query ? 'Suggestions' : 'Genres'}</p>
+              <div>
+                {suggestions.map((suggestion, index) => (
+                  <button type="button"
+                    class={focus.zone === 'suggestion' && focus.index === index ? 'is-focused' : ''}
+                    data-focus-id={`suggestion-${index}`}
+                    tabIndex={focus.zone === 'suggestion' && focus.index === index ? 0 : -1}
+                    onFocus={() => onSuggestionFocus(index)}
+                    onMouseEnter={() => onSuggestionFocus(index)}
+                    onClick={() => onSuggestion(index)}
+                    key={suggestion.label}
+                  >{suggestion.label}</button>
+                ))}
+              </div>
+            </div>
+          )}
           <div class="search-result-heading">
             <h2>{resultTitle || (query ? `Titles related to “${query}”` : 'Popular on izumi')}</h2>
-            <span>{results.length} {results.length === 1 ? 'title' : 'titles'}</span>
+            <span>{loading ? 'Searching…' : `${results.length} ${results.length === 1 ? 'title' : 'titles'}`}</span>
           </div>
           {loading ? (
             <div class="search-result-grid search-result-loading" aria-label="Searching catalogue">

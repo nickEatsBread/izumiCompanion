@@ -58,7 +58,7 @@ class FakeSmartViewChannel {
 }
 
 class FakeXmlHttpRequest {
-  static responder: (request: SentRequest) => { status: number; body: unknown }
+  static responder: (request: SentRequest) => { status: number; body: unknown; delay?: number }
   static sent: SentRequest[] = []
   method = ''
   url = ''
@@ -68,6 +68,8 @@ class FakeXmlHttpRequest {
   onload: (() => void) | null = null
   onerror: (() => void) | null = null
   ontimeout: (() => void) | null = null
+  onabort: (() => void) | null = null
+  abort() { this.onabort?.() }
   private readonly headers: Record<string, string> = {}
 
   open(method: string, url: string) {
@@ -91,7 +93,8 @@ class FakeXmlHttpRequest {
     const response = FakeXmlHttpRequest.responder(request)
     this.status = response.status
     this.responseText = JSON.stringify(response.body)
-    queueMicrotask(() => this.onload?.())
+    if (response.delay) setTimeout(() => this.onload?.(), response.delay)
+    else queueMicrotask(() => this.onload?.())
   }
 }
 
@@ -138,6 +141,40 @@ afterEach(() => {
   resetTvHousehold()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+describe('TV search requests', () => {
+  it('cancels stale queries and reuses completed results', async () => {
+    const handlers = events(), receiver = new CompanionReceiver(handlers)
+    FakeXmlHttpRequest.responder = request => ({ status: 200, body: { items: [media] }, delay: (request.body as { query?: string })?.query === 'old' ? 2000 : 10 })
+    receiver.requestSearch('old')
+    await vi.advanceTimersByTimeAsync(100)
+    receiver.requestSearch('new')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(handlers.onSearchResults).toHaveBeenCalledTimes(1)
+    expect(handlers.onSearchResults).toHaveBeenLastCalledWith('new', [media], undefined, undefined, undefined)
+    const count = FakeXmlHttpRequest.sent.length
+    receiver.requestSearch('NEW')
+    expect(FakeXmlHttpRequest.sent.length).toBe(count)
+    expect(handlers.onSearchResults).toHaveBeenLastCalledWith('NEW', [media], undefined, undefined, undefined)
+    receiver.disconnect()
+  })
+  it('retries a rate limit once and reports cloud failure even when the native channel is connected', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, { msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) } })
+    let searches = 0
+    FakeXmlHttpRequest.responder = request => request.url.endsWith('/search')
+      ? { status: ++searches === 1 ? 429 : 503, body: { error: 'Search temporarily unavailable' } }
+      : { status: 200, body: {} }
+    const handlers = events(), receiver = new CompanionReceiver(handlers)
+    await receiver.connect()
+    receiver.requestSearch('Film')
+    await vi.advanceTimersByTimeAsync(1600)
+    expect(searches).toBe(2)
+    expect(handlers.onSearchResults).toHaveBeenCalledWith('Film', [], expect.any(String), undefined, undefined)
+    expect(channel.publish.mock.calls.some(call => JSON.stringify(call).includes('izumi.companion.search'))).toBe(false)
+    receiver.disconnect()
+  })
 })
 
 describe('companion play routing', () => {

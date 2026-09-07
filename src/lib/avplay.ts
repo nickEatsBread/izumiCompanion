@@ -5,6 +5,7 @@ export interface AvPlayEvents {
   onBuffering(percent?: number): void
   onState(state: PlaybackState): void
   onTime(positionSeconds: number, durationSeconds: number): void
+  onBuffered?(startSeconds: number, endSeconds: number): void
   onTracks(tracks: PlaybackTrack[]): void
   onSubtitle(text: string, durationMs: number): void
   onLive?(live: boolean): void
@@ -40,6 +41,7 @@ function adaptiveValue(request: CastLoadRequest): string {
   const options: string[] = []
   const start = request.adaptive?.startBitrate ?? 'AVERAGE'
   options.push(`STARTBITRATE=${typeof start === 'number' ? Math.round(start) : start}`)
+  options.push('SKIPBITRATE=HIGHEST')
   if (request.adaptive?.minBitrateKbps) options.push(`BITRATES=${Math.round(request.adaptive.minBitrateKbps)}~${Math.round(request.adaptive.maxBitrateKbps || 0) || ''}`)
   else if (request.adaptive?.maxBitrateKbps) options.push(`BITRATES=~${Math.round(request.adaptive.maxBitrateKbps)}`)
   return options.join('|')
@@ -68,6 +70,13 @@ export class AvPlayController {
   private trackRefreshTick = 0
   private desiredState: 'playing' | 'paused' = 'playing'
   private pendingSeek?: number
+  private seekBusy = false
+  private seekQueue: Promise<void> = Promise.resolve()
+  private cancelSeek?: () => void
+  private knownPosition = 0
+  private knownDuration = 0
+  private bufferSeconds = 0
+  private bufferAnchor = 0
 
   get available(): boolean {
     return Boolean(window.webapis?.avplay)
@@ -114,6 +123,8 @@ export class AvPlayController {
       player.setListener({
         onbufferingstart: () => {
           if (generation !== this.generation) return
+          this.bufferAnchor = this.pendingSeek ?? this.knownPosition
+          events.onBuffered?.(this.bufferAnchor, this.bufferAnchor)
           events.onState('buffering')
           events.onBuffering()
           this.armBufferingTimeout(generation)
@@ -127,13 +138,9 @@ export class AvPlayController {
           if (generation !== this.generation) return
           this.clearBufferingTimeout()
           events.onBuffering(100)
-          const pendingSeek = this.pendingSeek
-          if (pendingSeek != null) {
-            this.pendingSeek = undefined
-            try {
-              player.seekTo(Math.round(pendingSeek * 1000), undefined, () => { this.pendingSeek = pendingSeek })
-            } catch { this.pendingSeek = pendingSeek }
-          }
+          // Completion confirms this minimum window, not the entire video download.
+          events.onBuffered?.(this.bufferAnchor, Math.min(this.knownDuration || Infinity, this.bufferAnchor + this.bufferSeconds))
+          if (this.seekBusy) return
           if (playbackStarted && this.desiredState === 'paused') {
             try { if (player.getState() === 'PLAYING') player.pause() } catch { /* State can change during the callback. */ }
           }
@@ -141,7 +148,10 @@ export class AvPlayController {
         },
         oncurrentplaytime: (milliseconds) => {
           if (generation !== this.generation) return
-          events.onTime(milliseconds / 1000, Math.max(0, player.getDuration() / 1000))
+          if (this.seekBusy) return
+          this.knownPosition = milliseconds / 1000
+          this.knownDuration = Math.max(0, player.getDuration() / 1000)
+          events.onTime(this.knownPosition, this.knownDuration)
           // Adaptive manifests on older Samsung firmware often expose AUDIO/TEXT only after
           // playback begins. Re-sample a few early callbacks and emit only when metadata changes.
           this.trackRefreshTick += 1
@@ -181,14 +191,15 @@ export class AvPlayController {
       let live = false
       try { live = player.getStreamingProperty?.('IS_LIVE') === 'true' } catch { /* Older firmware can omit this property. */ }
       events.onLive?.(live)
+      this.knownDuration = Math.max(0, player.getDuration() / 1000)
       if (!live && positionSeconds > 0) await this.seek(positionSeconds)
       if (generation !== this.generation) return
       player.play()
       playbackStarted = true
-      this.desiredState = 'playing'
+      if (this.desiredState === 'paused') player.pause()
       this.emitTracks(generation)
       this.recovering = false
-      events.onState('playing')
+      events.onState(this.desiredState)
     } catch (error) {
       if (generation !== this.generation) return
       throw new Error(playbackError(request, error, 'prepare'))
@@ -196,9 +207,14 @@ export class AvPlayController {
   }
 
   private configureIdlePlayer(player: SamsungAvPlay, request: CastLoadRequest): void {
-    try { player.setBufferingParam?.('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 5) } catch { /* Firmware-specific. */ }
-    try { player.setBufferingParam?.('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 3) } catch { /* Firmware-specific. */ }
-    try { player.setBufferingParam?.('PLAYER_BUFFER_SIZE', 'PLAYER_BUFFER_SIZE_IN_SECOND', 20) } catch { /* Firmware-specific. */ }
+    this.bufferSeconds = 0
+    try {
+      if (player.setBufferingParam) {
+        player.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 8)
+        player.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 8)
+        this.bufferSeconds = 8
+      }
+    } catch { /* Do not invent a buffered duration when firmware rejects the target. */ }
     if (/\.m3u8(?:$|\?)|\.mpd(?:$|\?)/i.test(request.url) || /mpegurl|dash/i.test(request.contentType || '') || request.adaptive) {
       try { player.setStreamingProperty?.('ADAPTIVE_INFO', adaptiveValue(request)) } catch { /* Fixed-quality streams ignore this. */ }
     }
@@ -235,13 +251,18 @@ export class AvPlayController {
     }
     this.retryCount += 1
     this.recovering = true
-    const resumeAt = this.currentTime() || this.active.positionSeconds
+    const resumeAt = this.pendingSeek ?? (this.currentTime() || this.active.positionSeconds)
     this.events.onState('buffering')
     this.events.onBuffering()
+    const retryGeneration = ++this.generation
+    this.cancelSeek?.()
+    this.seekBusy = false
+    this.seekQueue = Promise.resolve()
+    this.clearBufferingTimeout()
     try { window.webapis?.avplay?.stop() } catch { /* Already stopped. */ }
     try { window.webapis?.avplay?.close() } catch { /* Already closed. */ }
-    const retryGeneration = ++this.generation
     window.setTimeout(() => {
+      if (retryGeneration !== this.generation) return
       void this.openAndPlay(resumeAt, retryGeneration)
         .then(() => { this.recovering = false })
         .catch((error) => {
@@ -254,16 +275,19 @@ export class AvPlayController {
   play(): void {
     const player = window.webapis?.avplay
     this.desiredState = 'playing'
+    if (this.seekBusy) return
     if (player && ['READY', 'PAUSED'].includes(player.getState())) player.play()
   }
 
   pause(): void {
     const player = window.webapis?.avplay
     this.desiredState = 'paused'
+    if (this.seekBusy) return
     if (player?.getState() === 'PLAYING') player.pause()
   }
 
   suspend(): void {
+    if (this.seekBusy) { this.whenSeekReady(() => this.suspend()); return }
     const player = window.webapis?.avplay
     if (!player || !this.active) return
     try {
@@ -275,6 +299,7 @@ export class AvPlayController {
   }
 
   async restore(): Promise<void> {
+    if (this.seekBusy) await this.seekQueue.catch(() => {})
     const player = window.webapis?.avplay
     if (!player || !this.active) return
     try {
@@ -288,32 +313,69 @@ export class AvPlayController {
   }
 
   async seek(positionSeconds: number): Promise<void> {
+    const generation = this.generation
+    const task = this.seekQueue.catch(() => {}).then(() => this.performSeek(positionSeconds, generation))
+    this.seekQueue = task
+    return task
+  }
+
+  private async performSeek(positionSeconds: number, generation: number): Promise<void> {
     const player = window.webapis?.avplay
-    if (!player) return
-    const target = Math.max(0, positionSeconds)
-    let state = ''
-    try { state = player.getState() } catch { /* Queue until AVPlay is ready again. */ }
-    if (!['READY', 'PLAYING', 'PAUSED'].includes(state)) {
-      this.pendingSeek = target
-      return
-    }
+    if (!player || generation !== this.generation) return
+    if (!Number.isFinite(positionSeconds)) throw new Error('Invalid playback position.')
+    const target = Math.min(Math.max(0, positionSeconds), this.knownDuration ? Math.max(0, this.knownDuration - 1) : Infinity)
+    this.pendingSeek = target
+    this.bufferAnchor = target
+    this.events?.onState('buffering')
+    this.events?.onBuffering(0)
+    this.events?.onBuffered?.(target, target)
     try {
-      await new Promise<void>((resolve, reject) => player.seekTo(Math.round(target * 1000), resolve, reject))
+      this.seekBusy = true
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        const finish = (error?: unknown) => {
+          if (settled) return
+          settled = true
+          globalThis.clearTimeout(timer)
+          this.cancelSeek = undefined
+          error ? reject(error) : resolve()
+        }
+        const timer = globalThis.setTimeout(() => finish(new Error('Seeking timed out. Reconnecting playback.')), 12_000)
+        this.cancelSeek = () => finish(new Error('Playback changed.'))
+        try { player.seekTo(Math.round(target * 1000), () => finish(), finish) } catch (error) { finish(error) }
+      })
+      if (generation !== this.generation) return
+      this.seekBusy = false
+      this.knownPosition = target
       this.pendingSeek = undefined
-    } catch {
-      this.pendingSeek = target
+      this.clearBufferingTimeout()
+      // Some firmware omits all buffering events for seeks; the async completion is still real.
+      this.events?.onBuffering(100)
+      this.events?.onTime(target, this.knownDuration)
+      if (this.desiredState === 'paused') {
+        if (player.getState() === 'PLAYING') player.pause()
+      } else if (player.getState() === 'PAUSED') player.play()
+      if (player.getState() !== 'READY') this.events?.onState(this.desiredState)
+    } catch (error) {
+      if (generation !== this.generation) return
+      this.seekBusy = false
+      this.handleRuntimeError(errorMessage(error), generation)
+      throw error
     }
   }
 
   currentTime(): number {
+    if (this.seekBusy) return this.knownPosition
     try { return Math.max(0, (window.webapis?.avplay?.getCurrentTime() ?? 0) / 1000) } catch { return 0 }
   }
 
   duration(): number {
+    if (this.seekBusy) return this.knownDuration
     try { return Math.max(0, (window.webapis?.avplay?.getDuration() ?? 0) / 1000) } catch { return 0 }
   }
 
   tracks(): PlaybackTrack[] {
+    if (this.seekBusy) return []
     const player = window.webapis?.avplay
     if (!player) return []
     try {
@@ -365,6 +427,7 @@ export class AvPlayController {
   }
 
   currentTrackIndex(type: 'AUDIO' | 'TEXT'): number | undefined {
+    if (this.seekBusy) return undefined
     const player = window.webapis?.avplay
     if (!player?.getCurrentStreamInfo) return undefined
     try {
@@ -374,6 +437,9 @@ export class AvPlayController {
   }
 
   async selectTrack(type: 'AUDIO' | 'TEXT', index: number): Promise<boolean> {
+    const generation = this.generation
+    while (this.seekBusy) await this.seekQueue.catch(() => {})
+    if (generation !== this.generation) return false
     const player = window.webapis?.avplay
     if (!player) return false
     const available = player.getTotalTrackInfo().some((track) => track.type === type && track.index === index)
@@ -382,6 +448,7 @@ export class AvPlayController {
     if (!player.getCurrentStreamInfo) return true
     for (const wait of [0, 90, 180, 300]) {
       if (wait) await new Promise<void>((resolve) => window.setTimeout(resolve, wait))
+      if (generation !== this.generation || this.seekBusy) return false
       if (this.currentTrackIndex(type) === index) return true
       if (wait === 90) player.setSelectTrack(type, index)
     }
@@ -389,10 +456,12 @@ export class AvPlayController {
   }
 
   hideSubtitles(hidden: boolean): void {
+    if (this.seekBusy) { this.whenSeekReady(() => this.hideSubtitles(hidden)); return }
     try { window.webapis?.avplay?.setSilentSubtitle?.(hidden) } catch { /* unsupported stream */ }
   }
 
   setDisplayRect(x: number, y: number, width: number, height: number): void {
+    if (this.seekBusy) { this.whenSeekReady(() => this.setDisplayRect(x, y, width, height)); return }
     const player = window.webapis?.avplay
     if (!player) return
     try {
@@ -406,11 +475,19 @@ export class AvPlayController {
   }
 
   setSubtitleDelay(milliseconds: number): void {
+    if (this.seekBusy) { this.whenSeekReady(() => this.setSubtitleDelay(milliseconds)); return }
     try { window.webapis?.avplay?.setSubtitlePosition?.(milliseconds) } catch { /* unsupported stream */ }
   }
 
   close(): void {
     this.generation += 1
+    this.cancelSeek?.()
+    this.cancelSeek = undefined
+    this.seekBusy = false
+    this.seekQueue = Promise.resolve()
+    this.knownPosition = 0
+    this.knownDuration = 0
+    this.bufferAnchor = 0
     this.clearBufferingTimeout()
     const player = window.webapis?.avplay
     if (player) {
@@ -425,5 +502,14 @@ export class AvPlayController {
     this.trackRefreshTick = 0
     this.desiredState = 'playing'
     this.pendingSeek = undefined
+  }
+
+  private whenSeekReady(operation: () => void): void {
+    const generation = this.generation
+    void this.seekQueue.catch(() => {}).then(() => {
+      if (generation !== this.generation) return
+      if (this.seekBusy) this.whenSeekReady(operation)
+      else operation()
+    })
   }
 }

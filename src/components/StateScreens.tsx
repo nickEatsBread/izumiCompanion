@@ -326,6 +326,7 @@ export function PlayerScreen({
   position,
   duration,
   bufferedPosition,
+  bufferedStart = 0,
   isLive,
   controlFocus,
   controlsFocused,
@@ -378,6 +379,7 @@ export function PlayerScreen({
   position: number
   duration: number
   bufferedPosition: number
+  bufferedStart?: number
   isLive: boolean
   controlFocus: number
   controlsFocused: boolean
@@ -426,8 +428,9 @@ export function PlayerScreen({
   onStillWatching(continueWatching: boolean): void
 }) {
   const progress = isLive ? 100 : duration ? Math.min(100, position / duration * 100) : 0
-  const bufferedProgress = isLive ? 100 : duration ? Math.min(100, Math.max(position, bufferedPosition) / duration * 100) : 0
-  const bufferingProgressKnown = bufferingProgress > 0 && bufferingProgress < 100
+  const bufferedFrom = duration ? Math.min(100, Math.max(0, bufferedStart) / duration * 100) : 0
+  const bufferedProgress = !isLive && duration ? Math.max(0, Math.min(100, bufferedPosition / duration * 100) - bufferedFrom) : 0
+  const bufferingProgressKnown = Number.isFinite(bufferingProgress) && bufferingProgress >= 0
   const showPause = state === 'playing' || state === 'buffering'
   const selectedAudio = audioTracks.find((track) => track.index === activeAudio)?.label ?? 'Default'
   const selectedSubtitle = subtitleChoices.find((track) => track.id === activeSubtitle)?.label ?? 'Off'
@@ -463,8 +466,8 @@ export function PlayerScreen({
           <span class="player-buffering-spinner" aria-hidden="true" />
           <span class="player-buffering-copy">
             <strong>Buffering</strong>
-            <small>{bufferingProgressKnown ? `${Math.round(bufferingProgress)}% buffered` : 'Preparing stream'}</small>
-            <span class={`player-buffering-meter${bufferingProgressKnown ? ' is-determinate' : ''}`} aria-hidden="true">
+            <small>{bufferingProgressKnown ? `${Math.round(bufferingProgress)}% ready` : 'Preparing stream'}</small>
+            <span class={`player-buffering-meter${bufferingProgressKnown ? ' is-determinate' : ''}`} role="progressbar" aria-label="Playback buffer" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bufferingProgressKnown ? Math.round(bufferingProgress) : undefined}>
               <i style={{ width: `${bufferingProgressKnown ? bufferingProgress : 0}%` }} />
             </span>
           </span>
@@ -532,7 +535,7 @@ export function PlayerScreen({
           onMouseEnter={onTimelineFocus}
         >
           <div class="player-timeline">
-            <span class="player-timeline-buffered" style={{ width: `${bufferedProgress}%` }} />
+            <span class="player-timeline-buffered" style={{ left: `${bufferedFrom}%`, width: `${bufferedProgress}%` }} />
             <span class="player-timeline-played" style={{ width: `${progress}%` }} />
             <i class="player-scrubber-handle" style={{ left: `${progress}%` }} aria-hidden="true" />
             {skipSegments.map((segment) => duration > 0 && (

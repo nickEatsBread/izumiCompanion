@@ -57,7 +57,8 @@ describe('AVPlay setup', () => {
       onError: vi.fn(),
     })
 
-    expect(player.setStreamingProperty).toHaveBeenCalledWith('ADAPTIVE_INFO', 'STARTBITRATE=AVERAGE')
+    expect(player.setStreamingProperty).toHaveBeenCalledWith('ADAPTIVE_INFO', 'STARTBITRATE=AVERAGE|SKIPBITRATE=HIGHEST')
+    expect(player.setBufferingParam.mock.calls).toHaveLength(2)
     expect(calls.indexOf('buffer')).toBeLessThan(calls.indexOf('prepare'))
     expect(calls.indexOf('prepare')).toBeLessThan(calls.indexOf('play'))
   })
@@ -257,14 +258,11 @@ describe('AVPlay setup', () => {
 
     listener?.onbufferingstart()
     listener?.onbufferingprogress(43)
-    nativeState = 'IDLE'
     await controller.seek(42)
-    expect(player.seekTo).not.toHaveBeenCalled()
-    nativeState = 'PLAYING'
     listener?.onbufferingcomplete()
     expect(onBuffering).toHaveBeenLastCalledWith(100)
     expect(onState).toHaveBeenLastCalledWith('playing')
-    expect(player.seekTo).toHaveBeenCalledWith(42_000, undefined, expect.any(Function))
+    expect(player.seekTo).toHaveBeenCalledWith(42_000, expect.any(Function), expect.any(Function))
 
     controller.pause()
     listener?.onbufferingstart()

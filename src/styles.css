@@ -2633,6 +2633,16 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
   overflow-y: auto;
   scrollbar-width: none;
 }
+
+.search-title-suggestions { margin: 14px 0 20px; animation: none; }
+.search-title-suggestions > p { margin: 0 0 10px; font-size: 20px; }
+.search-title-suggestions > div { display: flex; flex-wrap: wrap; }
+.search-title-suggestions button {
+  max-width: 31%; margin: 0 12px 10px 0; padding: 12px 18px;
+  border: 1px solid #535353; border-radius: 4px; color: #eee; background: #202020;
+  font: inherit; font-size: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.search-title-suggestions button.is-focused { color: #111; background: #fff; border-color: #fff; }
 .search-result-heading {
   margin: 1.45vh 8px 1vh;
   display: flex;
@@ -3521,7 +3531,7 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .loading-status strong {
-  font-size: 58px;
+  font-size: 76px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: -.035em;
@@ -3529,9 +3539,9 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .loading-status small {
-  margin-top: 13px;
+  margin-top: 24px;
   color: #a9a9a9;
-  font-size: 18px;
+  font-size: 25px;
   font-weight: 650;
   letter-spacing: .015em;
 }
@@ -3647,26 +3657,25 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
   z-index: 11;
   top: 44%;
   left: 50%;
-  min-width: 370px;
-  padding: 22px 29px;
+  min-width: 550px;
+  padding: 36px 44px;
   border: 1px solid rgba(255, 255, 255, .22);
   display: flex;
   align-items: center;
-  gap: 42px;
   color: #fff;
   background: rgba(8, 8, 8, .86);
   box-shadow: 0 18px 54px rgba(0, 0, 0, .5);
   transform: translate(-50%, -50%);
 }
 
-.player-buffering-copy { width: 235px; display: flex; flex-direction: column; gap: 5px; }
-.player-buffering-status strong { font-size: 27px; }
-.player-buffering-status small { color: #bdbdbd; font-size: 18px; font-weight: 700; }
+.player-buffering-copy { width: 340px; margin-left: 44px; display: flex; flex-direction: column; }
+.player-buffering-status strong { font-size: 38px; line-height: 1.2; }
+.player-buffering-status small { margin-top: 12px; color: #d5d5d5; font-size: 25px; font-weight: 700; }
 
 .player-buffering-meter {
   width: 100%;
-  height: 4px;
-  margin-top: 9px;
+  height: 10px;
+  margin-top: 20px;
   display: block;
   overflow: hidden;
   background: rgba(255, 255, 255, .18);
@@ -3680,10 +3689,10 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .player-buffering-spinner {
-  width: 50px;
-  height: 50px;
-  flex: 0 0 50px;
-  border: 5px solid rgba(255, 255, 255, .28);
+  width: 76px;
+  height: 76px;
+  flex: 0 0 76px;
+  border: 7px solid rgba(255, 255, 255, .28);
   border-top-color: #fff;
   border-radius: 50%;
   box-sizing: border-box;
@@ -5510,21 +5519,21 @@ body,
 .home-focus-card.motion-forward .home-focus-logo,
 .home-focus-card.motion-forward .home-focus-title,
 .home-focus-card.motion-forward .home-focus-context {
-  animation: home-focus-enter-forward 150ms cubic-bezier(.2, .78, .2, 1);
+  animation: none;
 }
 
 .home-focus-card.motion-backward .home-focus-media,
 .home-focus-card.motion-backward .home-focus-logo,
 .home-focus-card.motion-backward .home-focus-title,
 .home-focus-card.motion-backward .home-focus-context {
-  animation: home-focus-enter-backward 150ms cubic-bezier(.2, .78, .2, 1);
+  animation: none;
 }
 
 .home-focus-card.motion-vertical .home-focus-media,
 .home-focus-card.motion-vertical .home-focus-logo,
 .home-focus-card.motion-vertical .home-focus-title,
 .home-focus-card.motion-vertical .home-focus-context {
-  animation: home-focus-enter-vertical 145ms cubic-bezier(.2, .78, .2, 1);
+  animation: none;
 }
 
 .home-focus-card .home-focus-context {

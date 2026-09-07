@@ -28,19 +28,43 @@ export function checkTvUpdate(): Promise<TvUpdate | undefined> {
   let installed: string | undefined
   try { installed = window.tizen?.application?.getCurrentApplication().appInfo?.version } catch { return Promise.resolve(undefined) }
   if (!installed) return Promise.resolve(undefined)
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('GET', UPDATE_RELEASE_URL)
     xhr.timeout = 15000
     xhr.onload = () => {
       try {
-        const version = xhr.status === 200 ? updateVersionFromRelease(JSON.parse(xhr.responseText)) : undefined
+        if (xhr.status !== 200) throw new Error('Update check unavailable')
+        const version = updateVersionFromRelease(JSON.parse(xhr.responseText))
+        if (!version) throw new Error('Release is not ready')
         resolve(version && newerVersion(version, installed!) ? { version, helperInstalled: updaterInstalled() } : undefined)
-      } catch { resolve(undefined) }
+      } catch (error) { reject(error) }
     }
-    xhr.onerror = xhr.ontimeout = () => resolve(undefined)
+    xhr.onerror = xhr.ontimeout = () => reject(new Error('Update check unavailable'))
     xhr.send()
   })
+}
+/** Check each launch, retry interrupted startup networking, and recheck after returning to the app. */
+export function watchTvUpdates(onUpdate: (update: TvUpdate) => void): () => void {
+  let disposed = false, checking = false, nextCheck = 0
+  const check = () => {
+    if (disposed || checking || document.hidden || Date.now() < nextCheck) return
+    checking = true
+    void checkTvUpdate().then((update) => {
+      nextCheck = Date.now() + 6 * 60 * 60 * 1000
+      if (!disposed && update) onUpdate(update)
+    }).catch(() => { nextCheck = Date.now() + 60000 }).finally(() => { checking = false })
+  }
+  const startup = window.setTimeout(check, 500)
+  const retry = window.setInterval(check, 60000)
+  document.addEventListener('visibilitychange', check)
+  window.addEventListener('online', check)
+  return () => {
+    disposed = true
+    window.clearTimeout(startup); window.clearInterval(retry)
+    document.removeEventListener('visibilitychange', check)
+    window.removeEventListener('online', check)
+  }
 }
 export function launchUpdater(installAndReturn: boolean): Promise<void> {
   return new Promise((resolve, reject) => {

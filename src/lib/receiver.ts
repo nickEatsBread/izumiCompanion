@@ -163,7 +163,7 @@ function storeSnapshot(snapshot: CompanionHomeSnapshot): void {
 }
 
 class WorkerRequestError extends Error {
-  constructor(message: string, readonly code = '') {
+  constructor(message: string, readonly code = '', readonly status = 0) {
     super(message)
   }
 }
@@ -174,6 +174,7 @@ function workerRequest(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   payload?: unknown,
   timeoutMs = 10_000,
+  cancellation?: { cancel?: () => void },
 ): Promise<Record<string, unknown>> {
   const profileId = tvProfileId()
   const scoped = method === 'POST' && /\/(catalog|search|details|resolve)$/.test(path)
@@ -193,10 +194,13 @@ function workerRequest(
       else reject(new WorkerRequestError(
         typeof value.error === 'string' ? value.error : `Worker returned ${request.status}.`,
         typeof value.code === 'string' ? value.code : '',
+        request.status,
       ))
     }
     request.onerror = () => reject(new Error('The private Worker could not be reached.'))
     request.ontimeout = () => reject(new Error('The private Worker did not respond in time.'))
+    request.onabort = () => reject(new Error('Search changed.'))
+    if (cancellation) cancellation.cancel = () => { request.abort(); reject(new Error('Search changed.')) }
     request.send(payload === undefined ? null : JSON.stringify(payload))
   })
 }
@@ -580,6 +584,11 @@ function privateAddress(): string {
 }
 
 export class CompanionReceiver {
+  private searchGeneration = 0
+  private searchCancellation?: { cancel?: () => void }
+  private searchTimer?: ReturnType<typeof setTimeout>
+  private lastSearchAt = 0
+  private searchCache = new Map<string, { at: number; items: CompanionMedia[] }>()
   private channel?: SamsungSmartViewChannel
   private connected = false
   private credential = localStorage.getItem('izumi.companion.credential') ?? ''
@@ -1266,6 +1275,8 @@ export class CompanionReceiver {
   }
 
   requestSearch(query: string, person?: CompanionPersonFilter, genre?: string): boolean {
+    this.cancelSearch()
+    const generation = this.searchGeneration
     const viewer = tvProfileId()
     if (!tvProfileReady()) return false
     const normalized = query.trim().slice(0, 80)
@@ -1274,24 +1285,55 @@ export class CompanionReceiver {
       query: normalized, person, genre, requestId: randomHex(12), pairingId: this.credential.slice(0, 16),
     }, 'broadcast')
     if (this.cloudflare) {
-      const screen = storedSnapshot()?.catalog.screen ?? 'auto'
-      void workerRequest(
-        this.cloudflare,
-        `/v1/companion/pairings/${encodeURIComponent(this.cloudflare.pairingId)}/search`,
-        'POST', { screen, query: normalized, person, genre }, 20_000,
-      ).then((result) => {
-        const items = (Array.isArray(result.items) ? result.items : []).slice(0, 40).filter(validCompanionMedia).filter(tvAllowsMedia)
-        this.events.onSearchResults(normalized, items, undefined, person, genre)
-      }).catch((error) => {
-        if (viewer !== tvProfileId() || !tvProfileReady()) return
-        if (this.connected) askLinked()
-        else this.events.onSearchResults(normalized, [], error instanceof Error ? error.message : 'Cloud search is unavailable.', person, genre)
-      })
+      const transport = this.cloudflare
+      const screen = storedSnapshot()?.catalog.screen ?? 'default'
+      const key = JSON.stringify([transport.pairingId, viewer, screen, normalized.toLowerCase(), person, genre])
+      const current = () => generation === this.searchGeneration && viewer === tvProfileId() && tvProfileReady() && this.cloudflare === transport
+      const cached = this.searchCache.get(key)
+      if (cached && Date.now() - cached.at < 120_000) {
+        this.events.onSearchResults(normalized, cached.items.filter(tvAllowsMedia), undefined, person, genre)
+        return true
+      }
+      const cancellation: { cancel?: () => void } = {}
+      this.searchCancellation = cancellation
+      const run = async (retry = false): Promise<void> => {
+        if (!current()) return
+        this.lastSearchAt = Date.now()
+        try {
+          const result = await workerRequest(transport,
+            `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/search`,
+            'POST', { screen, query: normalized, person, genre }, 20_000, cancellation)
+          if (!current()) return
+          const items = (Array.isArray(result.items) ? result.items : []).slice(0, 40).filter(validCompanionMedia).filter(tvAllowsMedia)
+          this.searchCache.set(key, { at: Date.now(), items })
+          if (this.searchCache.size > 24) this.searchCache.delete(this.searchCache.keys().next().value!)
+          this.events.onSearchResults(normalized, items, undefined, person, genre)
+        } catch (error) {
+          if (!current()) return
+          if (!retry && error instanceof WorkerRequestError && error.status === 429) {
+            this.searchTimer = setTimeout(() => { void run(true) }, 800)
+            return
+          }
+          if (this.connected && transport.playbackMode !== 'cloud-only') askLinked()
+          else this.events.onSearchResults(normalized, [], error instanceof Error ? error.message : 'Cloud search is unavailable.', person, genre)
+        }
+      }
+      const delay = Math.max(0, 800 - (Date.now() - this.lastSearchAt))
+      if (delay) this.searchTimer = setTimeout(() => { void run() }, delay)
+      else void run()
       return true
     }
     if (!this.connected) return false
     askLinked()
     return true
+  }
+
+  cancelSearch(): void {
+    this.searchGeneration += 1
+    this.searchCancellation?.cancel?.()
+    this.searchCancellation = undefined
+    if (this.searchTimer) clearTimeout(this.searchTimer)
+    this.searchTimer = undefined
   }
 
   selectDeviceSource(requestId: string, choiceId: string): boolean {
@@ -1449,6 +1491,8 @@ export class CompanionReceiver {
   }
 
   disconnect(): void {
+    this.cancelSearch()
+    this.searchCache.clear()
     this.cloudPlayGeneration += 1
     if (this.pairingTimer) window.clearInterval(this.pairingTimer)
     try { this.channel?.disconnect() } catch { /* disconnected already */ }

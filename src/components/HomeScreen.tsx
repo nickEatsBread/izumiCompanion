@@ -1,6 +1,6 @@
 import { Award, Flame, History, Info, Play, Star, TrendingUp, Trophy, UsersRound } from 'lucide-preact'
 import { memo } from 'preact/compat'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
 import anilistLogo from '../assets/anilist-logo.svg'
 import tmdbLogo from '../assets/tmdb-logo.svg'
@@ -616,9 +616,9 @@ const HomeFocusCard = memo(function HomeFocusCard({
   const cardProgress = episodeCard ? item.episodeProgress : item.progress
   const inProgress = typeof cardProgress === 'number' && cardProgress > 0 && cardProgress < 1
   const artwork = focusArtwork(item, episodeCard)
-  const artworkKey = artwork.join('|')
-  const [artworkSelection, setArtworkSelection] = useState({ identity, index: 0 })
-  const artworkIndex = artworkSelection.identity === identity ? artworkSelection.index : 0
+  const artworkIdentity = `${identity}|${artwork.join('|')}`
+  const [artworkSelection, setArtworkSelection] = useState({ identity: artworkIdentity, index: 0 })
+  const artworkIndex = artworkSelection.identity === artworkIdentity ? artworkSelection.index : 0
   const [trailerState, setTrailerState] = useState({ identity, playing: false })
   const trailerPlaying = trailerState.identity === identity && trailerState.playing
   const setTrailerPlaying = (playing: boolean) => setTrailerState({ identity, playing })
@@ -636,11 +636,6 @@ const HomeFocusCard = memo(function HomeFocusCard({
     source: item.ref.provider,
   }] : [])
 
-  useEffect(() => {
-    setArtworkSelection({ identity, index: 0 })
-    setTrailerPlaying(false)
-  }, [artworkKey, identity])
-
   return (
     <button
       type="button"
@@ -653,20 +648,19 @@ const HomeFocusCard = memo(function HomeFocusCard({
       onClick={onActivate}
     >
       <span class="home-focus-frame">
-        <span class="home-focus-media" key={`${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>
+        <span class="home-focus-media">
           {image
             ? <img
                 class="home-focus-art"
-                key={image}
                 src={image}
                 alt=""
                 width={1112}
                 height={626}
                 decoding={isHomeImageReady(image, 'artwork') ? 'sync' : 'async'}
                 onError={() => {
-                  setArtworkSelection((current) => current.identity === identity
+                  setArtworkSelection((current) => current.identity === artworkIdentity
                     ? { ...current, index: current.index + 1 }
-                    : { identity, index: 1 })
+                    : { identity: artworkIdentity, index: 1 })
                 }}
               />
             : <span class="home-card-placeholder">{item.title}</span>}
@@ -674,8 +668,8 @@ const HomeFocusCard = memo(function HomeFocusCard({
         {trailerSource && <HeroTrailer source={trailerSource} title={item.title} captions={trailerNeedsEnglishCaptions(item.trailer?.language)} onPlayingChange={setTrailerPlaying} />}
         <span class="home-focus-shade" aria-hidden="true" />
         {logoImage
-          ? <img class="home-focus-logo" key={`logo-${identity}`} src={logoImage} alt={item.title} width={460} height={130} decoding="sync" onError={onLogoError} />
-          : <strong class="home-focus-title" key={`title-${item.ref.provider}-${item.ref.type}-${item.ref.id}`}>{item.title}</strong>}
+          ? <img class="home-focus-logo" src={logoImage} alt={item.title} width={460} height={130} decoding="sync" onError={onLogoError} />
+          : <strong class="home-focus-title">{item.title}</strong>}
         {trailerSource && <span class="home-trailer-footer" aria-hidden="true">
           <span>{item.title}</span>
         </span>}
@@ -751,6 +745,7 @@ export function HomeScreen({
   const activeRow = presentedFocus?.row ?? 0
   const horizontalCenter = presentedFocus?.index ?? 0
   const focusedRowLength = presentedFocus ? snapshot.rows[presentedFocus.row]?.items.length ?? 0 : 0
+  const rowHeights = useMemo(() => snapshot.rows.map((row) => row.kind === 'continue' ? 322 : 420), [snapshot.rows])
   let focusMotion: HomeFocusMotion = 'still'
   if (focus.zone === 'row' && previousFocusRef.current.zone !== 'nav') {
     const nextMotion = homeFocusMotion(previousFocusRef.current, focus, focusedRowLength)
@@ -766,16 +761,15 @@ export function HomeScreen({
   }, [snapshot.hero?.logoImage, snapshot.rows])
 
   useEffect(() => {
-    // Resolve title art for all ten likely destinations. Decode only the current/next two large
-    // images plus the first landing item above and below; full backdrops are far costlier than logos.
+    // Warm destination titles without competing with the active row for large decoded bitmaps.
     prefetchMedia.forEach((item, index) => preloadHomeMedia(
       item,
       item.placement?.kind === 'continue',
-      index < 3 || index === 6 || index === 8,
+      !browsingRows && index < 2,
     ))
-  }, [prefetchMedia])
+  }, [prefetchMedia, browsingRows])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     previousFocusRef.current = focus
   }, [focus])
 
@@ -980,7 +974,7 @@ export function HomeScreen({
               )
           const focusedItem = rowActive && !carouselLayout ? row.items[horizontalCenter] : undefined
           const rowTop = carouselLayout
-            ? homeCarouselRowTop(rowIndex, activeRow, browsingRows, snapshot.rows.map((item) => item.kind === 'continue' ? 322 : 420))
+            ? homeCarouselRowTop(rowIndex, activeRow, browsingRows, rowHeights)
             : homeRowTop(rowIndex, activeRow, browsingRows)
           return (
           <section
