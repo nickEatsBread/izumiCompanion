@@ -108,7 +108,7 @@ function credentialBytes(value: string): Uint8Array<ArrayBuffer> {
   return result
 }
 
-function parseCloudflareTransport(value: unknown): CompanionCloudflareTransport | null {
+function parseCloudflareTransport(value: unknown, allowRecoveryKey = false): CompanionCloudflareTransport | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   if (input.protocol !== 1
@@ -129,6 +129,7 @@ function parseCloudflareTransport(value: unknown): CompanionCloudflareTransport 
       endpoint: endpoint.toString().replace(/\/$/, ''),
       pairingId: input.pairingId,
       tvToken: input.tvToken,
+      ...(allowRecoveryKey && typeof input.recoveryKey === 'string' && /^[A-Za-z0-9_-]{43}$/.test(input.recoveryKey) ? { recoveryKey: input.recoveryKey } : {}),
       playbackMode,
       // Older routes did not identify whether they came from Android or desktop. Defaulting to no
       // wake avoids queuing a closed desktop request; an open Android app upgrades the policy.
@@ -138,7 +139,15 @@ function parseCloudflareTransport(value: unknown): CompanionCloudflareTransport 
 }
 
 function storedCloudflareTransport(): CompanionCloudflareTransport | null {
-  try { return parseCloudflareTransport(JSON.parse(localStorage.getItem('izumi.companion.cloudflare') || 'null')) } catch { return null }
+  try { return parseCloudflareTransport(JSON.parse(localStorage.getItem('izumi.companion.cloudflare') || 'null'), true) } catch { return null }
+}
+
+function sameCloudflarePairing(left: CompanionCloudflareTransport | null, right: CompanionCloudflareTransport | null): boolean {
+  return Boolean(left && right && left.endpoint === right.endpoint && left.pairingId === right.pairingId && left.tvToken === right.tvToken)
+}
+
+function preserveRecoveryKey(transport: CompanionCloudflareTransport, previous: CompanionCloudflareTransport | null): void {
+  if (sameCloudflarePairing(transport, previous) && previous?.recoveryKey) transport.recoveryKey = previous.recoveryKey
 }
 
 function storedSnapshot(): CompanionHomeSnapshot | null {
@@ -616,6 +625,28 @@ export class CompanionReceiver {
     return this.pairing
   }
 
+  get clientLinkIdentity(): { transport: CompanionCloudflareTransport; deviceId: string; credential: string } | null {
+    if (!this.cloudflare || !/^[a-f0-9]{64}$/i.test(this.credential)) return null
+    if (!this.cloudflare.recoveryKey) {
+      try {
+        const transport = { ...this.cloudflare }
+        // Reuse a successful prior write even if its verification read failed, or another
+        // receiver instance opened linking first. Never borrow a key from another route.
+        preserveRecoveryKey(transport, storedCloudflareTransport())
+        if (!transport.recoveryKey) transport.recoveryKey = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)))
+        const saved = JSON.stringify(transport)
+        localStorage.setItem('izumi.companion.cloudflare', saved)
+        if (localStorage.getItem('izumi.companion.cloudflare') !== saved) return null
+        this.cloudflare = transport
+      } catch {
+        // This getter is read during render. Fail closed without exporting a volatile key
+        // or falling back to the legacy non-cryptographic pairing-code generator.
+        return null
+      }
+    }
+    return { transport: { ...this.cloudflare }, deviceId: this.pairing.deviceId, credential: this.credential }
+  }
+
   async connect(): Promise<void> {
     await this.refreshHousehold()
     if (!window.msf?.local) {
@@ -670,6 +701,8 @@ export class CompanionReceiver {
       const input = message as Record<string, unknown>
       const transport = parseCloudflareTransport(input.cloudflare)
       if (!this.credential || input.credential !== this.credential || !transport) return
+      // Plaintext Smart View messages never supply this secret; retain only our saved key.
+      preserveRecoveryKey(transport, this.cloudflare)
       this.cloudflare = transport
       localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
       this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
@@ -908,8 +941,10 @@ export class CompanionReceiver {
 
   /** Persist the TV-scoped capability received through the stateless phone handoff. */
   adoptStandaloneTransport(value: unknown): void {
-    const transport = parseCloudflareTransport(value)
+    // This entry point receives the authenticated, decrypted standalone setup payload.
+    const transport = parseCloudflareTransport(value, true)
     if (!transport || transport.playbackMode === 'device-only') throw new Error('The Cloudflare TV setup is invalid.')
+    preserveRecoveryKey(transport, this.cloudflare)
     const credential = this.credential || secureRandomHex(32)
     if (!credential) throw new Error('This TV could not create secure local credentials.')
     const previousCredential = localStorage.getItem('izumi.companion.credential')
@@ -1499,15 +1534,16 @@ export class CompanionReceiver {
       this.publish('izumi.companion.paired', { ok: false, deviceId: this.pairing.deviceId, error: 'Pairing challenge rejected.' }, senderId)
       return
     }
-    // Re-pairing replaces and revokes the previous private route; a TV never fans out through an
-    // old Worker after its owner has linked a different Android device.
-    if (this.cloudflare) void this.revokeCloudflarePairing()
-    if (this.credential && this.credential !== input.credential) clearPlaybackProgress()
-    this.credential = String(input.credential)
-    localStorage.setItem('izumi.companion.credential', this.credential)
     const transport = input.transport && typeof input.transport === 'object'
       ? parseCloudflareTransport((input.transport as Record<string, unknown>).cloudflare)
       : null
+    if (transport) preserveRecoveryKey(transport, this.cloudflare)
+    // Re-pairing to a different route revokes the old one. A repeat of the same pairing
+    // must retain both the TV's recovery secret and the Worker's existing backup.
+    if (this.cloudflare && !sameCloudflarePairing(this.cloudflare, transport)) void this.revokeCloudflarePairing()
+    if (this.credential && this.credential !== input.credential) clearPlaybackProgress()
+    this.credential = String(input.credential)
+    localStorage.setItem('izumi.companion.credential', this.credential)
     this.cloudflare = transport
     this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
     if (transport) localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))

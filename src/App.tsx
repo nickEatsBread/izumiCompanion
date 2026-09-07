@@ -5,6 +5,7 @@ import { moveSettingsContentFocus, settingsSectionForOption } from './lib/settin
 import { nextPostPlayFocus, POST_PLAY_VIDEO_RECT } from './lib/post-play-layout'
 import { DISCOVERY_REMOTE, DISCOVERY_CHANGED } from './lib/discovery'
 import { ProfileScreen, PROFILE_REMOTE } from './components/ProfileScreen'
+import { ClientLinkScreen, CLIENT_LINK_REMOTE } from './components/ClientLinkScreen'
 import { PROFILES_CHANGED, tvHousehold, tvProfileReady, tvProfileId } from './lib/profiles'
 import QRCode from 'qrcode'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
@@ -266,7 +267,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'discover', 'watch-history', 'settings', 'independent-setup', 'standalone-link', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'discover', 'watch-history', 'settings', 'client-link', 'independent-setup', 'standalone-link', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -1009,6 +1010,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           showNotice(`${pendingCatalog.label} catalogue loaded`)
         }
         setSnapshot(next)
+        if (screenRef.current === 'client-link') { settleStartupAfterPaint(); return }
         homeRowIndexesRef.current = {}
         heroIndexRef.current = 0
         setHeroIndex(0)
@@ -2708,6 +2710,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     changeFocus({ zone: 'setting', index: independentPlaybackReady ? 0 : 1 })
   }
 
+  const closeClientLink = () => {
+    setScreen('settings')
+    setActiveNav(navIndexFor('settings'))
+    setSettingsCategory(settingsSectionForOption(11))
+    changeFocus({ zone: 'setting', index: 11 })
+  }
+
   const closeIndependentSetup = () => {
     setScreen('settings')
     setActiveNav(navIndexFor('settings'))
@@ -2754,6 +2763,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         return
       }
       if (index === 7) return openIndependentSetup()
+      if (index === 11) { setScreen('client-link'); return }
       if (index === 10) { void launchUpdater(false).catch((error: Error) => showNotice(error.message)); return }
       setSettingsConfirmation(index === 8 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
@@ -2803,6 +2813,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const handleRemote = (action: RemoteAction) => {
     if (updatePrompt.handleRemote(action)) return
     if (profilesOpenRef.current) { window.dispatchEvent(new CustomEvent(PROFILE_REMOTE, { detail: action })); return }
+    if (screen === 'client-link') { window.dispatchEvent(new CustomEvent<RemoteAction>(CLIENT_LINK_REMOTE, { detail: action })); return }
     if (screen === 'discover') { window.dispatchEvent(new CustomEvent(DISCOVERY_REMOTE, { detail: action })); return }
     markRemoteInput(action)
     const focus = focusRef.current
@@ -3353,6 +3364,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onCategoryFocus={(index) => changeFocus({ zone: 'settings-category', index })}
           onCategorySelect={(index) => changeFocus(moveSettingsContentFocus({ zone: 'settings-category', index }, 'select'))}
           onAction={runSettingsAction}
+        />
+      )}
+      {screen === 'client-link' && (
+        <ClientLinkScreen
+          identity={receiverRef.current?.clientLinkIdentity ?? null}
+          showPreviewTools={showPreviewTools}
+          onBack={closeClientLink}
         />
       )}
       {screen === 'independent-setup' && (

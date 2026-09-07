@@ -161,6 +161,7 @@ export function parseTvLinkSetup(value: unknown): CompanionCloudflareTransport |
     endpoint,
     pairingId: cloudflare.pairingId,
     tvToken: cloudflare.tvToken,
+    ...(typeof cloudflare.recoveryKey === 'string' && /^[A-Za-z0-9_-]{43}$/.test(cloudflare.recoveryKey) ? { recoveryKey: cloudflare.recoveryKey } : {}),
     playbackMode: cloudflare.playbackMode === 'cloud-and-device' ? 'cloud-and-device' : 'cloud-only',
     wakeWhenClosed: cloudflare.wakeWhenClosed === true,
   }

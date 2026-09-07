@@ -10,6 +10,7 @@ import {
   History,
   Info,
   Link2Off,
+  Link2,
   Mic,
   Pause,
   Play,
@@ -1202,6 +1203,7 @@ export function SettingsScreen({
     { title: 'Unpair this TV', detail: 'Disconnect this TV from your izumi sync group.', icon: Link2Off },
       { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
       { title: 'App updates', detail: 'Open izumi Updater to check and install the latest TV version.', icon: RotateCcw },
+    { title: 'Link phone or desktop', detail: 'Restore this TV’s saved connection in izumi on another device.', icon: Link2 },
   ]
   return (
     <main class="utility-screen settings-screen">

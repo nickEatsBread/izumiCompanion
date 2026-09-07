@@ -9,6 +9,7 @@ export type ScreenName =
   | 'my-list'
   | 'watch-history'
   | 'settings'
+  | 'client-link'
   | 'independent-setup'
   | 'standalone-link'
   | 'details'
@@ -317,6 +318,7 @@ export interface CompanionCloudflareTransport {
   endpoint: string
   pairingId: string
   tvToken: string
+  recoveryKey?: string
   playbackMode: CompanionPlaybackMode
   wakeWhenClosed: boolean
 }
