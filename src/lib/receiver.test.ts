@@ -58,7 +58,7 @@ class FakeSmartViewChannel {
 }
 
 class FakeXmlHttpRequest {
-  static responder: (request: SentRequest) => { status: number; body: unknown }
+  static responder: (request: SentRequest) => { status: number; body: unknown; delay?: number }
   static sent: SentRequest[] = []
   method = ''
   url = ''
@@ -68,6 +68,8 @@ class FakeXmlHttpRequest {
   onload: (() => void) | null = null
   onerror: (() => void) | null = null
   ontimeout: (() => void) | null = null
+  onabort: (() => void) | null = null
+  abort() { this.onabort?.() }
   private readonly headers: Record<string, string> = {}
 
   open(method: string, url: string) {
@@ -91,7 +93,8 @@ class FakeXmlHttpRequest {
     const response = FakeXmlHttpRequest.responder(request)
     this.status = response.status
     this.responseText = JSON.stringify(response.body)
-    queueMicrotask(() => this.onload?.())
+    if (response.delay) setTimeout(() => this.onload?.(), response.delay)
+    else queueMicrotask(() => this.onload?.())
   }
 }
 
@@ -138,6 +141,40 @@ afterEach(() => {
   resetTvHousehold()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+describe('TV search requests', () => {
+  it('cancels stale queries and reuses completed results', async () => {
+    const handlers = events(), receiver = new CompanionReceiver(handlers)
+    FakeXmlHttpRequest.responder = request => ({ status: 200, body: { items: [media] }, delay: (request.body as { query?: string })?.query === 'old' ? 2000 : 10 })
+    receiver.requestSearch('old')
+    await vi.advanceTimersByTimeAsync(100)
+    receiver.requestSearch('new')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(handlers.onSearchResults).toHaveBeenCalledTimes(1)
+    expect(handlers.onSearchResults).toHaveBeenLastCalledWith('new', [media], undefined, undefined, undefined)
+    const count = FakeXmlHttpRequest.sent.length
+    receiver.requestSearch('NEW')
+    expect(FakeXmlHttpRequest.sent.length).toBe(count)
+    expect(handlers.onSearchResults).toHaveBeenLastCalledWith('NEW', [media], undefined, undefined, undefined)
+    receiver.disconnect()
+  })
+  it('retries a rate limit once and reports cloud failure even when the native channel is connected', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, { msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) } })
+    let searches = 0
+    FakeXmlHttpRequest.responder = request => request.url.endsWith('/search')
+      ? { status: ++searches === 1 ? 429 : 503, body: { error: 'Search temporarily unavailable' } }
+      : { status: 200, body: {} }
+    const handlers = events(), receiver = new CompanionReceiver(handlers)
+    await receiver.connect()
+    receiver.requestSearch('Film')
+    await vi.advanceTimersByTimeAsync(1600)
+    expect(searches).toBe(2)
+    expect(handlers.onSearchResults).toHaveBeenCalledWith('Film', [], expect.any(String), undefined, undefined)
+    expect(channel.publish.mock.calls.some(call => JSON.stringify(call).includes('izumi.companion.search'))).toBe(false)
+    receiver.disconnect()
+  })
 })
 
 describe('companion play routing', () => {
@@ -202,7 +239,7 @@ describe('companion play routing', () => {
     expect(FakeXmlHttpRequest.sent).toHaveLength(2)
   })
 
-  it('loads the configured standalone home, not AniList auto, with no desktop snapshot', async () => {
+  it('loads the configured standalone home without a desktop snapshot', async () => {
     storage.removeItem('izumi.companion.cloudflare')
     const view = { app: 'izumi', kind: 'companion-home', version: 1, revision: 'cloud-1', generatedAt: Date.now(), catalog: { screen: 'stremio', label: 'Stremio' }, rows: [] }
     FakeXmlHttpRequest.responder = (request) => request.url.endsWith('/catalog')
@@ -220,7 +257,7 @@ describe('companion play routing', () => {
   it.each([
     { status: 409, body: { error: 'Catalogue provider returned HTTP 403.' }, message: 'Catalogue provider returned HTTP 403.' },
     { status: 200, body: { snapshot: {} }, message: 'The private Worker returned an invalid catalogue. Check its version and retry.' },
-  ])('reports standalone catalogue failures with Samsung service connected ($status)', async ({ status, body, message }) => {
+  ])('reports standalone failures with Samsung service connected ($status)', async ({ status, body, message }) => {
     const channel = new FakeSmartViewChannel()
     Object.assign(window, { msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) } })
     FakeXmlHttpRequest.responder = (request) => request.url.endsWith('/catalog')
@@ -236,10 +273,9 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
-  it('regenerates a standalone catalogue on restart when the encrypted snapshot is absent', async () => {
+  it('regenerates the catalogue on restart when the encrypted snapshot is absent', async () => {
     const handlers = events()
-    const receiver = new CompanionReceiver(handlers)
-    receiver.requestRefresh()
+    new CompanionReceiver(handlers).requestRefresh()
     await vi.advanceTimersByTimeAsync(0)
     expect(FakeXmlHttpRequest.sent.some((request) => request.url.endsWith('/catalog'))).toBe(true)
     expect(handlers.onCatalogError).toHaveBeenCalledOnce()

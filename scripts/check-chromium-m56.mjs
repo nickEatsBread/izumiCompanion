@@ -431,7 +431,7 @@ async function main() {
     assert(JSON.stringify(rows.continueProgressGeometry) === '[8,5]', `Continue Watching progress is hidden by the focus outline: ${rows.continueProgressGeometry}.`)
     assert(rows.rowTransition === '0s', `The rail frame moves during vertical navigation: ${rows.rowTransition}.`)
     assert(rows.focusAnimation === '0s', `The focus outline moves with its content: ${rows.focusAnimation}.`)
-    assert(rows.mediaAnimation !== '0s', `Focused artwork transition is disabled: ${rows.mediaAnimation}.`)
+    assert(rows.mediaAnimation === '0s', `Focused artwork still waits on an entrance animation: ${rows.mediaAnimation}.`)
     assert(rows.mediaTransform === 'none' && rows.cardTransform === 'none', `A settled focused tile retains a compositor layer over its title: ${JSON.stringify(rows)}.`)
     assert(rows.trackTransform === 'none', 'Vertical navigation transformed the full Home page.')
     await capture('m56-continue-watching.png')
@@ -628,7 +628,7 @@ async function main() {
     assert(JSON.stringify(horizontal.posterAnimations) === '["0s"]', `Cyclic navigation still replays the grey poster-entry frame: ${horizontal.posterAnimations}.`)
     assert(horizontal.focusLeft === 132, `Focus outline moved during horizontal navigation: ${horizontal.focusLeft}px.`)
     assert(horizontal.focusAnimation === '0s', `Focus outline animation is enabled: ${horizontal.focusAnimation}.`)
-    assert(horizontal.mediaAnimation !== '0s', `Focused content animation is disabled: ${horizontal.mediaAnimation}.`)
+    assert(horizontal.mediaAnimation === '0s', `Focused content still waits on an entrance animation: ${horizontal.mediaAnimation}.`)
     assert(horizontal.mediaOpacity === '1', `Horizontal navigation dims the focused tile to ${horizontal.mediaOpacity}.`)
     assert(horizontal.mediaWillChange === 'auto', `Focused artwork retains an unnecessary compositor allocation: ${horizontal.mediaWillChange}.`)
     assert(horizontal.titleLogo === 'Attack on Titan' && !horizontal.fallbackTitle && !horizontal.titlePending,
@@ -1042,6 +1042,22 @@ async function main() {
       }
     }
     await capture('m56-search-keyboard.png')
+    await evaluate(`(() => {
+      var input = document.querySelector('.search-query input');
+      input.focus(); input.value = 'Attack'; input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await waitFor("document.querySelector('.search-title-suggestions button')")
+    const suggestions = await evaluate(`(() => {
+      var input = document.querySelector('.search-query').getBoundingClientRect();
+      var list = document.querySelector('.search-title-suggestions');
+      return { top: list.getBoundingClientRect().top, inputBottom: input.bottom, labels: Array.from(list.querySelectorAll('button')).map(function(button) { return button.textContent; }) };
+    })()`)
+    assert(suggestions.top >= suggestions.inputBottom && suggestions.labels.some(label => /attack/i.test(label)), `Title suggestions are missing below the query: ${JSON.stringify(suggestions)}.`)
+    await press('ArrowDown')
+    await waitFor("document.activeElement.getAttribute('data-focus-id') === 'suggestion-0'")
+    await press('Enter')
+    assert(await evaluate("document.querySelector('.search-query input').value") === suggestions.labels[0], 'Selecting a suggestion did not search its title.')
+    await capture('m56-search-suggestions.png')
     await evaluate("document.querySelector('[data-focus-id=\"nav-0\"]').focus()")
     await press('Enter')
     const homeSkeleton = await waitFor(`(() => {
@@ -1106,9 +1122,13 @@ async function main() {
       position: Number(document.querySelector('.player-timeline-control').getAttribute('aria-valuenow')),
       playedWidth: document.querySelector('.player-timeline-played').getBoundingClientRect().width,
       bufferedWidth: document.querySelector('.player-timeline-buffered').getBoundingClientRect().width,
+      spinnerWidth: document.querySelector('.player-buffering-spinner').offsetWidth,
+      copySpacing: document.querySelector('.player-buffering-copy').offsetLeft - document.querySelector('.player-buffering-spinner').offsetLeft - document.querySelector('.player-buffering-spinner').offsetWidth,
       valueText: document.querySelector('.player-timeline-control').getAttribute('aria-valuetext')
     }))()`)
-    assert(bufferingPlayer.status.includes('Buffering') && bufferingPlayer.status.includes('46% buffered'), `Buffering indicator is incomplete: ${bufferingPlayer.status}.`)
+    assert(bufferingPlayer.status.includes('Buffering') && bufferingPlayer.status.includes('46% ready'), `Buffering indicator is incomplete: ${bufferingPlayer.status}.`)
+    assert(bufferingPlayer.spinnerWidth >= 76 && bufferingPlayer.copySpacing >= 40, `Buffering status is cramped: ${JSON.stringify(bufferingPlayer)}.`)
+    await capture('m56-buffering.png')
     assert(bufferingPlayer.transport === 'Pause' && bufferingPlayer.transportFocused, `Playing transport is not a focused Pause action: ${JSON.stringify(bufferingPlayer)}.`)
     assert(bufferingPlayer.bufferedWidth > bufferingPlayer.playedWidth && bufferingPlayer.valueText.includes('buffered to'), `Buffered extent is missing from the player rail: ${JSON.stringify(bufferingPlayer)}.`)
     await press('ArrowDown')
@@ -1139,6 +1159,7 @@ async function main() {
     assert(heldSeek.position >= scrubbedPosition + 60, `Held fast-forward did not accumulate: ${scrubbedPosition} -> ${heldSeek.position}.`)
     assert(heldSeek.multiplier === '3×' && heldSeek.chevrons === 3 && !heldSeek.buffering, `Held fast-forward feedback restarted or exposed buffering: ${JSON.stringify(heldSeek)}.`)
     await wait(400)
+    assert(await evaluate("!document.querySelector('.player-seek-feedback') && Boolean(document.querySelector('.player-buffering-status'))"), 'Releasing the media key did not restore buffering feedback.')
     // The D-pad must use the same continuous scrubber as the dedicated media keys.
     await cdp.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, nativeVirtualKeyCode: 39 })
     await wait(1250)
@@ -1255,6 +1276,9 @@ async function main() {
     await press('ArrowDown')
     await press('ArrowDown')
     await press('ArrowRight')
+    await waitFor("document.querySelector('[data-focus-id=\"setting-11\"].is-focused')")
+    await press('ArrowDown')
+    await waitFor("document.querySelector('[data-focus-id=\"setting-7\"].is-focused')")
     await press('Enter')
     await waitFor("document.querySelector('.independent-setup-screen .independent-setup-heading h1')")
     const independentSetup = await evaluate(`(() => ({
@@ -1357,10 +1381,8 @@ async function main() {
     await waitFor("document.querySelector('.app-shell.screen-my-list')")
 
     // Exercise the real packaged update dialog with a deterministic release and Tizen launcher.
-    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home` })
-    await waitFor("document.querySelector('.home-screen') && !document.getElementById('startup-splash')")
-    await evaluate(`(function () {
-      localStorage.removeItem('izumi.tv.update-dismissed');
+    const updateFixture = await cdp.call('Page.addScriptToEvaluateOnLoad', { scriptSource: `(function () {
+      localStorage.setItem('izumi.tv.update-dismissed', JSON.stringify({version:'0.2.35',at:Date.now()}));
       window.tizen = {
         ApplicationControl: function(operation, uri, mime, category, data, launchMode) { this.operation=operation; this.data=data; this.launchMode=launchMode; },
         ApplicationControlData: function(key, value) { this.key=key; this.value=value; },
@@ -1381,9 +1403,10 @@ async function main() {
         Object.defineProperty(this,'responseText',{value:JSON.stringify({tag_name:'v0.2.35',assets:['izumi-companion.wgt','izumi-updater.wgt'].map(function(name){return {name:name,state:'uploaded',size:1024,digest:'sha256:'+'a'.repeat(64),browser_download_url:'https://github.com/nickEatsBread/izumiCompanion/releases/download/v0.2.35/'+name};})})});
         var xhr=this; setTimeout(function(){if(xhr.onload)xhr.onload();},10);
       };
-      document.dispatchEvent(new Event('visibilitychange'));
-    })()`)
+    })()` })
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home` })
     await waitFor("document.querySelector('.tv-update-dialog')")
+    await cdp.call('Page.removeScriptToEvaluateOnLoad', { identifier: updateFixture.identifier })
     const updateGeometry = await evaluate(`(function(){var d=document.querySelector('.tv-update-dialog').getBoundingClientRect();return {width:d.width,bottom:d.bottom,buttons:Array.from(document.querySelectorAll('.tv-update-actions button')).map(function(b){return {text:b.textContent,width:b.clientWidth,content:b.scrollWidth};})};})()`)
     assert(updateGeometry.width >= 900 && updateGeometry.bottom < 1080 && updateGeometry.buttons.every((button) => button.content <= button.width), 'Update dialog or button text is clipped: ' + JSON.stringify(updateGeometry))
     await press('ArrowRight')

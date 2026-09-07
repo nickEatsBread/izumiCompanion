@@ -44,9 +44,9 @@ function normalizedSpeech(value: string): string {
 export function voiceSearchQuery(value: string): string | undefined {
   const spoken = normalizedSpeech(value)
   const match = /^(?:search(?:\s+for)?|find|look\s+for)\s+(.+)$/i.exec(spoken)
-  if (!match) return undefined
-  const query = match[1].replace(/\s+(?:in|on)\s+izumi$/i, '').trim()
-  return query || undefined
+  if (!match && /^(?:(?:play|pause|resume|stop|rewind|fast forward|skip|seek|volume|mute|unmute|go|open|close|switch|change|turn)\b|(?:search|find|back|home|settings|up|down|left|right|select|ok|exit|next|previous)$)/i.test(spoken)) return undefined
+  const query = (match ? match[1] : spoken).replace(/\s+(?:in|on)\s+izumi$/i, '').trim()
+  return query && query.length <= 80 ? query : undefined
 }
 
 /** Tizen 4 voice control recognizes predefined foreground commands. Keep the list bounded so a
@@ -64,14 +64,15 @@ export function voiceSearchCommands(media: CompanionMedia[], limit = MAX_VOICE_S
     seen.add(`title:${titleKey}`)
     titles.push(title)
   }
-  // Register the exact phrase first for as many catalogue titles as possible. Older Tizen 4
-  // firmware only exposes predefined foreground commands, so this ordering is important.
+  // Register both ways of naming each title before spending slots on alternate phrasings.
   for (const title of titles) {
-    const command = `search ${title}`
-    const key = command.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    commands.push(command)
+    for (const command of [`search ${title}`, ...(voiceSearchQuery(title) ? [title] : [])]) {
+      if (commands.length >= maximum) return commands
+      const key = command.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      commands.push(command)
+    }
     if (commands.length >= maximum) break
   }
   const variants = ['search for', 'find', 'look for']
@@ -109,8 +110,8 @@ function handleRecognition(value: string, callbacks: VoiceSearchCallbacks): bool
   return false
 }
 
-/** Install the newest Samsung Voice Interaction API when present, with a Tizen 4 predefined-
- * command fallback for the Chromium M56 generation. The custom event is also useful to exercise
+/** Install title context and foreground command recognition together: firmware may expose both
+ * APIs while delivering microphone results through only one. The custom event also exercises
  * the complete voice-to-search route in a browser where Samsung APIs do not exist. */
 export function installVoiceSearch(
   media: CompanionMedia[],
@@ -121,9 +122,22 @@ export function installVoiceSearch(
     interaction: window.webapis?.voiceinteraction,
   },
 ): () => void {
+  let active = true, lastQuery = '', lastAt = 0
+  const recognize = (value: string) => {
+    if (!active) return false
+    return handleRecognition(value, {
+      ...callbacks,
+      onSearch: (query) => {
+        const key = query.toLowerCase(), now = Date.now()
+        if (key === lastQuery && now - lastAt < 750) return
+        lastQuery = key; lastAt = now
+        callbacks.onSearch(query)
+      },
+    })
+  }
   const onVoiceEvent = (event: Event) => {
     const query = normalizedSpeech(String((event as CustomEvent<unknown>).detail ?? ''))
-    if (query) callbacks.onSearch(voiceSearchQuery(query) ?? query)
+    if (query) recognize(query)
     else callbacks.onOpenSearch()
   }
   runtime.target.addEventListener(VOICE_SEARCH_EVENT, onVoiceEvent)
@@ -141,16 +155,12 @@ export function installVoiceSearch(
       interaction.setCallback({
         onupdatestate: () => voiceApplicationState(callbacks.getScreen()),
         onchangeappstate: (state: never) => {
-          if (String(state) !== 'Search') return false
+          if (!active || String(state) !== 'Search') return false
           callbacks.onOpenSearch()
           return true
         },
         ontitleselection: (title: never) => {
-          const spoken = normalizedSpeech(String(title))
-          const query = voiceSearchQuery(spoken) ?? spoken
-          if (!query) return false
-          callbacks.onSearch(query)
-          return true
+          return recognize(String(title))
         },
         onrequestcontentcontext: () => {
           if (!interaction.buildVoiceInteractionContentContextItem || !interaction.buildVoiceInteractionContentContextResponse) return '[]'
@@ -165,7 +175,6 @@ export function installVoiceSearch(
         },
       })
       interaction.listen()
-      return () => runtime.target.removeEventListener(VOICE_SEARCH_EVENT, onVoiceEvent)
     } catch {
       // Older TVs can expose a partial webapis object but not Voice Interaction; use Tizen 4 below.
     }
@@ -173,27 +182,27 @@ export function installVoiceSearch(
 
   const manager = runtime.tizen?.voicecontrol
   const Command = runtime.tizen?.VoiceControlCommand
-  if (!manager || !Command) return () => runtime.target.removeEventListener(VOICE_SEARCH_EVENT, onVoiceEvent)
 
   let client: VoiceControlClientLike | undefined
   let listenerId: number | undefined
   try {
+    if (!manager || !Command) throw new Error('Foreground voice commands unavailable')
     client = manager.getVoiceControlClient()
     const commands = voiceSearchCommands(media).map((command) => new Command(command, 'FOREGROUND'))
     client.setCommandList(commands, 'FOREGROUND')
     listenerId = client.addResultListener((event, list, result) => {
       if (String(event).toUpperCase() !== 'SUCCESS') return
-      if (handleRecognition(result, callbacks)) return
+      if (recognize(result)) return
       for (const command of list || []) {
-        if (handleRecognition(command.command, callbacks)) return
+        if (recognize(command.command)) return
       }
     })
   } catch {
-    client = undefined
-    listenerId = undefined
+    // Keep any partially initialized client so cleanup can release it.
   }
 
   return () => {
+    active = false
     runtime.target.removeEventListener(VOICE_SEARCH_EVENT, onVoiceEvent)
     if (!client) return
     try { if (listenerId !== undefined) client.removeResultListener(listenerId) } catch { /* already released by firmware */ }

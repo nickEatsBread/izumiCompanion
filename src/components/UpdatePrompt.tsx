@@ -1,37 +1,22 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { checkTvUpdate, launchUpdater, type TvUpdate } from '../lib/updates'
+import { watchTvUpdates, launchUpdater, type TvUpdate } from '../lib/updates'
 import type { RemoteAction } from '../lib/remote'
 import wordmark from '../../brand/svg/izumi-wordmark-white.svg'
 import './UpdatePrompt.css'
 
-const DISMISS_KEY = 'izumi.tv.update-dismissed'
-function recentlyDismissed(version: string): boolean {
-  try { const value = JSON.parse(localStorage.getItem(DISMISS_KEY) || 'null'); return value?.version === version && Date.now() - Number(value.at) < 24 * 60 * 60 * 1000 } catch { return false }
-}
 export function useUpdatePrompt(eligible: boolean, restoreFocus: () => void) {
   const [update, setUpdate] = useState<TvUpdate>()
   const [choice, setChoice] = useState(0)
   const [launching, setLaunching] = useState(false)
   const [error, setError] = useState('')
-  const lastCheck = useRef(0)
+  const dismissed = useRef(new Set<string>())
   const visible = Boolean(update && eligible)
-  useEffect(() => {
-    let disposed = false, checking = false
-    const check = () => {
-      if (checking || document.hidden || Date.now() - lastCheck.current < 6 * 60 * 60 * 1000) return
-      checking = true; lastCheck.current = Date.now()
-      void checkTvUpdate().then((result) => {
-        if (!disposed && result && !recentlyDismissed(result.version)) { setUpdate(result); setChoice(0); setError('') }
-      }).finally(() => { checking = false })
-    }
-    const timer = window.setTimeout(check, 30000)
-    const interval = window.setInterval(check, 6 * 60 * 60 * 1000)
-    document.addEventListener('visibilitychange', check)
-    return () => { disposed = true; window.clearTimeout(timer); window.clearInterval(interval); document.removeEventListener('visibilitychange', check) }
-  }, [])
+  useEffect(() => watchTvUpdates((result) => {
+    if (!dismissed.current.has(result.version)) { setUpdate(result); setChoice(0); setError('') }
+  }), [])
   const dismiss = () => {
     if (launching) return
-    if (update) try { localStorage.setItem(DISMISS_KEY, JSON.stringify({ version: update.version, at: Date.now() })) } catch { /* Session dismissal still works. */ }
+    if (update) dismissed.current.add(update.version)
     setUpdate(undefined); setError(''); restoreFocus()
   }
   const install = () => {

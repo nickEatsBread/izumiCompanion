@@ -8,7 +8,7 @@ import { ProfileScreen, PROFILE_REMOTE } from './components/ProfileScreen'
 import { ClientLinkScreen, CLIENT_LINK_REMOTE } from './components/ClientLinkScreen'
 import { PROFILES_CHANGED, tvHousehold, tvProfileReady, tvProfileId } from './lib/profiles'
 import QRCode from 'qrcode'
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import {
   CatalogScreen,
   DetailScreen,
@@ -64,6 +64,7 @@ import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { TvLinkReceiver, type TvLinkInfo } from './lib/tv-link'
 import { installVoiceSearch } from './lib/voice-search'
+import { searchIsLoading, titleSuggestions } from './lib/search-suggestions'
 import { hasStartedWatching, mediaRatingKey, readMediaRatings, writeMediaRating, type MediaRating } from './lib/media-rating'
 import {
   activeSkipSegment,
@@ -106,6 +107,7 @@ interface PlayerView {
   position: number
   duration: number
   bufferedPosition: number
+  bufferedStart?: number
   isLive: boolean
 }
 
@@ -402,6 +404,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [searchGenre, setSearchGenre] = useState<string>()
   const [remoteSearchResults, setRemoteSearchResults] = useState<CompanionMedia[]>()
   const [searchPending, setSearchPending] = useState(false)
+  const [settledSearchQuery, setSettledSearchQuery] = useState('')
   const [searchError, setSearchError] = useState('')
   const [seriesSeason, setSeriesSeason] = useState(0)
   const [settingsConfirmation, setSettingsConfirmation] = useState<SettingsConfirmation>(null)
@@ -833,7 +836,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setStillWatching(false)
     setPlayerPromptFocus('transport')
     setLoadingProgress(0)
-    updatePlayer({ title: request.title, state: 'buffering', position: request.positionSeconds, duration: 0, bufferedPosition: request.positionSeconds, isLive: false })
+    updatePlayer({ title: request.title, state: 'buffering', position: request.positionSeconds, duration: 0, bufferedStart: request.positionSeconds, bufferedPosition: request.positionSeconds, isLive: false })
     setScreen('loading')
     publishStatus(true)
     const tryNextCloudSource = (): boolean => {
@@ -856,21 +859,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
             ? Math.max(0, Math.min(100, percent))
             : 0
           setLoadingProgress(reported)
-          const current = playerRef.current
-          const amount = reported / 100
-          const bufferedPosition = current.position + amount * (current.position > 0 ? 3 : 5)
-          updatePlayer({ state: 'buffering', bufferedPosition: Math.min(current.duration || bufferedPosition, bufferedPosition) })
+          if (reported < 100) updatePlayer({ state: 'buffering' })
           publishStatus()
         },
+        onBuffered: (bufferedStart, bufferedPosition) => updatePlayer({ bufferedStart, bufferedPosition }),
         onState: (state) => {
           updatePlayer({ state })
           if ((state === 'playing' || state === 'paused') && screenRef.current !== 'postplay') setScreen('player')
           publishStatus(true)
         },
         onTime: (position, duration) => {
-          // AVPlay exposes progress toward its configured buffer target, but not an absolute
-          // buffered range. Keep the rail aligned with the conservative five-second play buffer.
-          updatePlayer({ position: pendingSeekRef.current ?? position, duration, bufferedPosition: Math.min(duration, Math.max(playerRef.current.bufferedPosition, position + 5)) })
+          updatePlayer({ position: pendingSeekRef.current ?? position, duration })
           playbackTimeRef.current?.(position, duration)
           if (activeSubtitleRef.current.startsWith('external-')) {
             setSubtitleText(externalSubtitlesRef.current.textAt(position, subtitlePreferencesRef.current.delayMs))
@@ -1054,6 +1053,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if ((searchGenreRef.current ?? '') !== (genre ?? '')) return
         if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
         setRemoteSearchResults(items)
+        setSettledSearchQuery(query.trim().toLowerCase())
         setSearchPending(false)
         setSearchError(error ?? '')
         if (searchPersonRef.current && items.length) setFocusLocation({ zone: 'grid', index: 0 })
@@ -1235,12 +1235,14 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   useEffect(() => {
     searchQueryRef.current = searchQuery
+    receiverRef.current?.cancelSearch()
     if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current)
     if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
     if (showPreviewTools || screen !== 'search' || !searchQuery.trim()) {
       setSearchPending(false)
       setSearchError('')
       setRemoteSearchResults(undefined)
+      setSettledSearchQuery('')
       return
     }
     setRemoteSearchResults(undefined)
@@ -1248,20 +1250,26 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSearchPending(true)
     const requestedQuery = searchQuery.trim()
     searchTimerRef.current = window.setTimeout(() => {
-      if (!receiverRef.current?.requestSearch(requestedQuery, searchPerson, searchGenre)) {
+      // Cached replies can arrive synchronously; arm first so that reply clears this deadline too.
+      searchResponseTimerRef.current = window.setTimeout(() => {
+        if (searchQueryRef.current.trim() !== requestedQuery) return
+        receiverRef.current?.cancelSearch()
         setSearchPending(false)
+        setSettledSearchQuery(requestedQuery.toLowerCase())
+        setSearchError('Search is taking too long. Please try again.')
+      }, 25_000)
+      if (!receiverRef.current?.requestSearch(requestedQuery, searchPerson, searchGenre)) {
+        window.clearTimeout(searchResponseTimerRef.current)
+        setSearchPending(false)
+        setSettledSearchQuery(requestedQuery.toLowerCase())
         setSearchError('Open izumi on the paired device to search this catalogue.')
         return
       }
-      searchResponseTimerRef.current = window.setTimeout(() => {
-        if (searchQueryRef.current.trim() !== requestedQuery) return
-        setSearchPending(false)
-        setSearchError('The paired device did not answer. Try again when izumi is open.')
-      }, 7_000)
-    }, 280)
+    }, 180)
     return () => {
       if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current)
       if (searchResponseTimerRef.current) window.clearTimeout(searchResponseTimerRef.current)
+      receiverRef.current?.cancelSearch()
     }
   }, [searchQuery, searchPerson, searchGenre, screen, showPreviewTools])
 
@@ -1280,7 +1288,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = document.querySelector<HTMLElement>(`[data-focus-id="${focusId(focus)}"]`)
     if (updatePrompt.visible || titlePanel) return
     if (!element || ['ready', 'loading', 'player', 'postplay', 'error'].includes(screen)) return
@@ -1763,19 +1771,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     return !normalizedSearch || searchable.includes(normalizedSearch)
   }), [allMedia, normalizedSearch, searchGenre])
   const searchResults = normalizedSearch && remoteSearchResults !== undefined ? remoteSearchResults : localSearchResults
-  const searchSuggestions = useMemo(() => {
-    const pool = Array.from(new Set([
+  const searchSuggestions = useMemo(() => titleSuggestions(searchQuery,
+    [...(remoteSearchResults ?? []), ...allMedia], [
       ...(snapshot.catalog.genres ?? []),
       ...allMedia.flatMap((item) => item.genres ?? []),
-    ].map((value) => value.trim()).filter(Boolean)))
-    return pool
-      .filter((value) => !normalizedSearch || value.toLowerCase().includes(normalizedSearch))
-      .sort((left, right) => {
-        if (!normalizedSearch) return left.localeCompare(right)
-        return Number(right.toLowerCase().startsWith(normalizedSearch)) - Number(left.toLowerCase().startsWith(normalizedSearch)) || left.localeCompare(right)
-      })
-      .slice(0, 7)
-  }, [allMedia, normalizedSearch, snapshot.catalog.genres])
+    ]), [allMedia, searchQuery, remoteSearchResults, snapshot.catalog.genres])
   const trendingItems = collections.trending
   const seriesItems = collections.series
   const movieItems = collections.movies
@@ -2196,6 +2196,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (screenRef.current !== 'search') pushCurrentNavigation()
     setCatalogMenuOpen(false)
     setSettingsConfirmation(null)
+    setTitlePanel(null)
+    setExitConfirmation(false)
+    setPlayerMenu(null)
+    if (tvProfileReady()) setProfilesOpen(false)
     if (screenRef.current === 'player' || screenRef.current === 'loading') finishActivePlayback()
     if (screenRef.current !== 'search') beginNavigationTransition()
     setActiveNav(1)
@@ -2210,10 +2214,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     changeFocus({ zone: 'search-input', index: 0 })
   }
 
+  const voiceSearchRef = useRef(openVoiceSearch)
+  voiceSearchRef.current = openVoiceSearch
   useEffect(() => installVoiceSearch(allMedia, {
     getScreen: () => screenRef.current,
-    onOpenSearch: () => openVoiceSearch(),
-    onSearch: openVoiceSearch,
+    onOpenSearch: () => voiceSearchRef.current(),
+    onSearch: (query) => voiceSearchRef.current(query),
   }), [snapshot.revision])
 
   const activateCurrentFocus = () => {
@@ -2247,6 +2253,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     seekInFlightRef.current = true
+    if (seekFeedbackTimerRef.current) window.clearTimeout(seekFeedbackTimerRef.current)
+    setSeekFeedback(undefined)
+    setLoadingProgress(0)
+    updatePlayer({ state: 'buffering', bufferedStart: target, bufferedPosition: target })
     const generation = seekGenerationRef.current
     const finish = () => {
       if (generation !== seekGenerationRef.current) return
@@ -2292,7 +2302,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (!active) return
     if (commit) flushPendingSeek()
     if (seekFeedbackTimerRef.current) window.clearTimeout(seekFeedbackTimerRef.current)
-    seekFeedbackTimerRef.current = window.setTimeout(() => setSeekFeedback(undefined), 900)
+    setSeekFeedback(undefined)
   }
 
   const releaseSeekHold = (action: RemoteAction) => {
@@ -2644,19 +2654,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (!key) return
     setSearchPerson(undefined)
     setSearchGenre(undefined)
-    if (key === 'DELETE') setSearchQuery((value) => value.slice(0, -1))
-    else if (key === 'SPACE') setSearchQuery((value) => `${value} `)
-    else if (key === 'VOICE') changeFocus({ zone: 'search-input', index: 0 })
-    else setSearchQuery((value) => `${value}${key}`.slice(0, 32))
+    if (key === 'VOICE') { changeFocus({ zone: 'search-input', index: 0 }); return }
+    const value = searchQueryRef.current
+    const next = key === 'DELETE' ? value.slice(0, -1) : `${value}${key === 'SPACE' ? ' ' : key}`.slice(0, 80)
+    searchQueryRef.current = next
+    setSearchQuery(next)
   }
 
   const applySearchSuggestion = (index: number) => {
     const suggestion = searchSuggestions[index]
     if (!suggestion) return
     setSearchPerson(undefined)
-    searchGenreRef.current = suggestion
-    setSearchGenre(suggestion)
-    setSearchQuery(suggestion)
+    searchGenreRef.current = suggestion.kind === 'genre' ? suggestion.label : undefined
+    setSearchGenre(searchGenreRef.current)
+    searchQueryRef.current = suggestion.label
+    setSearchQuery(suggestion.label)
+    changeFocus({ zone: 'suggestion', index: 0 })
   }
 
   const moveSearchFocus = (action: RemoteAction) => {
@@ -2697,19 +2710,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (focus.zone === 'suggestion') {
-      if (action === 'left') return changeFocus({ zone: 'nav', index: activeNav })
-      if (action === 'right' && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
-      if (action === 'up') {
-        if (focus.index === 0) return changeSearchKeyFocus(nearestSearchKey(SEARCH_KEY_LAST_ROW, 2.5))
-        return changeFocus({ zone: 'suggestion', index: focus.index - 1 })
-      }
+      if (action === 'left') return focus.index > 0
+        ? changeFocus({ zone: 'suggestion', index: focus.index - 1 }) : changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)
+      if (action === 'right') return changeFocus({ zone: 'suggestion', index: Math.min(searchSuggestions.length - 1, focus.index + 1) })
+      if (action === 'up') return changeFocus({ zone: 'search-input', index: 0 })
       if (action === 'down') {
-        if (focus.index < searchSuggestions.length - 1) return changeFocus({ zone: 'suggestion', index: focus.index + 1 })
         if (searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
       }
       return
     }
     if (focus.zone === 'search-input') {
+      if (action === 'down' && searchSuggestions.length) return changeFocus({ zone: 'suggestion', index: 0 })
       if (action === 'down' && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
       if (action === 'right' && searchResults.length) return changeFocus({ zone: 'grid', index: 0 })
       if (action === 'left' || action === 'back') return changeSearchKeyFocus(SEARCH_VOICE_KEY_INDEX)
@@ -2725,7 +2736,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         index -= 1
       } else if (action === 'right') index = Math.min(searchResults.length - 1, index + 1)
       else if (action === 'up') {
-        if (index < columns) return
+        if (index < columns) return changeFocus({ zone: searchSuggestions.length ? 'suggestion' : 'search-input', index: 0 })
         index -= columns
       } else if (action === 'down') index = Math.min(searchResults.length - 1, index + columns)
       changeFocus({ zone: 'grid', index })
@@ -3312,7 +3323,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           query={searchQuery}
           suggestions={searchSuggestions}
           results={searchResults}
-          loading={searchPending}
+          loading={!showPreviewTools && searchIsLoading(searchQuery, settledSearchQuery, searchPending)}
           error={searchError}
           focus={focus}
           activeNav={activeNav}
@@ -3330,6 +3341,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onQueryChange={(value) => {
             setSearchPerson(undefined)
             setSearchGenre(undefined)
+            searchQueryRef.current = value
             setSearchQuery(value)
           }}
           onQueryFocus={() => changeFocus({ zone: 'search-input', index: 0 })}

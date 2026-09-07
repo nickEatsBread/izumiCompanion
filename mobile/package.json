@@ -1,6 +1,6 @@
 {
   "name": "IzumiInstaller",
-  "version": "0.2.37",
+  "version": "0.2.41",
   "private": true,
   "scripts": {
     "android": "react-native run-android",

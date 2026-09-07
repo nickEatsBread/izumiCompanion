@@ -1,15 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import type { CompanionMedia } from '../types'
 import { installVoiceSearch, MAX_VOICE_SEARCH_COMMANDS, voiceSearchCommands, voiceSearchQuery, VOICE_SEARCH_EVENT } from './voice-search'
 
 const media = (title: string): CompanionMedia => ({ ref: { provider: 'test', type: 'movie', id: title }, title })
 
 describe('Samsung TV voice search', () => {
+  it('declares the permissions required by both Samsung voice services', () => {
+    const manifest = readFileSync(new URL('../../config.xml', import.meta.url), 'utf8')
+    expect(manifest).toContain('<tizen:privilege name="http://tizen.org/privilege/recorder"/>')
+    expect(manifest).toContain('<tizen:privilege name="http://developer.samsung.com/privilege/voicecontrol"/>')
+  })
   it('extracts a clean query from common remote utterances', () => {
     expect(voiceSearchQuery('search Dune Part Two')).toBe('Dune Part Two')
     expect(voiceSearchQuery('Search for The Runner on izumi')).toBe('The Runner')
     expect(voiceSearchQuery('find Frieren')).toBe('Frieren')
     expect(voiceSearchQuery('play Dune')).toBeUndefined()
+    expect(voiceSearchQuery('The Matrix')).toBe('The Matrix')
+    for (const command of ['pause', 'volume up', 'go home', 'search', 'open settings']) expect(voiceSearchQuery(command)).toBeUndefined()
   })
 
   it('deduplicates and bounds legacy foreground commands', () => {
@@ -17,7 +25,8 @@ describe('Samsung TV voice search', () => {
     expect(commands.slice(0, 2)).toEqual(['search', 'find'])
     expect(commands.length).toBe(MAX_VOICE_SEARCH_COMMANDS)
     expect(new Set(commands.map((command) => command.toLowerCase())).size).toBe(commands.length)
-    expect(commands).toContain('search Film 400')
+    expect(commands).toContain('search Film 200')
+    expect(commands).toContain('Film 200')
   })
 
   it('routes a Tizen 4 recognition result into izumi search', () => {
@@ -59,6 +68,7 @@ describe('Samsung TV voice search', () => {
     const onSearch = vi.fn()
     let callbacks: Record<string, (...args: never[]) => unknown> = {}
     const buildItem = vi.fn((_x, _y, title, aliases) => ({ title, aliases }))
+    const legacyClient = { setCommandList: vi.fn(), unsetCommandList: vi.fn(), addResultListener: vi.fn(() => 1), removeResultListener: vi.fn() }
     installVoiceSearch([media('The Runner')], {
       getScreen: () => 'home',
       onOpenSearch: vi.fn(),
@@ -71,10 +81,17 @@ describe('Samsung TV voice search', () => {
         buildVoiceInteractionContentContextItem: buildItem,
         buildVoiceInteractionContentContextResponse: (items) => JSON.stringify(items),
       },
+      tizen: {
+        VoiceControlCommand: class { constructor(public command: string) {} },
+        voicecontrol: { getVoiceControlClient: () => legacyClient },
+      },
     })
 
     expect(callbacks.onrequestcontentcontext()).toContain('search for The Runner')
     expect(callbacks.ontitleselection('search The Runner' as never)).toBe(true)
     expect(onSearch).toHaveBeenCalledWith('The Runner')
+    expect(legacyClient.setCommandList).toHaveBeenCalled()
+    callbacks.ontitleselection('The Runner' as never)
+    expect(onSearch).toHaveBeenCalledTimes(1)
   })
 })
