@@ -134,3 +134,9 @@ export async function resolveWithTvSourceLookup(
     throw error
   }
 }
+
+/** The resolve channel shares the HTTP adapter's URL allowlist and metadata-only boundary. */
+export async function fetchTvSourceMetadata(url: unknown, pending: Set<XMLHttpRequest>): Promise<Record<string, unknown>[]> {
+  if (!validTvSourceUrl(url)) throw new Error('The Worker returned an unsafe TV source request.')
+  return torrentMetadata(await fetchSource(url, pending))
+}

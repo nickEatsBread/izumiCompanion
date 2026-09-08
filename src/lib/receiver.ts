@@ -14,7 +14,8 @@ import type {
 } from '../types'
 import { isCompanionSnapshot } from '../types'
 import { validCatalogOptions } from './catalog-navigation'
-import { cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
+import { cloudResolveRequest, cloudResolveSelection, type CloudResolveSelection } from './cloud-resolver'
+import { resolveWithChannel, ResolveChannelError } from './resolve-channel'
 import { resolveWithTvSourceLookup } from './tv-source-lookup'
 import { parseWorkerUpdateStatus, type WorkerUpdateStatus } from './worker-update'
 import {
@@ -188,7 +189,7 @@ function workerRequest(
   cancellation?: { cancel?: () => void },
 ): Promise<Record<string, unknown>> {
   const profileId = tvProfileId()
-  const scoped = method === 'POST' && /\/(catalog|search|details|resolve|accounts)$/.test(path)
+  const scoped = method === 'POST' && /\/(catalog|search|details|resolve|resolve-channel|accounts)$/.test(path)
   if (scoped && !tvProfileReady()) return Promise.reject(new WorkerRequestError('Choose and unlock a profile first.', 'PROFILE_LOCKED'))
   if (scoped) payload = { ...(payload as Record<string, unknown>), ...tvProfileScope() }
   return new Promise((resolvePromise, rejectPromise) => {
@@ -1160,7 +1161,7 @@ export class CompanionReceiver {
     }, 'broadcast')
   }
 
-  async requestPlay(media: CompanionMedia, excludeCandidateIds?: string[]): Promise<CompanionPlayResult> {
+  async requestPlay(media: CompanionMedia, excludeCandidateIds?: string[], onProgress?: (selection: CloudResolveSelection) => void): Promise<CompanionPlayResult> {
     this.cancelPlay()
     const cancellation: { cancel?: () => void } = {}
     const detailCancellation: { cancel?: () => void } = {}
@@ -1187,16 +1188,25 @@ export class CompanionReceiver {
           ? workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(pairingId)}/details`, 'POST', media, 6_000, detailCancellation)
             .then(value => cloudMediaDetails(value, media)).catch(() => null)
           : Promise.resolve(null)
-        const result = await resolveWithTvSourceLookup(
-          { ...cloudResolveRequest(media), ...(excludeCandidateIds ? { excludeCandidateIds: excludeCandidateIds.slice(0, 60) } : {}) },
-          payload => workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`, 'POST', payload, 30_000, cancellation),
-          () => generation === this.cloudPlayGeneration && viewer === tvProfileId() && tvProfileReady() && this.cloudflare === transport,
-          cancellation,
-        )
+        const path = `/v1/companion/pairings/${encodeURIComponent(pairingId)}`
+        const input = { ...cloudResolveRequest(media), ...(excludeCandidateIds ? { excludeCandidateIds: excludeCandidateIds.slice(0, 60) } : {}) }
+        const isCurrent = () => generation === this.cloudPlayGeneration && viewer === tvProfileId() && tvProfileReady() && this.cloudflare === transport
+        const candidateSessions = new Map<string, number>()
+        const result = await resolveWithChannel({
+          requestId, input, endpoint: transport.endpoint + path, cancellation, isCurrent,
+          bootstrap: token => workerRequest(transport, `${path}/resolve-channel`, 'POST', {}, 5_000, token),
+          http: () => resolveWithTvSourceLookup(input,
+            payload => workerRequest(transport, `${path}/resolve`, 'POST', payload, 30_000, cancellation), isCurrent, cancellation),
+          onProgress: value => {
+            if (!isCurrent()) return
+            const selection = cloudResolveSelection(value, media, requestId, candidateSessions)
+            if (selection) onProgress?.(selection)
+          },
+        })
         const enriched = await details
         if (generation !== this.cloudPlayGeneration || viewer !== tvProfileId() || !tvProfileReady()) return 'no-source'
         if (enriched && !tvAllowsMedia(enriched)) return { kind: 'failed', message: 'This title is unavailable for this profile.' }
-        const selection = cloudResolveSelection(result, enriched ?? media, requestId)
+        const selection = cloudResolveSelection(result, enriched ?? media, requestId, candidateSessions)
         if (selection) return { kind: 'resolved', ...selection }
         const failure = Array.isArray(result.failures) && typeof result.failures[0] === 'string'
           ? result.failures[0].slice(0, 240) : ''
@@ -1208,7 +1218,7 @@ export class CompanionReceiver {
         const resolverWasRemoved = error instanceof WorkerRequestError && error.code === 'RESOLVER_NOT_CONFIGURED'
         detailCancellation.cancel?.()
         if (generation !== this.cloudPlayGeneration || viewer !== tvProfileId()) return 'no-source'
-        if (excludeCandidateIds) return { kind: 'failed', message: error instanceof Error ? error.message : 'Source refresh failed.' }
+        if (excludeCandidateIds || error instanceof ResolveChannelError) return { kind: 'failed', message: error instanceof Error ? error.message : 'Source refresh failed.' }
         if (playbackMode === 'cloud-only' && !resolverWasRemoved) return { kind: 'failed', message: error instanceof Error ? error.message : 'The Worker could not resolve this source.' }
         // Combined mode is also an availability fallback: continue through the linked device when
         // the user's Worker is temporarily unavailable.

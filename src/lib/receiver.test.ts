@@ -123,6 +123,8 @@ beforeEach(() => {
   vi.stubGlobal('window', { setTimeout, clearTimeout, setInterval, clearInterval, dispatchEvent: vi.fn() })
   resetTvHousehold()
   vi.stubGlobal('XMLHttpRequest', FakeXmlHttpRequest)
+  // Existing routing cases cover older TVs through the HTTP fallback contract.
+  vi.stubGlobal('WebSocket', undefined)
   vi.stubGlobal('crypto', {
     getRandomValues: (values: Uint8Array) => {
       values.fill(7)
@@ -183,6 +185,45 @@ describe('TV Worker updates', () => {
     expect(cancellation.cancel).toBeUndefined()
     receiver.disconnect()
   })
+})
+
+it('delivers channel progress without autoplay and keeps source sessions stable when final ranking changes', async () => {
+  const messages: any[] = []
+  const first = { id: 'first', url: 'https://media.example/first.mp4' }
+  const second = { id: 'second', url: 'https://media.example/second.mp4' }
+  class Channel {
+    static OPEN = 1
+    readyState = 1
+    onmessage?: (event: { data: string }) => void
+    close() { this.readyState = 3 }
+    constructor() { queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ protocol: 1, type: 'channel.ready' }) })) }
+    send(data: string) {
+      const value = JSON.parse(data)
+      messages.push(value)
+      if (value.type !== 'resolve.start') return
+      for (const [index, candidates] of [[first, second], [second, first]].entries()) queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({
+        protocol: 1, requestId: value.requestId, type: index ? 'resolve.complete' : 'resolve.progress', sequence: index + 1,
+        result: { ok: true, candidates, selectedId: candidates[0].id },
+      }) }))
+    }
+  }
+  vi.stubGlobal('WebSocket', Channel)
+  FakeXmlHttpRequest.responder = () => ({ status: 200, body: { protocol: 1,
+    url: `${transport.endpoint.replace('https:', 'wss:')}/v1/companion/pairings/${transport.pairingId}/resolve-channel?ticket=${'a'.repeat(32)}` } })
+  const callbacks = events()
+  const progress = vi.fn()
+  const receiver = new CompanionReceiver(callbacks)
+  const result = await receiver.requestPlay(media, undefined, progress)
+  expect(progress).toHaveBeenCalledTimes(1)
+  expect(result).toMatchObject({ kind: 'resolved', selectedId: 'second' })
+  if (typeof result === 'string' || result.kind !== 'resolved') throw new Error('Expected source choices.')
+  expect(result.sources[1].request.sessionId).toBe(progress.mock.calls[0][0].sources[0].request.sessionId)
+  expect(result.sources[0].request.sessionId).toBe(progress.mock.calls[0][0].sources[1].request.sessionId)
+  expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+  expect(FakeXmlHttpRequest.sent[0].body).toMatchObject({ profileId: 'default' })
+  expect(messages[0]).not.toHaveProperty('profilePin')
+  expect(callbacks.onLoad).not.toHaveBeenCalled()
+  receiver.disconnect()
 })
 
 describe('TV search requests', () => {

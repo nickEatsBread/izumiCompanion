@@ -161,7 +161,7 @@ function sourceLabel(candidate: DirectSourceCandidate, index: number): { label: 
 }
 
 /** Preserve the Worker's ranked candidates so the TV can switch sources without resolving again. */
-export function cloudResolveSelection(value: unknown, media: CompanionMedia, requestId: string): CloudResolveSelection | null {
+export function cloudResolveSelection(value: unknown, media: CompanionMedia, requestId: string, candidateSessions?: Map<string, number>): CloudResolveSelection | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   if (input.ok !== true || !Array.isArray(input.candidates)) return null
@@ -199,7 +199,10 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
     id: candidate.id,
     ...sourceLabel(candidate, index),
     request: {
-      sessionId: `cloud-${requestId.slice(0, 80)}-${index + 1}`,
+      sessionId: `cloud-${requestId.slice(0, 80)}-${candidateSessions ? (() => {
+        if (!candidateSessions.has(candidate.id)) candidateSessions.set(candidate.id, candidateSessions.size + 1)
+        return candidateSessions.get(candidate.id)
+      })() : index + 1}`,
       url: candidate.url,
       title: boundedText(media.title, 240) ?? 'izumi',
       contentRating: boundedText(media.contentRating, 32),

@@ -37,6 +37,8 @@ describe('authenticated Cloudflare setup', () => {
     const secret = metadata.bindings.find((binding: { name: string }) => binding.name === 'WORKER_UPDATE_AUTH')
     expect(secret.type).toBe('secret_text')
     expect(JSON.parse(secret.text)).toEqual({ apiToken: credentials.apiToken, ...result.deployment })
+    expect(metadata.bindings).toContainEqual({ type: 'durable_object_namespace', name: 'TV_RESOLVE_SESSIONS', class_name: 'CompanionResolveSession' })
+    expect(metadata.exports).toEqual({ CompanionResolveSession: { type: 'durable-object', storage: 'sqlite' } })
     const schedule = calls.find(call => call.url.endsWith('/schedules') && call.init.method === 'PUT')!
     expect(JSON.parse(schedule.init.body as string)).toEqual([{ cron: '0 0 * * *' }, { cron: '17 */6 * * *' }])
     expect(JSON.stringify(result)).not.toContain(credentials.apiToken)
@@ -73,7 +75,7 @@ describe('authenticated Cloudflare setup', () => {
     })
     vi.stubGlobal('fetch', fetcher)
     await deployPreview({ ...credentials, challengeToken: 'c'.repeat(32), checkpoints: 'A'.repeat(64) })
-    expect(metadata!.bindings.map(binding => binding.name)).toEqual(['DB', 'BOOTSTRAP_SECRET'])
+    expect(metadata!.bindings.map(binding => binding.name)).toEqual(['DB', 'BOOTSTRAP_SECRET', 'TV_RESOLVE_SESSIONS'])
     expect(fetcher.mock.calls.some(([url]) => url.endsWith('/schedules'))).toBe(false)
   })
 

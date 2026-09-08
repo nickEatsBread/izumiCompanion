@@ -1164,6 +1164,18 @@ async function main() {
     assert(loadingVideo.valueText === '34% buffered for playback' && loadingVideo.width > 640 && loadingVideo.width < 670,
       `Video loading progress does not match its rail: ${JSON.stringify(loadingVideo)}.`)
     assert(loadingVideo.animation === 'none', `Determinate video progress still uses an indeterminate animation: ${loadingVideo.animation}.`)
+    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=loading&scenario=long-menus` })
+    await waitFor("document.querySelectorAll('.loading-sources li').length === 3 && !document.getElementById('startup-splash')")
+    const progressiveSources = await evaluate(`(() => ({
+      rows: document.querySelectorAll('.loading-sources li').length,
+      bottom: document.querySelector('.loading-sources').getBoundingClientRect().bottom,
+      hint: document.querySelector('.loading-cancel').textContent,
+      height: document.body.scrollHeight
+    }))()`)
+    assert(progressiveSources.rows === 3 && progressiveSources.bottom < 850 && progressiveSources.height === 1080,
+      `Progressive source labels overflow the TV loading screen: ${JSON.stringify(progressiveSources)}.`)
+    assert(progressiveSources.hint.includes('choose a source now'), 'Available sources must be selectable before resolving completes.')
+    await capture('m56-progressive-sources.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=player&scenario=buffering` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.player-buffering-status')")

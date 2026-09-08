@@ -134,8 +134,10 @@ async function uploadWorker(token: string, target: DeploymentTarget, bootstrapSe
       { type: 'd1', name: 'DB', id: target.databaseId },
       { type: 'secret_text', name: 'BOOTSTRAP_SECRET', text: bootstrapSecret },
       ...(permanent ? [{ type: 'secret_text', name: 'WORKER_UPDATE_AUTH', text: JSON.stringify({ apiToken: token, ...target }) }] : []),
+      { type: 'durable_object_namespace', name: 'TV_RESOLVE_SESSIONS', class_name: 'CompanionResolveSession' },
     ],
     keep_bindings: ['secret_text', 'plain_text'],
+    exports: { CompanionResolveSession: { type: 'durable-object', storage: 'sqlite' } },
     compatibility_date: izumiArtifacts.compatibilityDate,
     compatibility_flags: ['nodejs_compat'],
     annotations: {

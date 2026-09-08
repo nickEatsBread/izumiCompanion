@@ -2096,7 +2096,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }, 900)
       return
     }
-    const result = await receiverRef.current?.requestPlay(media) ?? 'open-client'
+    const result = await receiverRef.current?.requestPlay(media, undefined, selection => {
+      if (generation !== playRequestGenerationRef.current) return
+      setSourceChoices(selection.sources)
+      sourceChoicesRef.current = selection.sources
+    }) ?? 'open-client'
     if (generation !== playRequestGenerationRef.current) return
     if (typeof result !== 'string' && result.kind === 'failed') {
       setErrorMessage(result.message)
@@ -2434,6 +2438,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const cancelLoadingToSources = () => {
+    const positionSeconds = activeLoadRef.current ? playerRef.current.position : sourceChoicesRef.current[0]?.request.positionSeconds ?? 0
     audioSelectionGenerationRef.current += 1
     playRequestGenerationRef.current += 1
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
@@ -2444,7 +2449,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     if (subtitleTimerRef.current) window.clearTimeout(subtitleTimerRef.current)
     setSubtitleText('')
     setSubtitleCueStyle(undefined)
-    updatePlayer({ state: 'idle' })
+    updatePlayer({ state: 'idle', position: positionSeconds })
     publishStatus(true)
     activeLoadRef.current = undefined
     receiverRef.current?.clearPlayback()
@@ -3617,6 +3622,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           progress={loadingProgress}
           sourceLabel={sourceChoices.find(choice => choice.id === activeSourceId)?.label}
           canChooseSource={sourceChoices.length > 0}
+          availableSources={!activeLoadRef.current ? sourceChoices : undefined}
           onCancel={cancelLoadingToSources}
           contentRating={activeLoadRef.current?.contentRating ?? (selected.title === player.title ? selected.contentRating : undefined)}
         />

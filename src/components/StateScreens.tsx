@@ -241,7 +241,7 @@ function ratingGuidance(contentRating: string): string {
 }
 
 export function LoadingScreen({
-  sourceLabel, canChooseSource, onCancel,
+  sourceLabel, canChooseSource, onCancel, availableSources,
   title,
   progress,
   contentRating,
@@ -251,6 +251,7 @@ export function LoadingScreen({
   contentRating?: string
   sourceLabel?: string
   canChooseSource?: boolean
+  availableSources?: Array<{ id: string; label: string }>
   onCancel?(): void
 }) {
   const rating = contentRating?.trim() || 'NR'
@@ -269,8 +270,11 @@ export function LoadingScreen({
         </span>
       </aside>
       <div class="loading-status" role="status" aria-live="polite">
-        <strong>{progressKnown ? `${Math.round(clampedProgress)}%` : 'Preparing stream'}</strong>
+        <strong>{progressKnown ? `${Math.round(clampedProgress)}%` : availableSources?.length ? `${availableSources.length} source${availableSources.length === 1 ? '' : 's'} found` : 'Preparing stream'}</strong>
         <small>{sourceLabel ? `Loading ${sourceLabel}` : 'Finding available sources…'}</small>
+        {!!availableSources?.length && <ul class="loading-sources">
+          {availableSources.slice(0, 3).map(source => <li key={source.id}>{source.label}</li>)}
+        </ul>}
       </div>
       <div class="loading-footer">
         <span
@@ -285,7 +289,7 @@ export function LoadingScreen({
           <i class="loading-progress-indicator" style={progressKnown ? { width: `${clampedProgress}%` } : undefined} aria-hidden="true" />
         </span>
       </div>
-      <button type="button" class="back-hint loading-cancel" onClick={onCancel}><RotateCcw size={19} />{canChooseSource ? 'Back to choose another source' : 'Back to cancel'}</button>
+      <button type="button" class="back-hint loading-cancel" onClick={onCancel}><RotateCcw size={19} />{canChooseSource ? 'Back to choose a source now' : 'Back to cancel'}</button>
     </main>
   )
 }
