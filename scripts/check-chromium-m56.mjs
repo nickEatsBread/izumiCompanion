@@ -6,6 +6,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import { checkTitleScreen } from './title-screen-checks.mjs'
+import { checkPlayerMenus } from './player-menu-checks.mjs'
 
 const revision = '433064'
 const expectedBrowser = 'Chrome/56.0.2924.0'
@@ -298,6 +299,14 @@ async function main() {
           origin: 'https://www.youtube-nocookie.com', data: JSON.stringify({ event: 'onStateChange', info: { playerState: ${playing ? 1 : 0} } }) }));
         return trailer.classList.contains('is-playing') === ${playing};
       })()`)
+    }
+
+    if (process.argv.includes('--player-menus-only')) {
+      await checkPlayerMenus({ cdp, port, evaluate, waitFor, press, capture })
+      const exceptions = cdp.events.filter(event => event.method === 'Runtime.exceptionThrown')
+      assert(exceptions.length === 0, `Player menu checks reported runtime errors: ${JSON.stringify(exceptions)}`)
+      process.stdout.write('Chromium 56 player menu checks passed: 720p/1080p/4K source scrolling, linked sources, final actions, rapid direction changes, reopening, restored selection, audio and subtitles.\n')
+      return
     }
 
     if (process.argv.includes('--titles-only')) {
@@ -1504,6 +1513,8 @@ async function main() {
     assert(await evaluate("!window.__UPDATER_OPENED"), 'Direct updater completion should wait for Open izumi.')
     await press('ArrowRight'); await press('Enter')
     assert(await evaluate("window.__UPDATER_OPENED === 'IzumiTV001.IzumiTV'"), 'Open izumi did not launch Companion.')
+
+    await checkPlayerMenus({ cdp, port, evaluate, waitFor, press, capture })
 
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))

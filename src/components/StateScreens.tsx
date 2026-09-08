@@ -19,7 +19,7 @@ import {
   ThumbsUp,
   Volume2,
 } from 'lucide-preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import companionLockup from '../../brand/png/izumi-companion-lockup-dark-936.png'
 import type {
   CompanionMedia,
@@ -440,6 +440,21 @@ export function PlayerScreen({
   onNext(): void
   onStillWatching(continueWatching: boolean): void
 }) {
+  const menuRef = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const list = menuRef.current?.querySelector<HTMLElement>('.player-menu-options')
+    const focused = list?.querySelector<HTMLElement>('button.is-focused')
+    if (!list || !focused) return
+    // Remote navigation uses virtual focus. Scroll this list explicitly: native focus/scrollIntoView
+    // can move the surrounding player on older Tizen engines that ignore preventScroll.
+    const viewport = list.getBoundingClientRect()
+    const row = focused.getBoundingClientRect()
+    const top = viewport.top + list.clientTop + 4
+    const bottom = viewport.top + list.clientTop + list.clientHeight - 4
+    if (row.top < top) list.scrollTop += row.top - top
+    else if (row.bottom > bottom) list.scrollTop += row.bottom - bottom
+  }, [menu, menuFocus, sourceChoices, deviceSourceOptions, audioTracks, subtitleChoices, deviceSourceChangeAvailable, cloudSourceChangeAvailable])
+
   const progress = isLive ? 100 : duration ? Math.min(100, position / duration * 100) : 0
   const bufferedFrom = duration ? Math.min(100, Math.max(0, bufferedStart) / duration * 100) : 0
   const bufferedProgress = !isLive && duration ? Math.max(0, Math.min(100, bufferedPosition / duration * 100) - bufferedFrom) : 0
@@ -580,7 +595,7 @@ export function PlayerScreen({
       </div>
 
       {menu && (
-        <section class="player-menu" aria-label={`${menu} options`}>
+        <section ref={menuRef} class="player-menu" aria-label={`${menu} options`}>
           <header class="player-menu-heading">
             <span class="player-menu-heading-icon">
               {menu === 'source' ? <RefreshCcw size={28} /> : menu === 'audio' ? <Volume2 size={29} /> : menu === 'subtitles' ? <Captions size={30} /> : <SlidersHorizontal size={29} />}

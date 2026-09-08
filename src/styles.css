@@ -4205,7 +4205,7 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .player-menu {
-  position: absolute;
+  position: fixed;
   z-index: 8;
   top: 7vh;
   right: 4.8vw;
@@ -4213,6 +4213,8 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
   width: 37.5vw;
   min-width: 590px;
   max-height: none;
+  display: flex;
+  flex-direction: column;
   padding: 2vw;
   overflow: hidden;
   color: #fff;
@@ -4223,6 +4225,7 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .player-menu-heading {
+  flex: 0 0 auto;
   min-height: 78px;
   margin: 0 0 2.2vh;
   display: flex;
@@ -4264,7 +4267,8 @@ body.avplay-mini .app-shell.screen-postplay { background: transparent; }
 }
 
 .player-menu-options {
-  max-height: calc(86vh - 140px);
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 4px;
   overflow-x: hidden;
   overflow-y: auto;

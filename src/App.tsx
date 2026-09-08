@@ -42,6 +42,7 @@ import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, P
 import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRail'
 import { catalogLevel, mergeAccountOptions, mayNavigateForSnapshot } from './lib/catalog-navigation'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
+import { previewMenuAudio, previewMenuDeviceSources, previewMenuSources, previewMenuSubtitles } from './data/preview-player'
 import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
 import { catalogCollections, episodeCountsFor, mediaForEpisode, seriesPlaybackTarget, seasonIndexFor, seasonNumberFor } from './lib/catalog'
@@ -362,6 +363,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [playerControlsVisible, setPlayerControlsVisible] = useState(true)
   const [seekFeedback, setSeekFeedback] = useState<{ direction: 'backward' | 'forward'; multiplier: number; seconds: number }>()
   const previewScenario = previewParameters.get('scenario')
+  const previewLongMenus = showPreviewTools && previewScenario === 'long-menus'
   const [playbackMedia, setPlaybackMedia] = useState<CompanionMedia>(initialPreviewSnapshot.hero ?? fallbackMedia)
   const [skipSegments, setSkipSegments] = useState<CompanionSkipSegment[]>(previewScenario === 'next' ? [
     { type: 'op', startTime: 45, endTime: 135, label: 'Skip intro' },
@@ -392,18 +394,18 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const upcomingEpisode = useMemo(() => nextEpisodeFor(playbackMedia), [playbackMedia])
   const [playerMenu, setPlayerMenu] = useState<PlayerMenu | null>(null)
   const [playerMenuFocus, setPlayerMenuFocus] = useState(0)
-  const [sourceChoices, setSourceChoices] = useState<PlaybackSourceChoice[]>([])
-  const sourceChoicesRef = useRef<PlaybackSourceChoice[]>([])
+  const [sourceChoices, setSourceChoices] = useState<PlaybackSourceChoice[]>(previewLongMenus ? previewMenuSources : [])
+  const sourceChoicesRef = useRef<PlaybackSourceChoice[]>(sourceChoices)
   const [refreshingSources, setRefreshingSources] = useState(false)
   const sourceRefreshRef = useRef(0)
   const cloudSourceChangeAvailable = sourceChoices.length < 60 && sourceChoices.some(choice => choice.request.sessionId.startsWith('cloud-'))
   const failedCloudSourcesRef = useRef<Set<string>>(new Set())
-  const [deviceSourceOptions, setDeviceSourceOptions] = useState<LinkedDeviceSourceOptions>()
-  const [activeSourceId, setActiveSourceId] = useState<string>()
-  const [deviceSourceChangeAvailable, setDeviceSourceChangeAvailable] = useState(false)
-  const [audioTracks, setAudioTracks] = useState<PlaybackTrack[]>(showPreviewTools ? previewAudioTracks : [])
+  const [deviceSourceOptions, setDeviceSourceOptions] = useState<LinkedDeviceSourceOptions | undefined>(previewLongMenus ? previewMenuDeviceSources : undefined)
+  const [activeSourceId, setActiveSourceId] = useState<string | undefined>(previewLongMenus ? previewMenuSources[20].id : undefined)
+  const [deviceSourceChangeAvailable, setDeviceSourceChangeAvailable] = useState(previewLongMenus)
+  const [audioTracks, setAudioTracks] = useState<PlaybackTrack[]>(previewLongMenus ? previewMenuAudio : showPreviewTools ? previewAudioTracks : [])
   const [activeAudio, setActiveAudio] = useState<number | undefined>(showPreviewTools ? 0 : undefined)
-  const [subtitleChoices, setSubtitleChoices] = useState<SubtitleChoice[]>(showPreviewTools ? previewSubtitleChoices : [offSubtitle])
+  const [subtitleChoices, setSubtitleChoices] = useState<SubtitleChoice[]>(previewLongMenus ? previewMenuSubtitles : showPreviewTools ? previewSubtitleChoices : [offSubtitle])
   const [activeSubtitle, setActiveSubtitle] = useState(showPreviewTools ? 'preview-en' : 'off')
   const [subtitleText, setSubtitleText] = useState(showPreviewTools ? 'Even the smallest journey can change the world.' : '')
   const [subtitleCueStyle, setSubtitleCueStyle] = useState<SubtitleCueStyle>()
