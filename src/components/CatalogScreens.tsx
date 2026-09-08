@@ -34,7 +34,7 @@ import { hasStartedWatching, type MediaRating } from '../lib/media-rating'
 import type { TitlePanelKind } from './TitlePanel'
 import { gridWindow, linearWindow } from '../lib/windowing'
 import { NavRail } from './NavRail'
-import { SETTINGS_SECTIONS } from '../lib/settings-navigation'
+import { settingsSections } from '../lib/settings-navigation'
 
 export type TrailerControlAction = 'toggle' | 'play' | 'pause' | 'seek-back' | 'seek-forward'
 export const TRAILER_CONTROL_EVENT = 'izumi:trailer-control'
@@ -1169,6 +1169,7 @@ export function SettingsScreen({
   paired,
   connected,
   independentReady,
+  workerLinked,
   deviceId,
   confirmation,
   playbackSettings,
@@ -1185,6 +1186,7 @@ export function SettingsScreen({
   paired: boolean
   connected: boolean
   independentReady: boolean
+  workerLinked: boolean
   deviceId?: string
   confirmation: SettingsConfirmation
   playbackSettings: PlaybackExperienceSettings
@@ -1196,7 +1198,8 @@ export function SettingsScreen({
   onAction(index: number): void
 }) {
   const confirmTitle = confirmation === 'unpair' ? 'Unpair this TV?' : 'Reset the companion?'
-  const section = SETTINGS_SECTIONS[category] ?? SETTINGS_SECTIONS[0]
+  const sections = settingsSections(workerLinked)
+  const section = sections[category] ?? sections[0]
   const categoryIcons = [Tv, Play, Cloud, ShieldCheck]
   const settingsOptions = [
     { title: 'Cinematic home carousel', detail: 'Keep featured artwork above the rows instead of expanding each focused card.', icon: Tv, enabled: playbackSettings.homeCarouselLayout },
@@ -1212,6 +1215,7 @@ export function SettingsScreen({
       { title: 'App updates', detail: 'Open izumi Updater to check and install the latest TV version.', icon: RotateCcw },
     { title: 'Link phone or desktop', detail: 'Restore this TV’s saved connection in izumi on another device.', icon: Link2 },
     { title: 'Edit screens and rows', detail: 'Reorder or hide catalogue screens and rows for this TV profile.', icon: Tv },
+    { title: 'Update Worker', detail: 'Check your private Worker and continue the update on your phone or computer.', icon: Cloud },
   ]
   return (
     <main class="utility-screen settings-screen">
@@ -1220,7 +1224,7 @@ export function SettingsScreen({
         <aside class="settings-sidebar">
           <header><span>TV COMPANION</span><h1>Settings</h1></header>
           <nav class="settings-categories" aria-label="Settings categories">
-            {SETTINGS_SECTIONS.map((item, index) => {
+            {sections.map((item, index) => {
               const Icon = categoryIcons[index]
               return <button type="button" key={item.title}
                 class={`${category === index ? 'is-selected' : ''}${focus.zone === 'settings-category' && focus.index === index && !confirmation ? ' is-focused' : ''}`}

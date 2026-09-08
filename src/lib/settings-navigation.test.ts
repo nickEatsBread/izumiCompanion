@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { moveSettingsContentFocus, SETTINGS_SECTIONS, settingsSectionForOption } from './settings-navigation'
+import { moveSettingsContentFocus, SETTINGS_SECTIONS, settingsSectionForOption, settingsSections } from './settings-navigation'
 
 describe('settings remote navigation', () => {
+  it('reaches Update Worker only when the TV has a Worker and returns to Connection', () => {
+    expect(settingsSections(false)[2].options).toEqual([11, 7, 8])
+    expect(settingsSections(true)[2].options).toEqual([11, 7, 13, 8])
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 7 }, 'down', true)).toEqual({ zone: 'setting', index: 13 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 13 }, 'down', true)).toEqual({ zone: 'setting', index: 8 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 8 }, 'up', true)).toEqual({ zone: 'setting', index: 13 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 13 }, 'back', true)).toEqual({ zone: 'settings-category', index: 2 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 7 }, 'down', false)).toEqual({ zone: 'setting', index: 8 })
+  })
+
   it('keeps every existing action in exactly one category', () => {
     const options = SETTINGS_SECTIONS.flatMap((section) => section.options)
     expect(options.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 13 }, (_, i) => i))

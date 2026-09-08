@@ -111,6 +111,12 @@ it finishes. Keep the TV on while an update is installing.
 On TVs without the updater, install the new version using the desktop installer.
 Use the desktop installer to update or repair the updater itself as well.
 
+If this TV has a private Cloudflare Worker, **Settings → Connection → Update Worker** shows its
+installed version and the steps to update it from Izumi on your phone or computer. A QR code opens
+the update guide for other deployment methods. After updating, choose **Check again** on the TV.
+Worker installation requires the owner's fresh Cloudflare token on their phone or computer;
+Companion keeps only its TV pairing credential.
+
 ## Troubleshooting
 
 ### The installer cannot connect

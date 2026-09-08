@@ -948,6 +948,11 @@ export class CompanionReceiver {
     return Boolean(this.cloudflare && this.cloudflare.playbackMode !== 'device-only')
   }
 
+  /** Public status checks need only the address, never the TV pairing credential. */
+  get workerEndpoint(): string {
+    return this.cloudflare?.endpoint ?? ''
+  }
+
   /** Persist the TV-scoped capability received through the stateless phone handoff. */
   adoptStandaloneTransport(value: unknown): void {
     // This entry point receives the authenticated, decrypted standalone setup payload.

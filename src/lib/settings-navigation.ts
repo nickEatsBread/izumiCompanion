@@ -8,18 +8,24 @@ export const SETTINGS_SECTIONS = [
   { title: 'System', description: 'Keep Companion up to date and manage this device.', options: [10, 9] },
 ]
 
-export function settingsSectionForOption(index: number): number {
-  return Math.max(0, SETTINGS_SECTIONS.findIndex((section) => section.options.includes(index)))
+export function settingsSections(workerLinked = false) {
+  return SETTINGS_SECTIONS.map(section => section.title === 'Connection' && workerLinked
+    ? { ...section, options: [11, 7, 13, 8] } : section)
 }
 
-export function moveSettingsContentFocus(focus: FocusLocation, action: RemoteAction): FocusLocation {
+export function settingsSectionForOption(index: number): number {
+  return Math.max(0, settingsSections(true).findIndex((section) => section.options.includes(index)))
+}
+
+export function moveSettingsContentFocus(focus: FocusLocation, action: RemoteAction, workerLinked = false): FocusLocation {
+  const sections = settingsSections(workerLinked)
   if (focus.zone === 'settings-category') {
     if (action === 'up' || action === 'down') return { zone: 'settings-category', index: Math.max(0, Math.min(SETTINGS_SECTIONS.length - 1, focus.index + (action === 'up' ? -1 : 1))) }
-    if (action === 'right' || action === 'select') return { zone: 'setting', index: SETTINGS_SECTIONS[focus.index]?.options[0] ?? 0 }
+    if (action === 'right' || action === 'select') return { zone: 'setting', index: sections[focus.index]?.options[0] ?? 0 }
   }
   if (focus.zone === 'setting') {
     const section = settingsSectionForOption(focus.index)
-    const options = SETTINGS_SECTIONS[section].options
+    const options = sections[section].options
     if (action === 'left' || action === 'back') return { zone: 'settings-category', index: section }
     if (action === 'up' || action === 'down') return { zone: 'setting', index: options[Math.max(0, Math.min(options.length - 1, options.indexOf(focus.index) + (action === 'up' ? -1 : 1)))] }
   }
