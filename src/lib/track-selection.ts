@@ -92,6 +92,18 @@ export function applyTrackHints(
   })
 }
 
+/** Choose the external sidecar to auto-enable for a sender/profile subtitle preference. Embedded
+ * tracks surface later through AVPlay; sidecars are known up front and take priority. */
+export function preferredExternalSubtitle(
+  tracks: { title?: string; lang?: string }[],
+  preference: CastTrackPreference | undefined,
+): number | undefined {
+  const match = preferredTrack(tracks.map((track, index): PlaybackTrack => ({
+    type: 'TEXT', index, label: subtitleTrackLabel(track.title, track.lang, index), language: track.lang,
+  })), preference)
+  return match?.index
+}
+
 /** Receiver track indexes are unrelated to mpv's indexes. Match descriptive sender metadata and
  * require at least one positive field so an empty preference never enables a random subtitle. */
 export function preferredTrack(

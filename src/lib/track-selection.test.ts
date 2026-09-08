@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './track-selection'
+import { applyTrackHints, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './track-selection'
 
 describe('receiver track matching', () => {
   const tracks = [
@@ -15,6 +15,17 @@ describe('receiver track matching', () => {
     expect(preferredTrack(tracks, undefined)).toBeUndefined()
     expect(preferredTrack(tracks, { language: 'ko' })).toBeUndefined()
     expect(preferredTrack(tracks, { language: 'ko', codec: 'AAC' })).toBeUndefined()
+  })
+
+  it('auto-enables the external sidecar matching the saved subtitle language', () => {
+    const sidecars = [
+      { title: 'Signs & Songs', lang: 'jpn' },
+      { title: 'Example.Release.WEBRip', lang: 'eng' },
+    ]
+    expect(preferredExternalSubtitle(sidecars, { language: 'eng' })).toBe(1)
+    expect(preferredExternalSubtitle(sidecars, { language: 'ko' })).toBeUndefined()
+    expect(preferredExternalSubtitle(sidecars, undefined)).toBeUndefined()
+    expect(preferredExternalSubtitle([{ title: 'Track 1' }], { language: 'eng' })).toBeUndefined()
   })
 
   it('does not show a generic Subtitles placeholder as the track name', () => {

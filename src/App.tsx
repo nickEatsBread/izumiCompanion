@@ -65,7 +65,7 @@ import { normalizeTvLinkCode, tvLinkUrl } from './lib/onboarding'
 import { registerRemoteKeys, remoteAction, remoteSeekAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController, plainSubtitleText, type SubtitleCueStyle } from './lib/subtitles'
-import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
+import { applyTrackHints, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { TvLinkReceiver, type TvLinkInfo } from './lib/tv-link'
 import { installVoiceSearch } from './lib/voice-search'
@@ -867,7 +867,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       contentType: track.contentType,
     }))
     setSubtitleChoices([offSubtitle, ...externalChoices])
+    const preferredExternalIndex = preferredExternalSubtitle(request.subtitles, request.trackPreferences?.subtitle)
     const requestedSubtitle = externalChoices.find((choice) => request.activeTrackIds.includes(Number(choice.id.replace('external-', ''))))
+      ?? (preferredExternalIndex !== undefined ? externalChoices[preferredExternalIndex] : undefined)
     selectSubtitleChoice(requestedSubtitle ?? offSubtitle)
     activeLoadRef.current = request
     receiverRef.current?.beginPlayback(request)
