@@ -270,3 +270,56 @@ describe('AVPlay setup', () => {
     expect(onState).toHaveBeenLastCalledWith('paused')
   })
 })
+
+it('cancels a pending prepare and ignores late callbacks without reviving playback', async () => {
+  vi.useFakeTimers()
+  try {
+    let prepared: (() => void) | undefined
+    const player = {
+      open: vi.fn(), close: vi.fn(), stop: vi.fn(), getState: () => 'IDLE',
+      setListener: vi.fn(), setDisplayRect: vi.fn(), setDisplayMethod: vi.fn(), setSilentSubtitle: vi.fn(),
+      prepareAsync: (success: () => void) => { prepared = success }, play: vi.fn(),
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player }, setTimeout, clearTimeout } })
+    const controller = new AvPlayController()
+    const events = { onBuffering: vi.fn(), onState: vi.fn(), onTime: vi.fn(), onTracks: vi.fn(), onSubtitle: vi.fn(), onComplete: vi.fn(), onError: vi.fn() }
+    const pending = controller.load({ sessionId: 'cancel', title: 'Example', url: 'https://media.example/video.mp4', positionSeconds: 0, subtitles: [], activeTrackIds: [] }, events)
+    controller.close()
+    await pending
+    prepared?.()
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(player.play).not.toHaveBeenCalled()
+    expect(player.open).toHaveBeenCalledOnce()
+    expect(events.onError).not.toHaveBeenCalled()
+    expect(controller.request).toBeUndefined()
+  } finally { vi.useRealTimers() }
+})
+
+
+it.each([600, 0, 7200])('checks feature duration %s without rejecting unknown or full runtimes', async duration => {
+  vi.useFakeTimers()
+  try {
+    const player = {
+      open: vi.fn(), close: vi.fn(), stop: vi.fn(), getState: () => 'READY',
+      setListener: vi.fn(), setDisplayRect: vi.fn(), setSilentSubtitle: vi.fn(),
+      prepareAsync: (success: () => void) => success(), play: vi.fn(),
+      getDuration: () => duration * 1000, getTotalTrackInfo: () => [],
+    }
+    Object.assign(globalThis, { window: { webapis: { avplay: player }, setTimeout, clearTimeout } })
+    const controller = new AvPlayController()
+    const events = { onBuffering: vi.fn(), onState: vi.fn(), onTime: vi.fn(), onTracks: vi.fn(), onSubtitle: vi.fn(), onComplete: vi.fn(), onError: vi.fn() }
+    const result = controller.load({ sessionId: 'duration', title: 'Example', url: 'https://media.example/video.mp4', positionSeconds: 0, subtitles: [], activeTrackIds: [],
+      media: { title: 'Example', ref: { provider: 'catalog', type: 'movie', id: 'example' }, runtimeMinutes: 120 },
+    }, events).then(() => '', error => String(error))
+    await vi.runAllTimersAsync()
+    if (duration === 600) {
+      expect(await result).toContain('short preview')
+      expect(player.play).not.toHaveBeenCalled()
+    } else {
+      expect(await result).toBe('')
+      expect(player.play).toHaveBeenCalledOnce()
+    }
+    expect(vi.getTimerCount()).toBe(0)
+    controller.close()
+  } finally { vi.useRealTimers() }
+})

@@ -4,7 +4,7 @@ import { moveSettingsContentFocus, SETTINGS_SECTIONS, settingsSectionForOption }
 describe('settings remote navigation', () => {
   it('keeps every existing action in exactly one category', () => {
     const options = SETTINGS_SECTIONS.flatMap((section) => section.options)
-    expect(options.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, i) => i))
+    expect(options.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 13 }, (_, i) => i))
     expect(new Set(options).size).toBe(options.length)
   })
 

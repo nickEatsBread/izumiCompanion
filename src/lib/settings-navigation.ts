@@ -2,7 +2,7 @@ import type { FocusLocation } from '../types'
 import type { RemoteAction } from './remote'
 
 export const SETTINGS_SECTIONS = [
-  { title: 'Appearance', description: 'Make the home screen feel like yours.', options: [0, 1] },
+  { title: 'Appearance', description: 'Make the home screen feel like yours.', options: [0, 1, 12] },
   { title: 'Playback', description: 'Choose what happens during and after you watch.', options: [2, 3, 4, 5, 6] },
   { title: 'Connection', description: 'Manage how this TV connects to izumi.', options: [11, 7, 8] },
   { title: 'System', description: 'Keep Companion up to date and manage this device.', options: [10, 9] },

@@ -209,8 +209,8 @@ function workerRequest(
     }
     request.onerror = () => reject(new Error('The private Worker could not be reached.'))
     request.ontimeout = () => reject(new Error('The private Worker did not respond in time.'))
-    request.onabort = () => reject(new Error('Search changed.'))
-    if (cancellation) cancellation.cancel = () => { request.abort(); reject(new Error('Search changed.')) }
+    request.onabort = () => reject(new Error('Request cancelled.'))
+    if (cancellation) cancellation.cancel = () => { request.abort(); reject(new Error('Request cancelled.')) }
     request.send(payload === undefined ? null : JSON.stringify(payload))
   })
 }
@@ -614,6 +614,7 @@ export class CompanionReceiver {
   private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
   private workerSetupRequestId = ''
   private cloudPlayGeneration = 0
+  private playCancellation?: { cancel?: () => void }
   private activePlayback?: { sessionId: string; media: CompanionMedia; profileId: string }
   private progressSubscriberId = ''
   private cloudPlayback?: { sessionId: string; media: CompanionMedia; profileId: string }
@@ -1129,6 +1130,9 @@ export class CompanionReceiver {
   }
 
   async requestPlay(media: CompanionMedia): Promise<CompanionPlayResult> {
+    this.cancelPlay()
+    const cancellation: { cancel?: () => void } = {}
+    this.playCancellation = cancellation
     const generation = ++this.cloudPlayGeneration
     const viewer = tvProfileId()
     if (!tvProfileReady() || !tvAllowsMedia(media)) return { kind: 'failed', message: 'This title is unavailable for this profile.' }
@@ -1149,8 +1153,9 @@ export class CompanionReceiver {
         const transport = this.cloudflare
         const result = await resolveWithTvSourceLookup(
           cloudResolveRequest(media),
-          payload => workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`, 'POST', payload, 30_000),
+          payload => workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`, 'POST', payload, 30_000, cancellation),
           () => generation === this.cloudPlayGeneration && viewer === tvProfileId() && tvProfileReady() && this.cloudflare === transport,
+          cancellation,
         )
         const selection = cloudResolveSelection(result, media, requestId)
         if (selection) return { kind: 'resolved', ...selection }
@@ -1497,7 +1502,14 @@ export class CompanionReceiver {
     })
   }
 
+  cancelPlay(): void {
+    this.cloudPlayGeneration += 1
+    this.playCancellation?.cancel?.()
+    this.playCancellation = undefined
+  }
+
   clearPlayback(): void {
+    this.cancelPlay()
     this.activeSenderId = ''
     this.activeSessionId = ''
     this.activePlayback = undefined

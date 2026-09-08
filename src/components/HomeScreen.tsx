@@ -92,8 +92,7 @@ export function mediaFactTokens(media: CompanionMedia): string[] {
   return [...new Set(facts)]
 }
 
-/** The focused tile owns the context in Netflix's current TV layout. Keeping this projection
- * deterministic also prevents copy from changing midway through the width transition. */
+/** Keep focused-card copy stable throughout its transition. */
 export function homeCardContext(media: CompanionMedia, continueCard: boolean): HomeCardContext {
   if (continueCard) {
     const episode = episodeLabel(media)
@@ -550,11 +549,24 @@ const HomePosterCard = memo(function HomePosterCard({
   const artworkKey = artwork.join('|')
   const [artworkIndex, setArtworkIndex] = useState(0)
   const image = artwork[artworkIndex]
+  const [loadedImage, setLoadedImage] = useState('')
+  const frameRef = useRef<HTMLSpanElement>(null)
+  const imageReady = !image || loadedImage === image || isHomeImageReady(image, 'artwork')
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
 
   useEffect(() => {
     setArtworkIndex(0)
   }, [artworkKey])
+
+  useLayoutEffect(() => {
+    if (!focused || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    const animation = frameRef.current?.animate?.([
+      { transform: 'scale(.98)', opacity: .88 },
+      { transform: 'scale(1)', opacity: 1 },
+    ], { duration: 170, easing: 'cubic-bezier(.2,.8,.2,1)' })
+    const timer = window.setTimeout(() => animation?.cancel(), 220)
+    return () => { window.clearTimeout(timer); animation?.cancel() }
+  }, [focused, item.ref.id])
 
   return (
     <button
@@ -566,10 +578,13 @@ const HomePosterCard = memo(function HomePosterCard({
       aria-current={focused ? 'true' : undefined}
       aria-label={`${rank ? `Number ${rank}, ` : ''}${item.title}${item.episode ? `, episode ${item.episode}` : ''}`}
     >
-      <span class="home-poster-frame">
+      <span class="home-poster-frame" ref={frameRef} aria-busy={!imageReady}>
+        {!imageReady && <span class={`home-art-skeleton${focused ? '' : ' is-static'}`} aria-label="Loading artwork" />}
         {image
           ? <img
               class="home-poster-art"
+              style={{ opacity: imageReady ? 1 : 0 }}
+              onLoad={() => setLoadedImage(image)}
               src={image}
               alt=""
               width={landscape ? HOME_CONTINUE_WIDTH : HOME_POSTER_WIDTH}
@@ -631,6 +646,31 @@ const HomeFocusCard = memo(function HomeFocusCard({
     true,
   )
   const image = artwork[artworkIndex]
+  const mediaMotionRef = useRef<HTMLSpanElement>(null)
+  const animationRef = useRef<Animation>()
+  const [loadedImage, setLoadedImage] = useState('')
+  const imageReady = !image || loadedImage === image || isHomeImageReady(image, 'artwork')
+  useEffect(() => {
+    let current = true
+    if (image && !imageReady) void preloadHomeImage(image, 'artwork').then(() => { if (current && isHomeImageReady(image, 'artwork')) setLoadedImage(image) })
+    return () => { current = false }
+  }, [image])
+  useLayoutEffect(() => {
+    animationRef.current?.cancel()
+    if (motion === 'still' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    const element = mediaMotionRef.current
+    const distance = motion === 'backward' ? -22 : 22
+    if (!element?.animate) return
+    const animation = element.animate([
+      { transform: motion === 'vertical' ? 'translateY(14px)' : `translateX(${distance}px)`, opacity: .82 },
+      { transform: 'translate(0, 0)', opacity: 1 },
+    ], { duration: 170, easing: 'cubic-bezier(.2,.8,.2,1)' })
+    animationRef.current = animation
+    // Old TV compositors can suspend an animation while painting new artwork.
+    // Clear its transform on a bounded timer, including when no finish event arrives.
+    const timer = window.setTimeout(() => animation.cancel(), 220)
+    return () => { window.clearTimeout(timer); animation.cancel() }
+  }, [identity])
   const context = homeCardContext(item, episodeCard)
   const rank = topTenRow ? item.placement?.position ?? index + 1 : undefined
   const achievements = item.achievements?.slice(0, 2) ?? (item.placement?.position ? [{
@@ -651,10 +691,13 @@ const HomeFocusCard = memo(function HomeFocusCard({
       onClick={onActivate}
     >
       <span class="home-focus-frame">
-        <span class="home-focus-media">
+        <span class={`home-focus-media${imageReady ? '' : ' is-loading'}`} ref={mediaMotionRef} aria-busy={!imageReady}>
+          {!imageReady && <span class="home-art-skeleton" aria-label="Loading artwork" />}
           {image
             ? <img
                 class="home-focus-art"
+                style={{ opacity: imageReady ? 1 : 0 }}
+                onLoad={() => setLoadedImage(image)}
                 src={image}
                 alt=""
                 width={1112}
@@ -777,6 +820,14 @@ export function HomeScreen({
 
   useLayoutEffect(() => {
     previousFocusRef.current = focus
+    const reset = () => {
+      let element: HTMLElement | null = homeTrackRef.current
+      while (element) { element.scrollTop = 0; element.scrollLeft = 0; element = element.parentElement }
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0)
+    }
+    reset()
+    const frame = window.requestAnimationFrame(reset)
+    return () => window.cancelAnimationFrame(frame)
   }, [focus])
 
   useEffect(() => {

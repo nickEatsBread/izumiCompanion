@@ -38,3 +38,8 @@ describe('receiver track matching', () => {
     ])
   })
 })
+
+it('keeps descriptive names even when they already contain the language', () => {
+  expect(subtitleTrackLabel('English SDH', 'eng', 0)).toBe('English SDH')
+  expect(subtitleTrackLabel('English forced', 'eng', 1)).toBe('English forced')
+})

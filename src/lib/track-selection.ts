@@ -52,7 +52,7 @@ export function subtitleTrackLabel(
   if (languageLabel && distinctive && !distinctive.toLowerCase().includes(languageLabel.toLowerCase())) {
     return `${languageLabel} · ${distinctive}`
   }
-  return languageLabel || distinctive || `Subtitle ${index + 1}`
+  return distinctive || languageLabel || `Subtitle ${index + 1}`
 }
 
 /** Samsung can preserve the stream indexes while dropping embedded subtitle names. Reconcile the

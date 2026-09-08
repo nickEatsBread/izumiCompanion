@@ -218,6 +218,8 @@ async function main() {
     '--disable-component-update',
     '--disable-default-apps',
     '--disable-sync',
+    // Playback events come from fixtures; live embeds must not race those events.
+    '--host-resolver-rules=MAP www.youtube.com ~NOTFOUND,MAP www.youtube-nocookie.com ~NOTFOUND',
     '--no-first-run',
     '--no-default-browser-check',
     '--kiosk',
@@ -258,7 +260,8 @@ async function main() {
         if (value) return value
         await wait(100)
       }
-      throw new Error(`Timed out waiting for: ${expression}`)
+      const state = await evaluate("JSON.stringify({ url: location.href, screen: (document.querySelector('.app-shell') || {}).className, focused: document.querySelector('.is-focused') && document.querySelector('.is-focused').getAttribute('data-focus-id'), active: document.activeElement && document.activeElement.outerHTML.slice(0, 300) })")
+      throw new Error(`Timed out waiting for: ${expression}; state: ${state}`)
     }
     const capture = async (name) => {
       const screenshot = await cdp.call('Page.captureScreenshot', {
@@ -285,6 +288,16 @@ async function main() {
         type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code,
       })
       await wait(120)
+    }
+    const signalTrailerPlayback = async (selector, playing) => {
+      // The iframe can mount before its message listener effect runs on an older engine.
+      await waitFor(`(() => {
+        var trailer = document.querySelector(${JSON.stringify(selector)});
+        if (!trailer) return false;
+        window.dispatchEvent(new MessageEvent('message', { source: trailer.contentWindow,
+          origin: 'https://www.youtube-nocookie.com', data: JSON.stringify({ event: 'onStateChange', info: { playerState: ${playing ? 1 : 0} } }) }));
+        return trailer.classList.contains('is-playing') === ${playing};
+      })()`)
     }
 
     if (process.argv.includes('--titles-only')) {
@@ -516,10 +529,9 @@ async function main() {
       `The next rail does not recede behind the active rail: ${verticalDestination.nextRowOpacity}.`)
     assert(JSON.stringify(verticalDestination.sourceLogoAlignment) === '[22,0]', `The AniList mark is not inline with its achievement: ${verticalDestination.sourceLogoAlignment}.`)
     await waitFor("document.querySelector('.home-trailer-footer')")
-    await evaluate(`(() => {
-      document.querySelector('.home-focus-card').classList.add('is-trailer-playing');
-      document.querySelector('.home-focus-card .home-hover-trailer').classList.add('is-playing');
-    })()`)
+    await signalTrailerPlayback('.home-focus-card .home-hover-trailer', true)
+    await waitFor("document.querySelector('.home-focus-card.is-trailer-playing .home-hover-trailer.is-playing')")
+    await waitFor("getComputedStyle(document.querySelector('.home-focus-shade')).opacity === '0' && getComputedStyle(document.querySelector('.home-trailer-footer')).opacity === '1'")
     await wait(260)
     const activeTrailerPresentation = await evaluate(`(() => {
       var card = document.querySelector('.home-focus-card');
@@ -558,11 +570,9 @@ async function main() {
       && activeTrailerPresentation.rowTransform === 'none' && activeTrailerPresentation.rowsTransform === 'none',
       `Trailer playback still sits in an M56 compositor transform: ${JSON.stringify(activeTrailerPresentation)}.`)
     await capture('m56-trailer-playing.png')
-    await evaluate(`(() => {
-      var trailer = document.querySelector('.home-focus-card .home-hover-trailer');
-      if (trailer) trailer.remove();
-      document.querySelector('.home-focus-card').classList.remove('is-trailer-playing');
-    })()`)
+    await signalTrailerPlayback('.home-focus-card .home-hover-trailer', false)
+    await waitFor("!document.querySelector('.home-focus-card.is-trailer-playing')")
+    await waitFor("getComputedStyle(document.querySelector('.home-focus-shade')).opacity === '1' && getComputedStyle(document.querySelector('.home-trailer-footer')).opacity === '0' && getComputedStyle(document.querySelector('.home-focus-achievements')).opacity === '1'")
     await wait(260)
     const restoredTrailerPresentation = await evaluate(`(() => {
       var card = document.querySelector('.home-focus-card');
@@ -587,10 +597,19 @@ async function main() {
     await capture('m56-solo-leveling-title-logo.png')
     await press('ArrowLeft')
     await waitFor("document.querySelector('.home-focus-card.is-focused .home-focus-logo[alt=\"Chainsaw Man\"]')")
+    await evaluate(`(() => {
+      var animate = Element.prototype.animate;
+      window.__cardMotionCount = 0;
+      Element.prototype.animate = function () {
+        if (this.classList.contains('home-focus-media')) window.__cardMotionCount++;
+        return animate.apply(this, arguments);
+      };
+    })()`)
     for (let index = 0; index < 3; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-art')")
     for (let index = 3; index < 8; index += 1) await press('ArrowRight')
     await waitFor("document.querySelector('.home-focus-card.is-focused .home-focus-logo[alt=\"Attack on Titan\"]')")
+    await waitFor("getComputedStyle(document.querySelector('.home-focus-media')).opacity === '1' && getComputedStyle(document.querySelector('.home-focus-media')).transform === 'none'")
     const horizontal = await evaluate(`(() => {
       var focused = document.querySelector('.home-focus-card.is-focused');
       var row = focused.closest('.media-row');
@@ -621,6 +640,7 @@ async function main() {
         broken: Array.from(document.images).filter(function (image) { return image.complete && !image.naturalWidth; }).length
       };
     })()`)
+    assert(await evaluate('window.__cardMotionCount >= 6'), 'Repeated horizontal moves did not animate the retained focused card.')
     assert(horizontal.index === 8, `Expected rail index 8, received ${horizontal.index}.`)
     assert(horizontal.scrollLeft === 0 && horizontal.cyclic === 'true' && horizontal.spacers === 0, `Horizontal navigation still exposes a finite rail seam: ${JSON.stringify(horizontal)}.`)
     assert(horizontal.width === 1120 && horizontal.visualWidth === 1120, `Focused spotlight changed geometry: ${horizontal.width}/${horizontal.visualWidth}px.`)
@@ -635,7 +655,7 @@ async function main() {
       `Late provider title art disappeared or swapped through plain text: ${JSON.stringify(horizontal)}.`)
     assert(horizontal.titleLogoSource.includes('attack-on-titan-logo'),
       `The focused title is paired with unrelated logo artwork: ${horizontal.titleLogoSource}.`)
-    assert(horizontal.artworkTransition === '0s' && horizontal.artworkLayers === 1, `Focused tile crossfades multiple photos: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
+    assert(parseFloat(horizontal.artworkTransition) <= .2 && horizontal.artworkLayers === 1, `Focused artwork transition is unbounded or duplicates images: ${horizontal.artworkTransition}/${horizontal.artworkLayers}.`)
     assert(horizontal.stripTransform === 'none', 'Horizontal navigation transformed the entire rail.')
     assert(horizontal.broken === 0, `${horizontal.broken} artwork images failed.`)
     const focusPerformance = await evaluate(`(() => {
@@ -823,6 +843,11 @@ async function main() {
     assert(JSON.stringify(restoredSeriesReturnPoint) === JSON.stringify(seriesReturnPoint),
       `Back did not restore the exact Home rail and title: ${JSON.stringify({ seriesReturnPoint, restoredSeriesReturnPoint })}.`)
 
+    const restoredPaint = await evaluate(`(() => {
+      var card = document.querySelector('.home-focus-card.is-focused').getBoundingClientRect();
+      return { top: card.top, bottom: card.bottom, scroll: document.querySelector('.home-screen').scrollTop, track: document.querySelector('.home-motion-track').scrollTop };
+    })()`)
+    assert(restoredPaint.top >= 0 && restoredPaint.bottom <= 1080 && !restoredPaint.scroll && !restoredPaint.track, `Restored card is clipped: ${JSON.stringify(restoredPaint)}.`)
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=details` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.detail-actions [data-focus-id=\"detail-0\"]')")
     await waitFor("!document.getElementById('startup-splash')")
@@ -884,6 +909,11 @@ async function main() {
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=home&layout=carousel` })
     await waitFor("document.readyState === 'complete' && document.querySelector('.home-screen.mode-carousel')")
     await waitFor("!document.getElementById('startup-splash')")
+    await evaluate("document.documentElement.style.pointerEvents = 'none'")
+    for (let index = 0; index < 8; index += 1) {
+      if (await evaluate("document.querySelector('.hero-carousel-status')")) break
+      await press('ArrowUp')
+    }
     await waitFor("document.querySelector('.hero-carousel-status')")
     const carouselIndicators = await evaluate(`(() => ({
       text: document.querySelector('.hero-carousel-status').textContent.trim(),
@@ -952,10 +982,9 @@ async function main() {
     })()`)
     assert(hoverTrailer.source.includes('autoplay=1') && hoverTrailer.source.includes('mute=0') && hoverTrailer.source.includes('cc_load_policy=1') && hoverTrailer.source.includes('cc_lang_pref=en'), `Non-English focused-card trailer is not configured for audible playback with English captions: ${hoverTrailer.source}.`)
     assert(hoverTrailer.title.includes(carouselHome.heroTitle), `Focused-card trailer label is incorrect: ${hoverTrailer.title}.`)
-    await evaluate(`(() => {
-      document.querySelector('.hero-feature-card > .home-hover-trailer').classList.add('is-playing');
-      document.querySelector('.hero').classList.add('is-trailer-playing');
-    })()`)
+    await signalTrailerPlayback('.hero-feature-card > .home-hover-trailer', true)
+    await waitFor("document.querySelector('.hero.is-trailer-playing .home-hover-trailer.is-playing')")
+    await waitFor("Array.from(document.querySelectorAll('.hero-copy > *')).every(function (item) { return getComputedStyle(item).opacity === '0'; })")
     await wait(460)
     const heroTrailerPresentation = await evaluate(`(() => {
       var trailer = document.querySelector('.hero-feature-card > .home-hover-trailer');
@@ -1005,6 +1034,22 @@ async function main() {
     })()`)
     assert(browseRail.title.includes(browseRail.hero), `Browse rail focus did not update its hero: ${JSON.stringify(browseRail)}.`)
     await capture('m56-browse-merged.png')
+    await press('ArrowDown')
+    await press('ArrowRight')
+    const browseReturnPoint = await evaluate("document.querySelector('.page-browse .home-poster-card.is-focused').getAttribute('data-focus-id')")
+    await press('Enter')
+    await waitFor("document.querySelector('.detail-screen, .series-screen')")
+    await press('Backspace')
+    await waitFor("document.querySelector('.page-browse .home-poster-card.is-focused')")
+    const browseReturnPaint = await evaluate(`(() => {
+      var card = document.querySelector('.page-browse .home-poster-card.is-focused');
+      var bounds = card.getBoundingClientRect();
+      return { focus: card.getAttribute('data-focus-id'), top: bounds.top, bottom: bounds.bottom,
+        scroll: document.querySelector('.home-screen').scrollTop, track: document.querySelector('.home-motion-track').scrollTop };
+    })()`)
+    assert(browseReturnPaint.focus === browseReturnPoint && browseReturnPaint.top >= 0 && browseReturnPaint.bottom <= 1080
+      && !browseReturnPaint.scroll && !browseReturnPaint.track, `Browse return is clipped or lost focus: ${JSON.stringify(browseReturnPaint)}.`)
+    await capture('m56-browse-return.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=search` })
     await waitFor("document.readyState === 'complete' && document.querySelector('[data-search-key=\"b\"]')")
@@ -1106,7 +1151,7 @@ async function main() {
       width: document.querySelector('.loading-progress-indicator').getBoundingClientRect().width,
       animation: getComputedStyle(document.querySelector('.loading-progress-indicator')).animationName
     }))()`)
-    assert(loadingVideo.status.includes('34%') && loadingVideo.status.includes('Buffered for playback'), `Video loading progress is unclear: ${JSON.stringify(loadingVideo)}.`)
+    assert(loadingVideo.status.includes('34%') && loadingVideo.status.includes('Finding available sources'), `Video loading progress is unclear: ${JSON.stringify(loadingVideo)}.`)
     assert(loadingVideo.valueText === '34% buffered for playback' && loadingVideo.width > 640 && loadingVideo.width < 670,
       `Video loading progress does not match its rail: ${JSON.stringify(loadingVideo)}.`)
     assert(loadingVideo.animation === 'none', `Determinate video progress still uses an indeterminate animation: ${loadingVideo.animation}.`)
@@ -1247,7 +1292,7 @@ async function main() {
       panelBottom: document.querySelector('.settings-panel').getBoundingClientRect().bottom,
       body: [document.body.scrollWidth, document.body.scrollHeight]
     }))()`)
-    assert(settings.options === 2 && settings.toggles === 2, `Appearance settings are incomplete: ${settings.options}/${settings.toggles}.`)
+    assert(settings.options === 3 && settings.toggles === 2, `Appearance settings are incomplete: ${settings.options}/${settings.toggles}.`)
     assert(settings.videoPreviewLabel === 'Video previews' && settings.videoPreviewsEnabled === 'true', `Video-preview preference is missing or defaults incorrectly: ${JSON.stringify(settings)}.`)
     assert(settings.panelBottom <= 1080, `Settings panel is clipped at ${settings.panelBottom}px.`)
     assert(JSON.stringify(settings.body) === '[1920,1080]', `Settings overflowed the TV viewport: ${settings.body}.`)
@@ -1269,8 +1314,25 @@ async function main() {
     await press('ArrowRight')
     await evaluate("document.querySelector('[data-focus-id=\"setting-1\"]').click()")
     await waitFor("document.querySelectorAll('.settings-options > button')[1].getAttribute('aria-pressed') === 'false'")
-    const previewsDisabled = await evaluate("JSON.parse(localStorage.getItem('izumi.companion.playback-experience')).videoPreviewsEnabled === false")
+    const previewsDisabled = await waitFor("JSON.parse(localStorage.getItem('izumi.companion.playback-experience')).videoPreviewsEnabled === false")
     assert(previewsDisabled, 'The video-preview opt-out was not persisted.')
+    await evaluate("document.querySelector('[data-focus-id=\"setting-12\"]').click()")
+    await waitFor("document.querySelector('.screen-layout-editor')")
+    await press('ArrowDown')
+    await press('Enter')
+    await waitFor("document.querySelector('.screen-layout-list button').textContent === 'Show'")
+    await press('ArrowRight')
+    await press('ArrowRight')
+    await press('Enter')
+    const editedLayout = await evaluate(`(() => {
+      var key = Object.keys(localStorage).filter(function(key) { return key.indexOf('izumi.companion.screen-layout.') === 0; })[0];
+      return key && JSON.parse(localStorage.getItem(key));
+    })()`)
+    assert(editedLayout && editedLayout.screens.hidden.length === 1 && editedLayout.screens.order.length > 1, 'Remote layout editing did not persist.')
+    await capture('m56-screen-layout-editor.png')
+    await press('Backspace')
+    await waitFor("!document.querySelector('.screen-layout-editor') && document.querySelector('[data-focus-id=\"setting-12\"].is-focused')")
+
 
     await press('ArrowLeft')
     await press('ArrowDown')
@@ -1447,6 +1509,9 @@ async function main() {
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
     process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, secure TV-side confirmation, unpaired phone handoff, Discover explanations/save/undo/remote navigation, and no application runtime errors.\n`)
+  } catch (error) {
+    process.stderr.write(`Chromium check failed: ${error instanceof Error ? error.message : String(error)}\n`)
+    throw error
   } finally {
     try { await cdp?.call('Browser.close') } catch { browser.kill() }
     cdp?.socket.close()
@@ -1457,7 +1522,10 @@ async function main() {
       await waitForExit(browser)
     }
     const runtimePrefix = `${runtime}${sep}`
-    if (profile.startsWith(runtimePrefix)) await removeTemporaryProfile(profile)
+    if (profile.startsWith(runtimePrefix)) await removeTemporaryProfile(profile).catch(error => {
+      if (!['EBUSY', 'EPERM'].includes(error?.code)) throw error
+      process.stderr.write('Temporary browser profile remains locked; check results are unchanged.\n')
+    })
   }
 }
 

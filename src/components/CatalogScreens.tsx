@@ -1211,6 +1211,7 @@ export function SettingsScreen({
       { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
       { title: 'App updates', detail: 'Open izumi Updater to check and install the latest TV version.', icon: RotateCcw },
     { title: 'Link phone or desktop', detail: 'Restore this TV’s saved connection in izumi on another device.', icon: Link2 },
+    { title: 'Edit screens and rows', detail: 'Reorder or hide catalogue screens and rows for this TV profile.', icon: Tv },
   ]
   return (
     <main class="utility-screen settings-screen">

@@ -32,3 +32,28 @@ describe('TV external subtitle rendering', () => {
     vi.unstubAllGlobals()
   })
 })
+
+it('detects styled dialogue from an extensionless Worker link', () => {
+  const source = '[Script Info]\nPlayResY: 1080\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, Bold, Italic\nStyle: Default,Nunito,42,&H00FFFFFF,-1,0\n[Events]\nFormat: Start, End, Style, Text\nDialogue: 0:00:01.00,0:00:03.00,Default,Hello'
+  const cue = parseSubtitleText(source, 'text/plain', 'https://worker.example/subtitles?ticket=opaque')[0]
+  expect(cue.text).toBe('Hello')
+  expect(cue.style).toMatchObject({ fontFamily: '"Nunito Sans", "Nunito Sans", sans-serif', fontWeight: 700, color: '#FFFFFF' })
+})
+it('aborts an outstanding subtitle download when changing tracks or leaving playback', async () => {
+  const requests: any[] = []
+  class Request {
+    abort = vi.fn(() => this.onabort?.())
+    onabort?: () => void
+    open() {}
+    send() { requests.push(this) }
+  }
+  vi.stubGlobal('XMLHttpRequest', Request)
+  try {
+    const controller = new ExternalSubtitleController()
+    const pending = controller.load('https://subs.example/first.srt').catch(error => error.message)
+    controller.clear()
+    expect(requests[0].abort).toHaveBeenCalledOnce()
+    expect(await pending).toContain('cancelled')
+    expect(controller.textAt(2)).toBe('')
+  } finally { vi.unstubAllGlobals() }
+})

@@ -1,3 +1,4 @@
+import type { SubtitleCueStyle } from '../lib/subtitles'
 import {
   AlertTriangle,
   ArrowRight,
@@ -240,6 +241,7 @@ function ratingGuidance(contentRating: string): string {
 }
 
 export function LoadingScreen({
+  sourceLabel, canChooseSource, onCancel,
   title,
   progress,
   contentRating,
@@ -247,6 +249,9 @@ export function LoadingScreen({
   title: string
   progress: number
   contentRating?: string
+  sourceLabel?: string
+  canChooseSource?: boolean
+  onCancel?(): void
 }) {
   const rating = contentRating?.trim() || 'NR'
   const clampedProgress = Math.min(100, Math.max(0, progress))
@@ -265,7 +270,7 @@ export function LoadingScreen({
       </aside>
       <div class="loading-status" role="status" aria-live="polite">
         <strong>{progressKnown ? `${Math.round(clampedProgress)}%` : 'Preparing stream'}</strong>
-        <small>{progressKnown ? 'Buffered for playback' : 'Connecting to the video source'}</small>
+        <small>{sourceLabel ? `Loading ${sourceLabel}` : 'Finding available sources…'}</small>
       </div>
       <div class="loading-footer">
         <span
@@ -280,7 +285,7 @@ export function LoadingScreen({
           <i class="loading-progress-indicator" style={progressKnown ? { width: `${clampedProgress}%` } : undefined} aria-hidden="true" />
         </span>
       </div>
-      <p class="back-hint"><RotateCcw size={19} /> Back to cancel</p>
+      <button type="button" class="back-hint loading-cancel" onClick={onCancel}><RotateCcw size={19} />{canChooseSource ? 'Back to choose another source' : 'Back to cancel'}</button>
     </main>
   )
 }
@@ -341,6 +346,7 @@ export function PlayerScreen({
   activeAudio,
   activeSubtitle,
   subtitleText,
+  subtitleCueStyle,
   subtitlePreferences,
   previewBackdrop,
   controlsVisible,
@@ -394,6 +400,7 @@ export function PlayerScreen({
   activeAudio?: number
   activeSubtitle: string
   subtitleText: string
+  subtitleCueStyle?: SubtitleCueStyle
   subtitlePreferences: SubtitlePreferences
   previewBackdrop?: string
   controlsVisible: boolean
@@ -440,7 +447,7 @@ export function PlayerScreen({
     : subtitlePreferences.size === 'source' ? 'Custom' : subtitlePreferences.size
   const sourceStyle = subtitlePreferences.castStyle
   const subtitleStyle = sourceStyle ? {
-    fontFamily: sourceStyle.font ? `"${sourceStyle.font}", "Nunito Sans", sans-serif` : undefined,
+    fontFamily: sourceStyle.font ? `"${sourceStyle.font === "Nunito" ? "Nunito Sans" : sourceStyle.font}", "Nunito Sans", sans-serif` : undefined,
     fontWeight: sourceStyle.bold ? 800 : 600,
     fontSize: sourceStyle.fontSize ? `${Math.max(1.4, sourceStyle.fontSize / 10.8)}vh` : undefined,
     color: sourceStyle.textColor,
@@ -485,7 +492,7 @@ export function PlayerScreen({
         </div>
       )}
       {subtitleText && !menu && (
-        <div class={`player-subtitle${controlsVisible ? ' is-controls-visible' : ''} subtitle-${subtitlePreferences.size} subtitle-bg-${subtitlePreferences.background}`} style={subtitleStyle}>
+        <div class={`player-subtitle${controlsVisible ? ' is-controls-visible' : ''} subtitle-${subtitlePreferences.size} subtitle-bg-${subtitlePreferences.background}`} style={subtitleStyle ?? { ...subtitleCueStyle, fontSize: subtitlePreferences.size === 'source' ? subtitleCueStyle?.fontSize : undefined }}>
           {subtitleText}
         </div>
       )}

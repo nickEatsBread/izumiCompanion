@@ -6302,3 +6302,26 @@ body,
   .still-watching-panel button > * + * { margin-left: 9px; }
   .still-watching-panel > div > * + * { margin-left: 12px; }
 }
+
+.screen-layout-backdrop { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 100; background: rgba(0,0,0,.94); padding: 55px 110px; }
+.screen-layout-editor { height: 100%; display: flex; flex-direction: column; color: #fff; }
+.screen-layout-editor h1 { font-size: 44px; margin: 0 0 8px; }
+.screen-layout-editor p { font-size: 22px; color: #bdc6d0; margin: 12px 0; }
+.screen-layout-editor nav { display: flex; margin: 22px 0; }
+.screen-layout-editor button { border: 2px solid #4b5664; border-radius: 8px; background: #1c2632; color: #fff; padding: 14px 24px; font-size: 24px; margin-right: 12px; }
+.screen-layout-editor button.is-selected { border-color: #8bacda; }
+.screen-layout-editor button[data-edit-focus="true"] { background: #fff; color: #111; border-color: #fff; }
+.screen-layout-list { flex: 1; overflow-y: auto; min-height: 0; }
+.screen-layout-row { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid #34414e; }
+.screen-layout-row strong { flex: 1; font-size: 27px; padding-right: 25px; }
+.screen-layout-editor footer { margin-top: 20px; }
+.loading-cancel { border: 0; background: transparent; color: #fff; font: inherit; }
+.loading-status small { max-width: 75vw; white-space: pre-line; overflow-wrap: break-word; }
+.player-subtitle { font-family: 'Nunito Sans', sans-serif; }
+.subtitle-bg-source { text-shadow: 0 2px 4px #000; }
+
+.home-art-skeleton { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: #29313b; animation: artwork-wait 1000ms ease-in-out infinite alternate; }
+.home-art-skeleton.is-static { animation: none; opacity: .6; }
+.home-focus-art, .home-poster-art { transition: opacity 140ms ease-out; }
+@keyframes artwork-wait { from { opacity: .45; } to { opacity: .85; } }
+@media (prefers-reduced-motion: reduce) { .home-art-skeleton { animation: none; } .home-focus-art, .home-poster-art { transition: none; } }

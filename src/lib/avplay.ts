@@ -73,6 +73,7 @@ export class AvPlayController {
   private seekBusy = false
   private seekQueue: Promise<void> = Promise.resolve()
   private cancelSeek?: () => void
+  private cancelPrepare?: () => void
   private knownPosition = 0
   private knownDuration = 0
   private bufferSeconds = 0
@@ -100,7 +101,7 @@ export class AvPlayController {
     try {
       await this.openAndPlay(request.positionSeconds, generation)
     } catch (error) {
-      if (this.recovering) return
+      if (generation !== this.generation || this.recovering) return
       if (this.retryCount >= 1 || !this.active) throw error
       this.retryCount += 1
       events.onBuffering()
@@ -112,6 +113,7 @@ export class AvPlayController {
   }
 
   private async openAndPlay(positionSeconds: number, generation: number): Promise<void> {
+    if (generation !== this.generation) return
     const player = window.webapis?.avplay
     const request = this.active
     const events = this.events
@@ -167,12 +169,14 @@ export class AvPlayController {
       player.setDisplayRect(0, 0, 1920, 1080)
       player.setDisplayMethod?.('PLAYER_DISPLAY_MODE_LETTER_BOX')
       this.configureIdlePlayer(player, request)
+      try { player.setSilentSubtitle?.(true) } catch { /* Custom overlay uses text callbacks. */ }
       await new Promise<void>((resolve, reject) => {
         let settled = false
         const finish = (callback: () => void) => {
           if (settled) return
           settled = true
           globalThis.clearTimeout(timer)
+          if (this.cancelPrepare === cancel) this.cancelPrepare = undefined
           callback()
         }
         // Some firmware never invokes either prepare callback for an unreadable/ambiguous URL.
@@ -181,10 +185,14 @@ export class AvPlayController {
         const timer = globalThis.setTimeout(() => finish(() => reject(new Error(
           `Samsung AVPlay timed out while preparing this ${sourceKind(request)} from ${sourceHost(request)}.`,
         ))), 20_000)
-        player.prepareAsync(
-          () => finish(resolve),
-          (error) => finish(() => reject(new Error(playbackError(request, error, 'prepare')))),
-        )
+        const cancel = () => finish(resolve)
+        this.cancelPrepare = cancel
+        try {
+          player.prepareAsync(
+            () => finish(resolve),
+            (error) => finish(() => reject(new Error(playbackError(request, error, 'prepare')))),
+          )
+        } catch (error) { finish(() => reject(error)) }
       })
       if (generation !== this.generation) return
       this.clearBufferingTimeout()
@@ -192,6 +200,11 @@ export class AvPlayController {
       try { live = player.getStreamingProperty?.('IS_LIVE') === 'true' } catch { /* Older firmware can omit this property. */ }
       events.onLive?.(live)
       this.knownDuration = Math.max(0, player.getDuration() / 1000)
+      const expectedMinutes = request.media?.runtimeMinutes
+      if (!live && request.media?.ref.type === 'movie' && expectedMinutes && expectedMinutes >= 40
+        && this.knownDuration > 0 && this.knownDuration < Math.min(20 * 60, expectedMinutes * 60 * .45)) {
+        throw new Error('This source contains a short preview instead of the full title. Choose another source.')
+      }
       if (!live && positionSeconds > 0) await this.seek(positionSeconds)
       if (generation !== this.generation) return
       player.play()
@@ -255,6 +268,7 @@ export class AvPlayController {
     this.events.onState('buffering')
     this.events.onBuffering()
     const retryGeneration = ++this.generation
+    this.cancelPrepare?.()
     this.cancelSeek?.()
     this.seekBusy = false
     this.seekQueue = Promise.resolve()
@@ -386,8 +400,8 @@ export class AvPlayController {
         if (track.type !== 'AUDIO' && track.type !== 'TEXT') return
         let details: Record<string, unknown> = {}
         try { details = JSON.parse(track.extra_info || '{}') as Record<string, unknown> } catch { /* malformed metadata */ }
-        const language = trackMetadata(details, ['language', 'track_lang', 'lang', 'track_language', 'trackLanguage'])
-        const title = trackMetadata(details, ['title', 'track_title', 'track_name', 'name', 'label', 'stream_title', 'handler_name'])
+        const language = trackMetadata(details, ['language', 'track_lang', 'lang', 'track_language', 'trackLanguage', 'language_code', 'subtitle_language'])
+        const title = trackMetadata(details, ['title', 'track_title', 'track_name', 'name', 'label', 'stream_title', 'handler_name', 'subtitle_name', 'subtitle_type'])
         const channels = Number(trackMetadata(details, ['channels', 'channel_count'])) || 0
         const codec = trackMetadata(details, ['fourCC', 'codec', 'codec_type'])
         if (track.type === 'TEXT') {
@@ -481,6 +495,8 @@ export class AvPlayController {
 
   close(): void {
     this.generation += 1
+    this.cancelPrepare?.()
+    this.cancelPrepare = undefined
     this.cancelSeek?.()
     this.cancelSeek = undefined
     this.seekBusy = false

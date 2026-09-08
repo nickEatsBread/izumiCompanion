@@ -17,6 +17,7 @@ describe('private Worker source resolution', () => {
   it('sends only the media identity and non-secret resolver hint', () => {
     expect(cloudResolveRequest(media)).toEqual({
       ref: media.ref,
+      title: media.title,
       episode: 12,
       season: 1,
       streamType: 'series',
@@ -37,6 +38,7 @@ describe('private Worker source resolution', () => {
         { season: 5, episode: 2, videoId: 'native:5:2' },
       ],
     })).toEqual({
+      title: 'Example show',
       ref: { provider: 'stremio', type: 'series', id: 'opaque' },
       episode: 2,
       season: 5,
@@ -146,4 +148,13 @@ describe('private Worker source resolution', () => {
     expect(cloudResolveLoad({ ok: true, selectedId: null, candidates: [] }, media, 'empty')).toBeNull()
     expect(cloudResolveLoad({ ok: false, candidates: [{ id: 'x', url: 'https://video.example/x.mp4' }] }, media, 'failed')).toBeNull()
   })
+})
+
+
+it('preserves preferred track languages for every cloud playback alternative', () => {
+  const selection = cloudResolveSelection({ ok: true, trackPreferences: { audio: { language: 'jpn' }, subtitle: { language: 'eng' } },
+    candidates: [{ id: 'one', url: 'https://media.example/one.mp4' }, { id: 'two', url: 'https://media.example/two.mp4' }],
+  }, { title: 'Example', ref: { provider: 'catalog', type: 'movie', id: 'example' } }, 'languages')
+  expect(selection?.sources.map(source => source.request.trackPreferences?.subtitle?.language)).toEqual(['eng', 'eng'])
+  expect(selection?.request.trackPreferences?.audio?.language).toBe('jpn')
 })

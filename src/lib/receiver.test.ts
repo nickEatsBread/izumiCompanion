@@ -221,7 +221,7 @@ describe('companion play routing', () => {
       ? { status: 403, body: {} }
       : { status: 200, body: { ok: true, candidates: [], tvSourceLookup: { version: 1, ticket: 'signed-ticket',
         requests: [{ id: 'torrentio-0-0', url: 'https://torrentio.strem.fun/stream/movie/tt0126029.json' }] } } }
-    expect(await new CompanionReceiver(events()).requestPlay(media)).toEqual({ kind: 'failed', message: 'Torrentio returned HTTP 403 to the TV.' })
+    expect(await new CompanionReceiver(events()).requestPlay(media)).toEqual({ kind: 'failed', message: 'A configured source returned HTTP 403 to the TV.' })
     expect(FakeXmlHttpRequest.sent).toHaveLength(2)
   })
 
@@ -1004,4 +1004,18 @@ describe('companion play routing', () => {
     expect(receiverEvents.onIndependentPlaybackReady).toHaveBeenLastCalledWith(true)
     expect(FakeXmlHttpRequest.sent.some((request) => request.url.endsWith('/snapshots?screen=default'))).toBe(true)
   })
+})
+
+it('aborts a cloud play lookup and ignores its delayed result after Back', async () => {
+  const aborted = vi.spyOn(FakeXmlHttpRequest.prototype, 'abort')
+  FakeXmlHttpRequest.responder = () => ({ status: 200, delay: 5_000, body: { ok: true, candidates: [{ id: 'one', url: 'https://media.example/video.mp4' }] } })
+  const callbacks = events()
+  const receiver = new CompanionReceiver(callbacks)
+  const pending = receiver.requestPlay(media)
+  receiver.cancelPlay()
+  expect(await pending).toBe('no-source')
+  await vi.advanceTimersByTimeAsync(6_000)
+  expect(aborted).toHaveBeenCalledOnce()
+  expect(callbacks.onLoad).not.toHaveBeenCalled()
+  expect(FakeXmlHttpRequest.sent).toHaveLength(1)
 })

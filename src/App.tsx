@@ -1,3 +1,5 @@
+import { ScreenLayoutEditor } from './components/ScreenLayoutEditor'
+import { readScreenLayout, writeScreenLayout, orderedLayoutItems, type ScreenLayout } from './lib/screen-layout'
 import { DiscoveryScreen } from './components/DiscoveryScreen'
 import { UpdatePrompt, useUpdatePrompt } from './components/UpdatePrompt'
 import { launchUpdater } from './lib/updates'
@@ -59,7 +61,7 @@ import { popNavigationEntry, pushNavigationEntry } from './lib/navigation-histor
 import { normalizeTvLinkCode, tvLinkUrl } from './lib/onboarding'
 import { registerRemoteKeys, remoteAction, remoteSeekAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
-import { ExternalSubtitleController } from './lib/subtitles'
+import { ExternalSubtitleController, plainSubtitleText, type SubtitleCueStyle } from './lib/subtitles'
 import { applyTrackHints, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { TvLinkReceiver, type TvLinkInfo } from './lib/tv-link'
@@ -398,6 +400,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [subtitleChoices, setSubtitleChoices] = useState<SubtitleChoice[]>(showPreviewTools ? previewSubtitleChoices : [offSubtitle])
   const [activeSubtitle, setActiveSubtitle] = useState(showPreviewTools ? 'preview-en' : 'off')
   const [subtitleText, setSubtitleText] = useState(showPreviewTools ? 'Even the smallest journey can change the world.' : '')
+  const [subtitleCueStyle, setSubtitleCueStyle] = useState<SubtitleCueStyle>()
   const [subtitlePreferences, setSubtitlePreferences] = useState<SubtitlePreferences>(sourceSubtitlePreferences)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchPerson, setSearchPerson] = useState<CompanionPerson>()
@@ -409,6 +412,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [seriesSeason, setSeriesSeason] = useState(0)
   const [settingsConfirmation, setSettingsConfirmation] = useState<SettingsConfirmation>(null)
   const [settingsCategory, setSettingsCategory] = useState(0)
+  const [screenEditorOpen, setScreenEditorOpen] = useState(false)
+  const [screenLayout, setScreenLayout] = useState(() => ({ profile: tvProfileId(), value: readScreenLayout(tvProfileId()) }))
+  const layoutProfile = tvProfileId()
+  const activeLayout = useMemo(() => screenLayout.profile === layoutProfile ? screenLayout.value : readScreenLayout(layoutProfile), [screenLayout, layoutProfile])
+  const changeScreenLayout = (value: ScreenLayout) => {
+    if (!writeScreenLayout(tvProfileId(), value)) { showNotice('TV storage is full. The layout could not be saved.'); return }
+    setScreenLayout({ profile: tvProfileId(), value })
+    homeRowIndexesRef.current = {}
+  }
   const visibleSettingsCategory = !settingsConfirmation && focus.zone === 'setting'
     ? settingsSectionForOption(focus.index)
     : focus.zone === 'settings-category' ? focus.index : settingsCategory
@@ -630,6 +642,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     subtitleStateRef.current = choice.kind === 'off' ? 'off' : choice.kind === 'external' ? 'loading' : 'ready'
     subtitleErrorRef.current = ''
     setSubtitleText('')
+    setSubtitleCueStyle(undefined)
     externalSubtitlesRef.current.clear()
     if (choice.kind === 'off') avplayRef.current.hideSubtitles(true)
     else if (choice.kind === 'embedded' && choice.index != null) {
@@ -771,6 +784,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const stopPlayback = (destination: ScreenName = 'home') => {
+    playRequestGenerationRef.current += 1
+    if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     stopSeekHold(undefined, false)
     // Publish the terminal state before clearing the authenticated sender session. Android uses
     // this to stop its session-only HTTP-relay foreground service at EOF and on explicit stop.
@@ -781,6 +796,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     receiverRef.current?.clearPlayback()
     externalSubtitlesRef.current.clear()
     setSubtitleText('')
+    setSubtitleCueStyle(undefined)
     subtitleLoadGenerationRef.current += 1
     activeSubtitleRef.current = 'off'
     activeSubtitleLabelRef.current = ''
@@ -803,7 +819,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const startAvPlay = async (request: CastLoadRequest) => {
     stopSeekHold(undefined, false)
-    playRequestGenerationRef.current += 1
+    const generation = ++playRequestGenerationRef.current
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     const requestedPreferences = subtitlePreferencesFor(request.subtitleStyle)
     appliedAudioPreferenceRef.current = ''
@@ -840,6 +856,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setScreen('loading')
     publishStatus(true)
     const tryNextCloudSource = (): boolean => {
+      if (generation !== playRequestGenerationRef.current) return true
       if (!request.sessionId.startsWith('cloud-')) return false
       if (failedCloudSourcesRef.current.has(request.sessionId)) return true
       failedCloudSourcesRef.current.add(request.sessionId)
@@ -849,7 +866,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setActiveSourceId(next.id)
       currentSourceLabelRef.current = next.label
       showNotice(`Trying ${next.label} after the previous source failed`)
-      window.setTimeout(() => { void startAvPlay(next.request) }, 0)
+      window.setTimeout(() => { if (generation === playRequestGenerationRef.current) void startAvPlay({ ...next.request, positionSeconds: playerRef.current.position }) }, 0)
       return true
     }
     try {
@@ -873,6 +890,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           playbackTimeRef.current?.(position, duration)
           if (activeSubtitleRef.current.startsWith('external-')) {
             setSubtitleText(externalSubtitlesRef.current.textAt(position, subtitlePreferencesRef.current.delayMs))
+            setSubtitleCueStyle(externalSubtitlesRef.current.styleAt(position, subtitlePreferencesRef.current.delayMs))
           }
         },
         onTracks: (tracks) => {
@@ -912,9 +930,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         onLive: (isLive) => updatePlayer({ isLive }),
         onSubtitle: (text, durationMs) => {
           if (!activeSubtitleRef.current.startsWith('embedded-')) return
-          setSubtitleText(text)
+          setSubtitleText(plainSubtitleText(text))
           if (subtitleTimerRef.current) window.clearTimeout(subtitleTimerRef.current)
-          subtitleTimerRef.current = window.setTimeout(() => setSubtitleText(''), Math.max(500, durationMs || 3_000))
+          subtitleTimerRef.current = window.setTimeout(() => { setSubtitleText(''); setSubtitleCueStyle(undefined) }, Math.max(500, durationMs || 3_000))
         },
         onComplete: () => {
           completedPlaybackRef.current?.()
@@ -1369,24 +1387,22 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   // prefetch batch. A catalogue revision still restores focus when the actual DOM is replaced.
   }, [focus, focusRestoreEpoch, screen, snapshot.revision])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const positions = pendingNavigationScrollRef.current
     if (!positions) return
     pendingNavigationScrollRef.current = undefined
-    const frame = window.requestAnimationFrame(() => {
-      positions.forEach(({ selector, left, top }) => {
-        const element = document.querySelector<HTMLElement>(selector)
-        if (!element) return
-        const activeAnimation = dpadScrollAnimations.get(element)
-        if (activeAnimation !== undefined) {
-          window.cancelAnimationFrame(activeAnimation)
-          dpadScrollAnimations.delete(element)
-        }
-        element.scrollLeft = left
-        element.scrollTop = top
-      })
+    positions.forEach(({ selector, left, top }) => {
+      const element = document.querySelector<HTMLElement>(selector)
+      if (!element) return
+      const activeAnimation = dpadScrollAnimations.get(element)
+      if (activeAnimation !== undefined) {
+        window.cancelAnimationFrame(activeAnimation)
+        dpadScrollAnimations.delete(element)
+      }
+      const fixedSurface = ['home', 'trending', 'series-home', 'movies'].includes(screen)
+      element.scrollLeft = fixedSurface ? 0 : left
+      element.scrollTop = fixedSurface ? 0 : top
     })
-    return () => window.cancelAnimationFrame(frame)
   }, [focusRestoreEpoch, screen])
 
   useEffect(() => {
@@ -1504,12 +1520,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     return () => window.removeEventListener(DISCOVERY_CHANGED, changed)
   }, [])
   const collections = useMemo(() => catalogCollections(snapshot), [snapshot])
-  const homeRows = useMemo(() => orderedHomeRows(snapshot.rows), [snapshot.rows])
-  const browseRows = useMemo(() => browseCategoryRows(snapshot), [snapshot])
+  const homeRows = useMemo(() => orderedLayoutItems(orderedHomeRows(snapshot.rows), activeLayout[`${snapshot.catalog.screen}:home`], row => row.id), [snapshot.rows, snapshot.catalog.screen, activeLayout])
+  const browseRows = useMemo(() => orderedLayoutItems(browseCategoryRows(snapshot), activeLayout[`${snapshot.catalog.screen}:browse`], row => row.id), [snapshot, activeLayout])
   const homeSnapshot = useMemo(() => ({ ...snapshot, rows: homeRows }), [snapshot, homeRows])
   const browseSnapshot = useMemo(() => ({ ...snapshot, rows: browseRows }), [snapshot, browseRows])
-  const seriesHomeSnapshot = useMemo(() => homeSnapshotForKind(homeSnapshot, 'show'), [homeSnapshot])
-  const movieHomeSnapshot = useMemo(() => homeSnapshotForKind(homeSnapshot, 'movie'), [homeSnapshot])
+  const seriesHomeSnapshot = useMemo(() => { const value = homeSnapshotForKind({ ...snapshot, rows: orderedHomeRows(snapshot.rows) }, 'show'); return { ...value, rows: orderedLayoutItems(value.rows, activeLayout[`${snapshot.catalog.screen}:shows`], row => row.id) } }, [snapshot, activeLayout])
+  const movieHomeSnapshot = useMemo(() => { const value = homeSnapshotForKind({ ...snapshot, rows: orderedHomeRows(snapshot.rows) }, 'movie'); return { ...value, rows: orderedLayoutItems(value.rows, activeLayout[`${snapshot.catalog.screen}:movies`], row => row.id) } }, [snapshot, activeLayout])
   const cinematicSnapshot = screen === 'trending' ? browseSnapshot
     : screen === 'series-home' ? seriesHomeSnapshot
       : screen === 'movies' ? movieHomeSnapshot
@@ -1781,9 +1797,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const movieItems = collections.movies
   const myListItems = collections.myList
   const watchHistoryItems = collections.history
-  const rootCatalogOptions = useMemo(() => snapshot.catalog.options?.length
-    ? snapshot.catalog.options
-    : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }], [snapshot])
+  const rawCatalogOptions = useMemo(() => snapshot.catalog.options?.length ? snapshot.catalog.options : [{ screen: snapshot.catalog.screen, label: snapshot.catalog.label }], [snapshot])
+  const rootCatalogOptions = useMemo(() => orderedLayoutItems(rawCatalogOptions, activeLayout.screens, option => option.screen), [rawCatalogOptions, activeLayout])
   const catalogOptions = catalogLevel(snapshot.collectionPage?.hasMore
     ? [{ screen: '__more', label: 'Load more titles', description: snapshot.catalog.label }, ...rootCatalogOptions] : rootCatalogOptions, catalogTrail)
 
@@ -1977,6 +1992,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const finishActivePlayback = () => {
+    playRequestGenerationRef.current += 1
     stopSeekHold(undefined, false)
     updatePlayer({ state: 'idle' })
     publishStatus(true)
@@ -1985,6 +2001,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     receiverRef.current?.clearPlayback()
     externalSubtitlesRef.current.clear()
     setSubtitleText('')
+    setSubtitleCueStyle(undefined)
     subtitleLoadGenerationRef.current += 1
     activeSubtitleRef.current = 'off'
     activeSubtitleLabelRef.current = ''
@@ -2001,9 +2018,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const playMedia = async (media: CompanionMedia, autoplay = false) => {
     if (!snapshot.rows.some(row => row.items.length) && /^(account-|nc-|lc-)/.test(snapshot.catalog.screen)) { showNotice('Choose a title from another catalogue first.'); return }
+    if (activeLoadRef.current) finishActivePlayback()
     const generation = ++playRequestGenerationRef.current
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
-    if (activeLoadRef.current) finishActivePlayback()
     postPlayPresentedRef.current = false
     playbackEndedRef.current = false
     setPostPlayStage('rating')
@@ -2018,6 +2035,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setStillWatching(false)
     if (autoplay) autoplayCountRef.current += 1
     setSourceChoices([])
+    sourceChoicesRef.current = []
+    failedCloudSourcesRef.current.clear()
     setActiveSourceId(undefined)
     setLoadingProgress(0)
     updatePlayer({ title: media.title, state: 'buffering', position: media.progress ? 523 : 0, duration: 1_422, isLive: false })
@@ -2368,13 +2387,35 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setPlayerMenuFocus(0)
   }
 
+  const cancelLoadingToSources = () => {
+    playRequestGenerationRef.current += 1
+    if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
+    receiverRef.current?.cancelPlay()
+    avplayRef.current.close()
+    externalSubtitlesRef.current.clear()
+    subtitleLoadGenerationRef.current += 1
+    if (subtitleTimerRef.current) window.clearTimeout(subtitleTimerRef.current)
+    setSubtitleText('')
+    setSubtitleCueStyle(undefined)
+    updatePlayer({ state: 'idle' })
+    publishStatus(true)
+    activeLoadRef.current = undefined
+    receiverRef.current?.clearPlayback()
+    if (!sourceChoicesRef.current.length) { stopPlayback('home'); return }
+    setScreen('player')
+    setPlayerMenu('source')
+    setPlayerMenuFocus(Math.max(0, sourceChoicesRef.current.findIndex(choice => choice.id === activeSourceId)))
+    setActiveSourceId(undefined)
+  }
+
   const selectPlaybackSource = (choice: PlaybackSourceChoice) => {
     setPlayerMenu(null)
-    if (choice.id === activeSourceId) {
+    if (choice.id === activeSourceId && activeLoadRef.current) {
       showNotice('That source is already playing.')
       return
     }
     const positionSeconds = playerRef.current.position
+    failedCloudSourcesRef.current.clear()
     setActiveSourceId(choice.id)
     currentSourceLabelRef.current = choice.label
     void startAvPlay({ ...choice.request, positionSeconds })
@@ -2813,6 +2854,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Video previews' : index === 2 ? 'Post-play mini-player' : index === 3 ? 'Autoplay' : index === 4 ? 'Automatic skipping' : index === 5 ? 'Still watching check' : 'Source continuity'} updated`)
         return
       }
+      if (index === 12) { setScreenEditorOpen(true); return }
       if (index === 7) return openIndependentSetup()
       if (index === 11) { setScreen('client-link'); return }
       if (index === 10) { void launchUpdater(false).catch((error: Error) => showNotice(error.message)); return }
@@ -2862,6 +2904,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const handleRemote = (action: RemoteAction) => {
+    if (screenEditorOpen) return
     if (updatePrompt.handleRemote(action)) return
     if (profilesOpenRef.current) { window.dispatchEvent(new CustomEvent(PROFILE_REMOTE, { detail: action })); return }
     if (screen === 'client-link') { window.dispatchEvent(new CustomEvent<RemoteAction>(CLIENT_LINK_REMOTE, { detail: action })); return }
@@ -3142,7 +3185,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       return
     }
     if (screen === 'loading') {
-      if (action === 'back' || action === 'stop') stopPlayback('home')
+      if (action === 'back') cancelLoadingToSources()
+      else if (action === 'stop') stopPlayback('home')
       return
     }
     if (screen === 'error') {
@@ -3403,6 +3447,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         />
       ))}
       {screen === 'discover' && <DiscoveryScreen key={tvProfileId()} snapshot={snapshot} receiver={receiverRef.current} onDetails={selectCatalogMedia} onBack={() => selectNav(navIndexFor('my-list'))} />}
+      {screenEditorOpen && <ScreenLayoutEditor key={tvProfileId()} layout={activeLayout} onChange={changeScreenLayout}
+        onClose={() => { setScreenEditorOpen(false); changeFocus({ zone: 'setting', index: 12 }) }}
+        sections={[
+          { id: 'screens', title: 'Catalogues', items: rawCatalogOptions.map(option => ({ id: option.screen, title: option.label })) },
+          ...(['home', 'browse', 'shows', 'movies'] as const).map(kind => ({ id: `${snapshot.catalog.screen}:${kind}`, title: ({ home: 'Home', browse: 'Browse', shows: 'Shows', movies: 'Movies' })[kind],
+            items: (kind === 'browse' ? browseCategoryRows(snapshot) : kind === 'home' ? orderedHomeRows(snapshot.rows) : homeSnapshotForKind(snapshot, kind === 'shows' ? 'show' : 'movie').rows).map(row => ({ id: row.id, title: row.title })) })),
+        ]} />}
       {screen === 'settings' && (
         <SettingsScreen
           focus={focus}
@@ -3476,6 +3527,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         <LoadingScreen
           title={player.title}
           progress={loadingProgress}
+          sourceLabel={sourceChoices.find(choice => choice.id === activeSourceId)?.label}
+          canChooseSource={sourceChoices.length > 0}
+          onCancel={cancelLoadingToSources}
           contentRating={activeLoadRef.current?.contentRating ?? (selected.title === player.title ? selected.contentRating : undefined)}
         />
       )}
@@ -3495,6 +3549,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           activeAudio={activeAudio}
           activeSubtitle={activeSubtitle}
           subtitleText={subtitleText}
+          subtitleCueStyle={subtitleCueStyle}
           subtitlePreferences={subtitlePreferences}
           previewBackdrop={showPreviewTools ? selected.backdrop || selected.poster : undefined}
           controlsVisible={playerControlsVisible}

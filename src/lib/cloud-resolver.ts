@@ -1,4 +1,4 @@
-import type { CastLoadRequest, CastSubtitleTrack, CompanionMedia, PlaybackSourceChoice } from '../types'
+import type { CastLoadRequest, CastSubtitleTrack, CompanionMedia, PlaybackSourceChoice, SubtitleStyle } from '../types'
 
 export interface CloudResolveRequest {
   ref: CompanionMedia['ref']
@@ -7,6 +7,8 @@ export interface CloudResolveRequest {
   streamType: 'movie' | 'series'
   nativeType?: string
   streamIds?: string[]
+  title?: string
+  videoCapabilities?: { hdr?: boolean; uhd?: boolean; av1?: boolean }
 }
 
 interface DirectSourceCandidate {
@@ -72,10 +74,10 @@ function normalizeCandidate(value: unknown): DirectSourceCandidate | null {
   const lan = input.lan === true
   const url = publicHttpUrl(input.url, 8192, lan)
   if (!id || !url) return null
-  const subtitles = (Array.isArray(input.subtitles) ? input.subtitles : []).slice(0, 8).flatMap((value, index) => {
+  const subtitles = (Array.isArray(input.subtitles) ? input.subtitles : []).slice(0, 40).flatMap((value, index) => {
     if (!value || typeof value !== 'object') return []
     const track = value as Record<string, unknown>
-    const trackUrl = publicHttpUrl(track.url, 8192, lan)
+    const trackUrl = publicHttpUrl(track.url, 16384, lan)
     if (!trackUrl) return []
     return [{
       id: index + 1,
@@ -138,6 +140,8 @@ export function cloudResolveRequest(media: CompanionMedia): CloudResolveRequest 
     ? media.resolver?.nativeType
     : undefined
   return {
+    title: boundedText(media.title, 240),
+    videoCapabilities: tvVideoCapabilities(),
     ref: media.ref,
     episode,
     season,
@@ -160,7 +164,7 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   if (input.ok !== true || !Array.isArray(input.candidates)) return null
-  const candidates = input.candidates.slice(0, 8).flatMap((candidate) => {
+  const candidates = input.candidates.slice(0, 12).flatMap((candidate) => {
     const normalized = normalizeCandidate(candidate)
     return normalized ? [normalized] : []
   })
@@ -184,6 +188,12 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
     }]
   })
   const selectedCandidateId = selected.id
+  const preferences = input.trackPreferences && typeof input.trackPreferences === 'object'
+    ? input.trackPreferences as Record<string, { language?: unknown } | undefined> : undefined
+  const preferenceFor = (type: 'audio' | 'subtitle') => {
+    const language = boundedText(preferences?.[type]?.language, 24)
+    return language && language !== 'none' ? { language } : undefined
+  }
   const sources = candidates.map((candidate, index): PlaybackSourceChoice => ({
     id: candidate.id,
     ...sourceLabel(candidate, index),
@@ -198,6 +208,8 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
       activeTrackIds: [],
       media,
       skipSegments,
+      trackPreferences: preferences ? { audio: preferenceFor('audio'), subtitle: preferenceFor('subtitle') } : undefined,
+      subtitleStyle: input.subtitleStyle && typeof input.subtitleStyle === 'object' ? input.subtitleStyle as SubtitleStyle : undefined,
       cookies: candidate.cookies,
       userAgent: candidate.userAgent,
     },
@@ -212,4 +224,15 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
 /** Convert a private Worker response into the same load contract used by a paired Izumi client. */
 export function cloudResolveLoad(value: unknown, media: CompanionMedia, requestId: string): CastLoadRequest | null {
   return cloudResolveSelection(value, media, requestId)?.request ?? null
+}
+
+function tvVideoCapabilities(): CloudResolveRequest['videoCapabilities'] {
+  if (typeof window === 'undefined') return undefined
+  const api = window.webapis as typeof window.webapis & { avinfo?: { isHdrTvSupport?(): boolean }; productinfo?: { isUdPanelSupported?(): boolean } }
+  const result: NonNullable<CloudResolveRequest['videoCapabilities']> = {}
+  try { const value = api?.avinfo?.isHdrTvSupport?.(); if (typeof value === 'boolean') result.hdr = value } catch { /* Unknown capabilities remain available. */ }
+  try { const value = api?.productinfo?.isUdPanelSupported?.(); if (typeof value === 'boolean') result.uhd = value } catch { /* Optional API. */ }
+  const engine = typeof navigator !== 'undefined' ? /Chrome\/(\d+)/.exec(navigator.userAgent) : null
+  if (engine && Number(engine[1]) < 85) result.av1 = false
+  return result
 }

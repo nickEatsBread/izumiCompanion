@@ -18,21 +18,23 @@ export function validTvSourceUrl(value: unknown): value is string {
   } catch { return false }
 }
 
-function fetchSource(url: string): Promise<unknown> {
+function fetchSource(url: string, pending: Set<XMLHttpRequest>): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
+    pending.add(request)
+    request.onloadend = () => pending.delete(request)
     request.open('GET', url, true)
     request.timeout = 12_000
     request.withCredentials = false
     request.setRequestHeader('Accept', 'application/json')
     request.onprogress = event => { if (event.loaded > MAX_RESPONSE_BYTES) request.abort() }
     request.onload = () => {
-      if (request.status < 200 || request.status >= 300) { reject(new Error(`Torrentio returned HTTP ${request.status} to the TV.`)); return }
+      if (request.status < 200 || request.status >= 300) { reject(new Error(`A configured source returned HTTP ${request.status} to the TV.`)); return }
       if (request.responseText.length > MAX_RESPONSE_BYTES) { reject(new Error('The source response was too large.')); return }
-      try { resolve(JSON.parse(request.responseText)) } catch { reject(new Error('Torrentio returned an invalid response to the TV.')) }
+      try { resolve(JSON.parse(request.responseText)) } catch { reject(new Error('The configured source returned an invalid response to the TV.')) }
     }
-    request.onerror = () => reject(new Error('The TV could not reach Torrentio over your home connection.'))
-    request.ontimeout = () => reject(new Error('Torrentio did not respond to the TV in time.'))
+    request.onerror = () => reject(new Error('The TV could not reach the configured source over your home connection.'))
+    request.ontimeout = () => reject(new Error('The configured source did not respond to the TV in time.'))
     request.onabort = () => reject(new Error('The source response exceeded the TV limit.'))
     request.send(null)
   })
@@ -62,6 +64,7 @@ export async function resolveWithTvSourceLookup(
   input: CloudResolveRequest,
   send: (payload: unknown) => Promise<Record<string, unknown>>,
   isCurrent: () => boolean,
+  cancellation?: { cancel?: () => void },
 ): Promise<Record<string, unknown>> {
   const current = () => { if (!isCurrent()) throw new Error('The playback request or profile changed.') }
   current()
@@ -79,6 +82,8 @@ export async function resolveWithTvSourceLookup(
       || ids.has(request.id) || !validTvSourceUrl(request.url)) throw new Error('The Worker returned an unsafe TV source request.')
     ids.add(request.id)
   }
+  const pending = new Set<XMLHttpRequest>()
+  if (cancellation) cancellation.cancel = () => pending.forEach(request => request.abort())
   const results: Array<{ id: string; streams: Record<string, unknown>[] }> = []
   const failures: string[] = []
   let cursor = 0
@@ -88,7 +93,7 @@ export async function resolveWithTvSourceLookup(
       current()
       const request = requests[cursor++]
       try {
-        const value = await fetchSource(request.url)
+        const value = await fetchSource(request.url, pending)
         current()
         const streams = torrentMetadata(value).filter(stream => {
           // Conservative UTF-8 bound keeps the complete continuation below the Worker's body limit.
@@ -108,7 +113,7 @@ export async function resolveWithTvSourceLookup(
   current()
   if (!results.some(result => result.streams.length)) return {
     ...result, tvSourceLookup: undefined,
-    failures: failures.length ? failures : ['Torrentio returned no torrent sources to the TV for this title.'],
+    failures: failures.length ? failures : ['The configured source returned no torrent sources to the TV for this title.'],
   }
   return send({ ...input, tvSourceLookup: 1, tvSourceResults: { ticket: lookup.ticket, results } }).then(value => { current(); return value })
 }
