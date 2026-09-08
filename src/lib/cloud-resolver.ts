@@ -9,7 +9,7 @@ export interface CloudResolveRequest {
   streamIds?: string[]
   title?: string
   excludeCandidateIds?: string[]
-  videoCapabilities?: { hdr?: boolean; uhd?: boolean; av1?: boolean }
+  videoCapabilities?: { hdr?: boolean; uhd?: boolean; av1?: boolean; opus?: boolean; flac?: boolean }
 }
 
 interface DirectSourceCandidate {
@@ -237,6 +237,8 @@ function tvVideoCapabilities(): CloudResolveRequest['videoCapabilities'] {
   try { const value = api?.avinfo?.isHdrTvSupport?.(); if (typeof value === 'boolean') result.hdr = value } catch { /* Unknown capabilities remain available. */ }
   try { const value = api?.productinfo?.isUdPanelSupported?.(); if (typeof value === 'boolean') result.uhd = value } catch { /* Optional API. */ }
   const engine = typeof navigator !== 'undefined' ? /Chrome\/(\d+)/.exec(navigator.userAgent) : null
-  if (engine && Number(engine[1]) < 85) result.av1 = false
+  // Older TV web engines predate AV1 video and Opus/FLAC audio decoding in the native player;
+  // reporting them lets the Worker skip releases that would prepare and then play silently.
+  if (engine && Number(engine[1]) < 85) { result.av1 = false; result.opus = false; result.flac = false }
   return result
 }
