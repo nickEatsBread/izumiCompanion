@@ -23,7 +23,8 @@ interface SamsungAvPlay {
   getStreamingProperty?(type: string): string
   setDrm?(type: string, operation: string, properties: string): void
   suspend?(): void
-  restore?(restoreTime: number, prepare: boolean, success?: () => void, error?: (error: unknown) => void): void
+  restore?(url?: string, restoreTime?: number, prepare?: boolean): void
+  restoreAsync?(url?: string, restoreTime?: number, prepare?: boolean, success?: () => void, error?: (error: unknown) => void): void
   play(): void
   pause(): void
   stop(): void

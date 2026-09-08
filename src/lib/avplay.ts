@@ -1,5 +1,7 @@
 import type { CastLoadRequest, PlaybackState, PlaybackTrack } from '../types'
-import { subtitleTrackLabel } from './track-selection'
+import { preferredTrack, subtitleTrackLabel } from './track-selection'
+
+class UnsuitableSourceError extends Error {}
 
 export interface AvPlayEvents {
   onBuffering(percent?: number): void
@@ -72,10 +74,14 @@ export class AvPlayController {
   private pendingSeek?: number
   private seekBusy = false
   private seekQueue: Promise<void> = Promise.resolve()
+  private trackRevisions = { AUDIO: 0, TEXT: 0 }
+  private desiredTracks: Partial<Record<'AUDIO' | 'TEXT', PlaybackTrack>> = {}
+  private switchingTrack = false
   private cancelSeek?: () => void
   private cancelPrepare?: () => void
   private knownPosition = 0
   private knownDuration = 0
+  private live = false
   private bufferSeconds = 0
   private bufferAnchor = 0
 
@@ -102,7 +108,7 @@ export class AvPlayController {
       await this.openAndPlay(request.positionSeconds, generation)
     } catch (error) {
       if (generation !== this.generation || this.recovering) return
-      if (this.retryCount >= 1 || !this.active) throw error
+      if (error instanceof UnsuitableSourceError || this.retryCount >= 1 || !this.active) throw error
       this.retryCount += 1
       events.onBuffering()
       try { window.webapis?.avplay?.close() } catch { /* Prepare may already have closed the player. */ }
@@ -142,7 +148,7 @@ export class AvPlayController {
           events.onBuffering(100)
           // Completion confirms this minimum window, not the entire video download.
           events.onBuffered?.(this.bufferAnchor, Math.min(this.knownDuration || Infinity, this.bufferAnchor + this.bufferSeconds))
-          if (this.seekBusy) return
+          if (this.seekBusy || this.switchingTrack) return
           if (playbackStarted && this.desiredState === 'paused') {
             try { if (player.getState() === 'PLAYING') player.pause() } catch { /* State can change during the callback. */ }
           }
@@ -153,6 +159,10 @@ export class AvPlayController {
           if (this.seekBusy) return
           this.knownPosition = milliseconds / 1000
           this.knownDuration = Math.max(0, player.getDuration() / 1000)
+          if (this.isPreviewDuration()) {
+            this.rejectSource('This source contains a short preview instead of the full title. Choose another source.')
+            return
+          }
           events.onTime(this.knownPosition, this.knownDuration)
           // Adaptive manifests on older Samsung firmware often expose AUDIO/TEXT only after
           // playback begins. Re-sample a few early callbacks and emit only when metadata changes.
@@ -199,23 +209,56 @@ export class AvPlayController {
       let live = false
       try { live = player.getStreamingProperty?.('IS_LIVE') === 'true' } catch { /* Older firmware can omit this property. */ }
       events.onLive?.(live)
+      this.live = live
       this.knownDuration = Math.max(0, player.getDuration() / 1000)
-      const expectedMinutes = request.media?.runtimeMinutes
-      if (!live && request.media?.ref.type === 'movie' && expectedMinutes && expectedMinutes >= 40
-        && this.knownDuration > 0 && this.knownDuration < Math.min(20 * 60, expectedMinutes * 60 * .45)) {
-        throw new Error('This source contains a short preview instead of the full title. Choose another source.')
+      if (!live && this.isPreviewDuration()) {
+        throw new UnsuitableSourceError('This source contains a short preview instead of the full title. Choose another source.')
       }
       if (!live && positionSeconds > 0) await this.seek(positionSeconds)
       if (generation !== this.generation) return
       player.play()
       playbackStarted = true
+      this.lastTrackSignature = ''
+      this.trackRefreshTick = 0
+      await this.restoreTrackChoices(generation)
+      if (generation !== this.generation) return
       if (this.desiredState === 'paused') player.pause()
       this.emitTracks(generation)
       this.recovering = false
       events.onState(this.desiredState)
     } catch (error) {
       if (generation !== this.generation) return
+      if (error instanceof UnsuitableSourceError) throw error
       throw new Error(playbackError(request, error, 'prepare'))
+    }
+  }
+
+  private isPreviewDuration(): boolean {
+    const media = this.active?.media
+    const movie = media?.resolver?.streamType === 'movie' || media?.ref.type === 'movie'
+    const expectedMinutes = media?.runtimeMinutes
+    return Boolean(!this.live && movie && expectedMinutes && expectedMinutes >= 40 && this.knownDuration > 0
+      && this.knownDuration < Math.min(20 * 60, expectedMinutes * 60 * .45))
+  }
+
+  private rejectSource(message: string): void {
+    const events = this.events
+    this.close()
+    events?.onError(message)
+  }
+
+  private async restoreTrackChoices(generation: number): Promise<void> {
+    const tracks = this.tracks()
+    for (const type of ['AUDIO', 'TEXT'] as const) {
+      const desired = this.desiredTracks[type]
+      if (!desired || generation !== this.generation) continue
+      const options = tracks.filter(track => track.type === type)
+      const match = options.find(track => track.index === desired.index && track.language === desired.language)
+        ?? preferredTrack(options, { language: desired.language, title: desired.label, codec: desired.codec })
+      if (match && this.currentTrackIndex(type) !== match.index) {
+        const revision = this.trackRevisions[type]
+        await this.performTrackSelection(type, match.index, () => generation === this.generation && revision === this.trackRevisions[type])
+      }
     }
   }
 
@@ -289,14 +332,14 @@ export class AvPlayController {
   play(): void {
     const player = window.webapis?.avplay
     this.desiredState = 'playing'
-    if (this.seekBusy) return
+    if (this.seekBusy || this.switchingTrack) return
     if (player && ['READY', 'PAUSED'].includes(player.getState())) player.play()
   }
 
   pause(): void {
     const player = window.webapis?.avplay
     this.desiredState = 'paused'
-    if (this.seekBusy) return
+    if (this.seekBusy || this.switchingTrack) return
     if (player?.getState() === 'PLAYING') player.pause()
   }
 
@@ -313,16 +356,18 @@ export class AvPlayController {
   }
 
   async restore(): Promise<void> {
-    if (this.seekBusy) await this.seekQueue.catch(() => {})
+    const generation = this.generation
+    await this.seekQueue.catch(() => {})
     const player = window.webapis?.avplay
-    if (!player || !this.active) return
+    if (!player || !this.active || generation !== this.generation) return
     try {
-      if (player.restore) {
-        await new Promise<void>((resolve, reject) => player.restore!(Math.round(this.suspendedPosition * 1000), false, resolve, reject))
-      }
+      if (player.restoreAsync) await new Promise<void>((resolve, reject) => player.restoreAsync!(this.active!.url, Math.round(this.suspendedPosition * 1000), false, resolve, reject))
+      else player.restore?.(this.active.url, Math.round(this.suspendedPosition * 1000), false)
+      if (generation !== this.generation) return
       if (this.resumeAfterRestore && ['READY', 'PAUSED'].includes(player.getState())) player.play()
+      await this.restoreTrackChoices(generation)
     } catch (error) {
-      this.handleRuntimeError(errorMessage(error), this.generation)
+      this.handleRuntimeError(errorMessage(error), generation)
     }
   }
 
@@ -370,6 +415,7 @@ export class AvPlayController {
         if (player.getState() === 'PLAYING') player.pause()
       } else if (player.getState() === 'PAUSED') player.play()
       if (player.getState() !== 'READY') this.events?.onState(this.desiredState)
+      if (player.getState() !== 'READY') await this.restoreTrackChoices(generation)
     } catch (error) {
       if (generation !== this.generation) return
       this.seekBusy = false
@@ -438,6 +484,15 @@ export class AvPlayController {
     if (signature === this.lastTrackSignature) return
     this.lastTrackSignature = signature
     this.events.onTracks(tracks)
+    if (Object.keys(this.desiredTracks).length) {
+      // Adaptive streams can publish tracks only after playback has resumed.
+      const task = this.seekQueue.catch(() => {}).then(async () => {
+        if (generation !== this.generation) return
+        await this.restoreTrackChoices(generation)
+        if (generation === this.generation) this.events?.onTracks(tracks)
+      }).catch(() => {})
+      this.seekQueue = task
+    }
   }
 
   currentTrackIndex(type: 'AUDIO' | 'TEXT'): number | undefined {
@@ -450,23 +505,45 @@ export class AvPlayController {
     } catch { return undefined }
   }
 
-  async selectTrack(type: 'AUDIO' | 'TEXT', index: number): Promise<boolean> {
+  selectTrack(type: 'AUDIO' | 'TEXT', index: number): Promise<boolean> {
     const generation = this.generation
-    while (this.seekBusy) await this.seekQueue.catch(() => {})
-    if (generation !== this.generation) return false
+    const revision = ++this.trackRevisions[type]
+    const current = () => generation === this.generation && revision === this.trackRevisions[type]
+    const task = this.seekQueue.catch(() => {}).then(() => this.performTrackSelection(type, index, current))
+    this.seekQueue = task.then(() => {}, () => {})
+    return task
+  }
+
+  private async performTrackSelection(type: 'AUDIO' | 'TEXT', index: number, current: () => boolean): Promise<boolean> {
+    if (!current()) return false
+    const generation = this.generation
     const player = window.webapis?.avplay
     if (!player) return false
-    const available = player.getTotalTrackInfo().some((track) => track.type === type && track.index === index)
+    const available = this.tracks().find(track => track.type === type && track.index === index)
     if (!available) return false
-    player.setSelectTrack(type, index)
-    if (!player.getCurrentStreamInfo) return true
-    for (const wait of [0, 90, 180, 300]) {
-      if (wait) await new Promise<void>((resolve) => window.setTimeout(resolve, wait))
-      if (generation !== this.generation || this.seekBusy) return false
-      if (this.currentTrackIndex(type) === index) return true
-      if (wait === 90) player.setSelectTrack(type, index)
+    this.switchingTrack = true
+    try {
+      // AUDIO requires PLAYING on Samsung, even when the user opened the menu while paused.
+      if (type === 'AUDIO' && player.getState() === 'PAUSED') player.play()
+      player.setSelectTrack(type, index)
+      for (const wait of [0, 100, 200, 400, 800]) {
+        if (wait) await new Promise<void>((resolve) => window.setTimeout(resolve, wait))
+        if (!current()) return false
+        if (!player.getCurrentStreamInfo || this.currentTrackIndex(type) === index) {
+          this.desiredTracks[type] = available
+          return true
+        }
+        if (wait === 200) player.setSelectTrack(type, index)
+      }
+      return false
+    } finally {
+      // A superseded operation must never pause a newly opened source.
+      if (current()) {
+        this.switchingTrack = false
+        if (this.desiredState === 'paused' && player.getState() === 'PLAYING') player.pause()
+        else if (this.desiredState === 'playing' && player.getState() === 'PAUSED') player.play()
+      } else if (generation === this.generation) this.switchingTrack = false
     }
-    return false
   }
 
   hideSubtitles(hidden: boolean): void {
@@ -501,8 +578,11 @@ export class AvPlayController {
     this.cancelSeek = undefined
     this.seekBusy = false
     this.seekQueue = Promise.resolve()
+    this.desiredTracks = {}
+    this.switchingTrack = false
     this.knownPosition = 0
     this.knownDuration = 0
+    this.live = false
     this.bufferAnchor = 0
     this.clearBufferingTimeout()
     const player = window.webapis?.avplay

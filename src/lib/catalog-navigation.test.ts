@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { catalogLevel, mergeAccountOptions, validCatalogOptions } from './catalog-navigation'
+import { catalogLevel, mergeAccountOptions, validCatalogOptions, mayNavigateForSnapshot } from './catalog-navigation'
+
+it('preserves playback, loading and menu navigation during background catalogue refreshes', () => {
+  for (const screen of ['player', 'loading', 'postplay', 'error'] as const) {
+    expect(mayNavigateForSnapshot(screen, false, true)).toBe(false)
+  }
+  expect(mayNavigateForSnapshot('home', true, true)).toBe(false)
+  expect(mayNavigateForSnapshot('details', false, false)).toBe(false)
+  expect(mayNavigateForSnapshot('home', false, false)).toBe(false)
+  expect(mayNavigateForSnapshot('home', false, true)).toBe(true)
+  expect(mayNavigateForSnapshot('ready', false, false)).toBe(true)
+})
 
 describe('account and collection catalogue navigation', () => {
   it('opens collections and folders and provides a predictable remote Back target', () => {

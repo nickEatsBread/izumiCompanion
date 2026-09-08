@@ -341,6 +341,9 @@ export function PlayerScreen({
   deviceSourceOptions,
   activeSourceId,
   deviceSourceChangeAvailable,
+  cloudSourceChangeAvailable,
+  refreshingSources,
+  onCloudSources,
   audioTracks,
   subtitleChoices,
   activeAudio,
@@ -395,6 +398,9 @@ export function PlayerScreen({
   deviceSourceOptions?: LinkedDeviceSourceOptions
   activeSourceId?: string
   deviceSourceChangeAvailable: boolean
+  cloudSourceChangeAvailable?: boolean
+  refreshingSources?: boolean
+  onCloudSources?(): void
   audioTracks: PlaybackTrack[]
   subtitleChoices: SubtitleChoice[]
   activeAudio?: number
@@ -624,6 +630,15 @@ export function PlayerScreen({
                 >
                   <span>{deviceSourceOptions ? 'Refresh linked-device sources' : 'More sources on linked device'}</span><small>Debrid · P2P · device sources</small>
                 </button>
+              )}
+              {cloudSourceChangeAvailable && (
+              <button type="button"
+                class={menuFocus === sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) + Number(deviceSourceChangeAvailable) ? 'is-focused' : ''}
+                onFocus={() => onMenuFocus(sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) + Number(deviceSourceChangeAvailable))}
+                onClick={onCloudSources} aria-busy={refreshingSources}>
+                <span>{refreshingSources ? 'Finding more sources…' : 'Find more sources'}</span>
+                <small>Search for additional playable releases</small>
+              </button>
               )}
             </div>
           )}

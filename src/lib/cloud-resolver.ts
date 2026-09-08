@@ -8,6 +8,7 @@ export interface CloudResolveRequest {
   nativeType?: string
   streamIds?: string[]
   title?: string
+  excludeCandidateIds?: string[]
   videoCapabilities?: { hdr?: boolean; uhd?: boolean; av1?: boolean }
 }
 

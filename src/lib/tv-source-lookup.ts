@@ -70,7 +70,7 @@ export async function resolveWithTvSourceLookup(
   current()
   const result = await send({ ...input, tvSourceLookup: 1 })
   current()
-  if (Array.isArray(result.candidates) && result.candidates.length) return result
+  const initialCandidates = Array.isArray(result.candidates) ? result.candidates : []
   const lookup = result.tvSourceLookup as { version?: unknown; ticket?: unknown; requests?: unknown } | undefined
   if (!lookup) return result // Older Workers keep their existing response contract.
   if (lookup.version !== 1 || typeof lookup.ticket !== 'string' || lookup.ticket.length > 32_768
@@ -115,5 +115,22 @@ export async function resolveWithTvSourceLookup(
     ...result, tvSourceLookup: undefined,
     failures: failures.length ? failures : ['The configured source returned no torrent sources to the TV for this title.'],
   }
-  return send({ ...input, tvSourceLookup: 1, tvSourceResults: { ticket: lookup.ticket, results } }).then(value => { current(); return value })
+  try {
+    const value = await send({ ...input, tvSourceLookup: 1, tvSourceResults: { ticket: lookup.ticket, results } })
+    current()
+    if (!initialCandidates.length) return value
+    const seen = new Set<string>()
+    const candidates = [...initialCandidates, ...(Array.isArray(value.candidates) ? value.candidates : [])].filter(candidate => {
+      if (!candidate || typeof candidate !== 'object') return false
+      const key = String(candidate.url ?? candidate.id)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, 12)
+    return { ...result, ...value, candidates, selectedId: result.selectedId, tvSourceLookup: undefined }
+  } catch (error) {
+    current()
+    if (initialCandidates.length) return { ...result, tvSourceLookup: undefined }
+    throw error
+  }
 }

@@ -190,8 +190,18 @@ function workerRequest(
   const scoped = method === 'POST' && /\/(catalog|search|details|resolve|accounts)$/.test(path)
   if (scoped && !tvProfileReady()) return Promise.reject(new WorkerRequestError('Choose and unlock a profile first.', 'PROFILE_LOCKED'))
   if (scoped) payload = { ...(payload as Record<string, unknown>), ...tvProfileScope() }
-  return new Promise((resolve, reject) => {
+  return new Promise((resolvePromise, rejectPromise) => {
     const request = new XMLHttpRequest()
+    let settled = false
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      if (cancellation?.cancel === cancel) cancellation.cancel = undefined
+      callback()
+    }
+    const resolve = (value: Record<string, unknown>) => finish(() => resolvePromise(value))
+    const reject = (error: unknown) => finish(() => rejectPromise(error))
+    const cancel = () => { if (!settled) { request.abort(); reject(new Error('Request cancelled.')) } }
     request.open(method, `${transport.endpoint}${path}`, true)
     request.timeout = timeoutMs
     request.setRequestHeader('Authorization', `Bearer ${transport.tvToken}`)
@@ -210,7 +220,7 @@ function workerRequest(
     request.onerror = () => reject(new Error('The private Worker could not be reached.'))
     request.ontimeout = () => reject(new Error('The private Worker did not respond in time.'))
     request.onabort = () => reject(new Error('Request cancelled.'))
-    if (cancellation) cancellation.cancel = () => { request.abort(); reject(new Error('Request cancelled.')) }
+    if (cancellation) cancellation.cancel = cancel
     request.send(payload === undefined ? null : JSON.stringify(payload))
   })
 }
@@ -1134,10 +1144,11 @@ export class CompanionReceiver {
     }, 'broadcast')
   }
 
-  async requestPlay(media: CompanionMedia): Promise<CompanionPlayResult> {
+  async requestPlay(media: CompanionMedia, excludeCandidateIds?: string[]): Promise<CompanionPlayResult> {
     this.cancelPlay()
     const cancellation: { cancel?: () => void } = {}
-    this.playCancellation = cancellation
+    const detailCancellation: { cancel?: () => void } = {}
+    this.playCancellation = { cancel: () => { cancellation.cancel?.(); detailCancellation.cancel?.() } }
     const generation = ++this.cloudPlayGeneration
     const viewer = tvProfileId()
     if (!tvProfileReady() || !tvAllowsMedia(media)) return { kind: 'failed', message: 'This title is unavailable for this profile.' }
@@ -1147,7 +1158,7 @@ export class CompanionReceiver {
     const pairingId = this.cloudflare?.pairingId ?? this.credential.slice(0, 16)
     const playbackMode = this.cloudflare?.playbackMode ?? 'device-only'
     const prefetched = this.prefetchedPlays.get(this.playKey(media))
-    if (prefetched && prefetched.expiresAt > Date.now()) {
+    if (!excludeCandidateIds && prefetched && prefetched.expiresAt > Date.now()) {
       this.prefetchedPlays.delete(this.playKey(media))
       return prefetched.result
     }
@@ -1156,30 +1167,39 @@ export class CompanionReceiver {
     if (this.cloudflare && playbackMode !== 'device-only') {
       try {
         const transport = this.cloudflare
+        const details = (media.ref.type === 'movie' || media.resolver?.streamType === 'movie') && !media.runtimeMinutes
+          ? workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(pairingId)}/details`, 'POST', media, 6_000, detailCancellation)
+            .then(value => cloudMediaDetails(value, media)).catch(() => null)
+          : Promise.resolve(null)
         const result = await resolveWithTvSourceLookup(
-          cloudResolveRequest(media),
+          { ...cloudResolveRequest(media), ...(excludeCandidateIds ? { excludeCandidateIds: excludeCandidateIds.slice(0, 60) } : {}) },
           payload => workerRequest(transport, `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`, 'POST', payload, 30_000, cancellation),
           () => generation === this.cloudPlayGeneration && viewer === tvProfileId() && tvProfileReady() && this.cloudflare === transport,
           cancellation,
         )
-        const selection = cloudResolveSelection(result, media, requestId)
+        const enriched = await details
+        if (generation !== this.cloudPlayGeneration || viewer !== tvProfileId() || !tvProfileReady()) return 'no-source'
+        if (enriched && !tvAllowsMedia(enriched)) return { kind: 'failed', message: 'This title is unavailable for this profile.' }
+        const selection = cloudResolveSelection(result, enriched ?? media, requestId)
         if (selection) return { kind: 'resolved', ...selection }
         const failure = Array.isArray(result.failures) && typeof result.failures[0] === 'string'
           ? result.failures[0].slice(0, 240) : ''
         if (failure && result.fallback !== 'paired-device') return { kind: 'failed', message: failure }
         // A successful Worker response is authoritative. Cloudflare-only never wakes or contacts a
         // linked device; combined mode does so only when the saved profile explicitly requests it.
-        if (result.fallback !== 'paired-device') return 'no-source'
+        if (excludeCandidateIds || result.fallback !== 'paired-device') return 'no-source'
       } catch (error) {
         const resolverWasRemoved = error instanceof WorkerRequestError && error.code === 'RESOLVER_NOT_CONFIGURED'
+        detailCancellation.cancel?.()
         if (generation !== this.cloudPlayGeneration || viewer !== tvProfileId()) return 'no-source'
+        if (excludeCandidateIds) return { kind: 'failed', message: error instanceof Error ? error.message : 'Source refresh failed.' }
         if (playbackMode === 'cloud-only' && !resolverWasRemoved) return { kind: 'failed', message: error instanceof Error ? error.message : 'The Worker could not resolve this source.' }
         // Combined mode is also an availability fallback: continue through the linked device when
         // the user's Worker is temporarily unavailable.
       }
     }
 
-    if (viewer !== tvProfileId() || !tvProfileReady()) return 'no-source'
+    if (excludeCandidateIds || viewer !== tvProfileId() || !tvProfileReady()) return 'no-source'
     return this.requestFromDevice(media, requestId, secureRequestId)
   }
 

@@ -14,6 +14,7 @@ describe('receiver track matching', () => {
   it('does not select a track for an empty or unrelated preference', () => {
     expect(preferredTrack(tracks, undefined)).toBeUndefined()
     expect(preferredTrack(tracks, { language: 'ko' })).toBeUndefined()
+    expect(preferredTrack(tracks, { language: 'ko', codec: 'AAC' })).toBeUndefined()
   })
 
   it('does not show a generic Subtitles placeholder as the track name', () => {

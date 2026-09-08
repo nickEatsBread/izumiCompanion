@@ -104,6 +104,8 @@ export function preferredTrack(
   const wantedCodec = textKey(preference.codec).replace(/[-_]/g, '')
   let best: { track: PlaybackTrack; score: number } | undefined
   for (const track of tracks) {
+    const language = trackLanguageKey(track.language)
+    if (wantedLanguage && language && language !== wantedLanguage) continue
     let score = 0
     if (wantedLanguage && trackLanguageKey(track.language) === wantedLanguage) score += 8
     const title = textKey(track.label)

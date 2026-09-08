@@ -176,6 +176,7 @@ describe('AVPlay setup', () => {
   it('confirms the native current audio stream before reporting a switch', async () => {
     let current = 1
     const player = {
+      getState: () => 'PLAYING',
       getTotalTrackInfo: vi.fn(() => [
         { type: 'AUDIO' as const, index: 1, extra_info: '{}' },
         { type: 'AUDIO' as const, index: 4, extra_info: '{}' },

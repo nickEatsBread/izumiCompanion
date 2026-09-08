@@ -1,4 +1,10 @@
-import type { CompanionCatalogOption } from '../types'
+import type { CompanionCatalogOption, ScreenName } from '../types'
+
+/** Only an intentional catalogue navigation may replace an established screen. */
+export function mayNavigateForSnapshot(screen: ScreenName, hasPlayback: boolean, requested: boolean): boolean {
+  if (hasPlayback || ['loading', 'player', 'postplay', 'error'].includes(screen)) return false
+  return requested || ['ready', 'standalone-link', 'independent-setup'].includes(screen)
+}
 
 export function validCatalogOptions(value: unknown, depth = 0): CompanionCatalogOption[] {
   if (!Array.isArray(value) || depth > 2) return []

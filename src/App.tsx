@@ -40,7 +40,7 @@ import { TitlePanel, TITLE_PANEL_REMOTE, type TitlePanelKind } from './component
 import { PreviewToolbar } from './components/PreviewToolbar'
 import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, StandaloneLinkScreen, type IndependentSetupPhase } from './components/StateScreens'
 import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRail'
-import { catalogLevel, mergeAccountOptions } from './lib/catalog-navigation'
+import { catalogLevel, mergeAccountOptions, mayNavigateForSnapshot } from './lib/catalog-navigation'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
 import { AvPlayController } from './lib/avplay'
 import { browseCategoryRows } from './lib/browse'
@@ -86,6 +86,7 @@ import {
 import type {
   CastControlRequest,
   CastLoadRequest,
+  CastTrackPreference,
   CompanionCatalogOption,
   CompanionHomeSnapshot,
   CompanionMedia,
@@ -393,6 +394,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [playerMenuFocus, setPlayerMenuFocus] = useState(0)
   const [sourceChoices, setSourceChoices] = useState<PlaybackSourceChoice[]>([])
   const sourceChoicesRef = useRef<PlaybackSourceChoice[]>([])
+  const [refreshingSources, setRefreshingSources] = useState(false)
+  const sourceRefreshRef = useRef(0)
+  const cloudSourceChangeAvailable = sourceChoices.length < 60 && sourceChoices.some(choice => choice.request.sessionId.startsWith('cloud-'))
   const failedCloudSourcesRef = useRef<Set<string>>(new Set())
   const [deviceSourceOptions, setDeviceSourceOptions] = useState<LinkedDeviceSourceOptions>()
   const [activeSourceId, setActiveSourceId] = useState<string>()
@@ -497,6 +501,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const subtitleLoadGenerationRef = useRef(0)
   const appliedAudioPreferenceRef = useRef('')
   const audioSelectionGenerationRef = useRef(0)
+  const manualAudioPreferenceRef = useRef<CastTrackPreference>()
   const appliedSubtitlePreferenceRef = useRef('')
   const subtitlePreferencesRef = useRef(subtitlePreferences)
   const trailerSourceRef = useRef<{ requestId?: string; url: string }>()
@@ -533,6 +538,13 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   screenRef.current = screen
   searchPersonRef.current = searchPerson
   searchGenreRef.current = searchGenre
+
+  useEffect(() => {
+    if (playerMenu === 'source' || !refreshingSources) return
+    sourceRefreshRef.current += 1
+    receiverRef.current?.cancelPlay()
+    setRefreshingSources(false)
+  }, [playerMenu, refreshingSources])
 
   const setFocusLocation = (next: FocusLocation) => {
     focusRef.current = next
@@ -614,14 +626,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
 
   const selectAudioTrack = (track: PlaybackTrack) => {
     const generation = ++audioSelectionGenerationRef.current
+    const session = activeLoadRef.current?.sessionId
+    appliedAudioPreferenceRef.current = session ?? ''
     setPlayerMenu(null)
     if (!avplayRef.current.available) {
       setActiveAudio(track.index)
       return
     }
     void avplayRef.current.selectTrack('AUDIO', track.index).then((selected) => {
-      if (generation !== audioSelectionGenerationRef.current) return
+      if (generation !== audioSelectionGenerationRef.current || session !== activeLoadRef.current?.sessionId) return
       if (selected) {
+        manualAudioPreferenceRef.current = { language: track.language, title: track.label, codec: track.codec }
         setActiveAudio(track.index)
         showNotice(`${track.label} selected`)
       } else {
@@ -786,6 +801,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const stopPlayback = (destination: ScreenName = 'home') => {
+    audioSelectionGenerationRef.current += 1
+    manualAudioPreferenceRef.current = undefined
     playRequestGenerationRef.current += 1
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     stopSeekHold(undefined, false)
@@ -820,8 +837,20 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const startAvPlay = async (request: CastLoadRequest) => {
+    sourceRefreshRef.current += 1
+    setRefreshingSources(false)
+    receiverRef.current?.cancelPlay()
+    const previousMedia = activeLoadRef.current?.media
+    if (previousMedia && request.media && (previousMedia.ref.id !== request.media.ref.id
+      || previousMedia.ref.provider !== request.media.ref.provider || previousMedia.ref.type !== request.media.ref.type)) {
+      manualAudioPreferenceRef.current = undefined
+    }
+    if (manualAudioPreferenceRef.current) request = { ...request, trackPreferences: {
+      ...request.trackPreferences, audio: manualAudioPreferenceRef.current,
+    } }
     stopSeekHold(undefined, false)
     const generation = ++playRequestGenerationRef.current
+    audioSelectionGenerationRef.current += 1
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     const requestedPreferences = subtitlePreferencesFor(request.subtitleStyle)
     appliedAudioPreferenceRef.current = ''
@@ -908,12 +937,17 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           setAudioTracks(audio)
           setSubtitleChoices([offSubtitle, ...externalChoices, ...embedded])
           if (audio.length && appliedAudioPreferenceRef.current !== request.sessionId) {
-            const selected = preferredTrack(audio, request.trackPreferences?.audio) ?? audio[0]
-            void avplayRef.current.selectTrack('AUDIO', selected.index).then((confirmed) => {
-              setActiveAudio(confirmed ? selected.index : avplayRef.current.currentTrackIndex('AUDIO') ?? selected.index)
-            }).catch(() => { /* AVPlay retains its default track. */ })
-            appliedAudioPreferenceRef.current = request.sessionId
-          }
+            const selected = request.trackPreferences?.audio ? preferredTrack(audio, request.trackPreferences.audio) : audio[0]
+            if (selected) {
+              const selectionGeneration = ++audioSelectionGenerationRef.current
+              void avplayRef.current.selectTrack('AUDIO', selected.index).then((confirmed) => {
+                if (selectionGeneration !== audioSelectionGenerationRef.current || generation !== playRequestGenerationRef.current) return
+                setActiveAudio(confirmed ? selected.index : avplayRef.current.currentTrackIndex('AUDIO'))
+                if (!confirmed) appliedAudioPreferenceRef.current = ''
+              }).catch(() => { if (selectionGeneration === audioSelectionGenerationRef.current) appliedAudioPreferenceRef.current = '' })
+              appliedAudioPreferenceRef.current = request.sessionId
+            } else setActiveAudio(avplayRef.current.currentTrackIndex('AUDIO'))
+          } else setActiveAudio(avplayRef.current.currentTrackIndex('AUDIO'))
           if (appliedSubtitlePreferenceRef.current !== request.sessionId) {
             if (requestedSubtitle) {
               appliedSubtitlePreferenceRef.current = request.sessionId
@@ -1034,7 +1068,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           showNotice(`${pendingCatalog.label} catalogue loaded`)
         }
         setSnapshot(next)
-        if (screenRef.current === 'client-link') { settleStartupAfterPaint(); return }
+        if (!mayNavigateForSnapshot(screenRef.current, Boolean(activeLoadRef.current), Boolean(pendingCatalog))) {
+          if (completedCatalogRequest) finishNavigationTransition()
+          settleStartupAfterPaint()
+          return
+        }
         homeRowIndexesRef.current = {}
         heroIndexRef.current = 0
         setHeroIndex(0)
@@ -1058,6 +1096,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         window.clearTimeout(pendingCatalog.timer)
         catalogRequestRef.current = undefined
         finishNavigationTransition()
+        if (!mayNavigateForSnapshot(screenRef.current, Boolean(activeLoadRef.current), true)) { showNotice(message); return }
         setActiveNav(0)
         setScreen('home')
         setCatalogMenuOpen(true)
@@ -1994,6 +2033,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const finishActivePlayback = () => {
+    audioSelectionGenerationRef.current += 1
+    manualAudioPreferenceRef.current = undefined
     playRequestGenerationRef.current += 1
     stopSeekHold(undefined, false)
     updatePlayer({ state: 'idle' })
@@ -2019,6 +2060,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const playMedia = async (media: CompanionMedia, autoplay = false) => {
+    manualAudioPreferenceRef.current = undefined
     if (!snapshot.rows.some(row => row.items.length) && /^(account-|nc-|lc-)/.test(snapshot.catalog.screen)) { showNotice('Choose a title from another catalogue first.'); return }
     if (activeLoadRef.current) finishActivePlayback()
     const generation = ++playRequestGenerationRef.current
@@ -2390,6 +2432,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const cancelLoadingToSources = () => {
+    audioSelectionGenerationRef.current += 1
     playRequestGenerationRef.current += 1
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     receiverRef.current?.cancelPlay()
@@ -2421,6 +2464,24 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setActiveSourceId(choice.id)
     currentSourceLabelRef.current = choice.label
     void startAvPlay({ ...choice.request, positionSeconds })
+  }
+
+  const refreshCloudSources = async () => {
+    if (refreshingSources) return
+    const refresh = ++sourceRefreshRef.current
+    const generation = playRequestGenerationRef.current
+    setRefreshingSources(true)
+    const media = activeLoadRef.current?.media ?? playbackMedia ?? selected
+    const result = await receiverRef.current?.requestPlay(media, sourceChoicesRef.current.map(choice => choice.id))
+    if (refresh !== sourceRefreshRef.current || generation !== playRequestGenerationRef.current) return
+    setRefreshingSources(false)
+    if (result && typeof result !== 'string' && result.kind === 'resolved') {
+      const ids = new Set(sourceChoicesRef.current.map(choice => choice.id))
+      const extra = result.sources.filter(choice => !ids.has(choice.id))
+      sourceChoicesRef.current = [...sourceChoicesRef.current, ...extra].slice(0, 60)
+      setSourceChoices(sourceChoicesRef.current)
+      showNotice(extra.length ? `${extra.length} more sources found` : 'No additional playable sources were found.')
+    } else showNotice(result && typeof result !== 'string' ? result.message : 'No additional playable sources were found.')
   }
 
   const requestLinkedDeviceSources = async () => {
@@ -2468,7 +2529,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   }
 
   const playerMenuLength = playerMenu === 'source'
-    ? sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) + Number(deviceSourceChangeAvailable)
+    ? sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) + Number(deviceSourceChangeAvailable) + Number(cloudSourceChangeAvailable)
     : playerMenu === 'audio'
     ? audioTracks.length
     : playerMenu === 'subtitles' ? subtitleChoices.length : 3
@@ -2482,6 +2543,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         if (deviceSource) selectLinkedDeviceSource(deviceSource)
         else if (deviceSourceChangeAvailable
           && playerMenuFocus === sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0)) void requestLinkedDeviceSources()
+        else if (cloudSourceChangeAvailable
+          && playerMenuFocus === sourceChoices.length + (deviceSourceOptions?.choices.length ?? 0) + Number(deviceSourceChangeAvailable)) void refreshCloudSources()
       }
     } else if (playerMenu === 'audio') {
       const track = audioTracks[playerMenuFocus]
@@ -3563,6 +3626,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           deviceSourceOptions={deviceSourceOptions}
           activeSourceId={activeSourceId}
           deviceSourceChangeAvailable={deviceSourceChangeAvailable}
+          cloudSourceChangeAvailable={cloudSourceChangeAvailable}
+          refreshingSources={refreshingSources}
+          onCloudSources={() => void refreshCloudSources()}
           audioTracks={audioTracks}
           subtitleChoices={subtitleChoices}
           activeAudio={activeAudio}

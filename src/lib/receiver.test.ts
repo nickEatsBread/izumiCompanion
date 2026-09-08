@@ -15,6 +15,7 @@ const transport = {
 }
 
 const media: CompanionMedia = {
+  runtimeMinutes: 120,
   ref: { provider: 'tmdb', type: 'movie', id: '550' },
   resolver: { streamType: 'movie' },
   title: 'Fight Club',
@@ -178,7 +179,7 @@ describe('TV search requests', () => {
 })
 
 describe('companion play routing', () => {
-  it('uses the TV home connection after a blocked Worker lookup, then resolves with the Worker', async () => {
+  it.each([false, true])('completes a blocked lookup while preserving partial choices: %s', async partial => {
     const sourceUrl = 'https://torrentio.strem.fun/stream/movie/tt0126029.json'
     FakeXmlHttpRequest.responder = request => {
       if (request.url === sourceUrl) return { status: 200, body: { streams: [{
@@ -186,12 +187,16 @@ describe('companion play routing', () => {
         __cache: 'cached', behaviorHints: { filename: 'Shrek.mkv', proxyHeaders: { request: { Cookie: 'secret' } } },
       }] } }
       const body = request.body as Record<string, unknown>
-      if (!body.tvSourceResults) return { status: 200, body: { ok: true, candidates: [],
+      if (!body.tvSourceResults) return { status: 200, body: { ok: true, selectedId: partial ? 'initial' : undefined,
+        candidates: partial ? [{ id: 'initial', url: 'https://media.example/initial.mkv', subtitles: [] }] : [],
         failures: ['Torrentio blocked the Worker (HTTP 403).'], tvSourceLookup: { version: 1, ticket: 'signed-ticket', requests: [{ id: 'torrentio-0-0', url: sourceUrl }] } } }
       return { status: 200, body: { ok: true, candidates: [{ id: 'torbox', url: 'https://cdn.example/Shrek.mkv', subtitles: [] }] } }
     }
     const result = await new CompanionReceiver(events()).requestPlay(media)
-    expect(result).toMatchObject({ kind: 'resolved', request: { url: 'https://cdn.example/Shrek.mkv' } })
+    expect(result).toMatchObject({ kind: 'resolved' })
+    if (typeof result === 'string' || result.kind !== 'resolved') throw new Error('Expected source choices')
+    expect(result.sources).toHaveLength(partial ? 2 : 1)
+    expect(new URL(result.request.url).hostname).toBe(partial ? 'media.example' : 'cdn.example')
     expect(FakeXmlHttpRequest.sent).toHaveLength(3)
     const [first, local, resumed] = FakeXmlHttpRequest.sent
     expect(first.body).toMatchObject({ tvSourceLookup: 1 })
@@ -1018,4 +1023,35 @@ it('aborts a cloud play lookup and ignores its delayed result after Back', async
   expect(aborted).toHaveBeenCalledOnce()
   expect(callbacks.onLoad).not.toHaveBeenCalled()
   expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+})
+
+it('loads missing feature runtime alongside source lookup for native duration validation', async () => {
+  FakeXmlHttpRequest.responder = request => ({ status: 200, body: request.url.endsWith('/details')
+    ? { ok: true, details: { runtimeMinutes: 120 } }
+    : { ok: true, candidates: [{ id: 'one', url: 'https://media.example/video.mp4' }] } })
+  const result = await new CompanionReceiver(events()).requestPlay({ ...media, title: 'Example', runtimeMinutes: undefined })
+  expect(result).toMatchObject({ kind: 'resolved', request: { media: { runtimeMinutes: 120 } } })
+  expect(FakeXmlHttpRequest.sent).toHaveLength(2)
+})
+
+it('requests more cloud choices without loading video or contacting a linked client', async () => {
+  FakeXmlHttpRequest.responder = () => ({ status: 200, body: { ok: true, candidates: [{ id: 'second', url: 'https://media.example/second.mp4' }] } })
+  const callbacks = events()
+  const receiver = new CompanionReceiver(callbacks)
+  const result = await receiver.requestPlay({ ...media, title: 'Example' }, ['first'])
+  expect(result).toMatchObject({ kind: 'resolved', sources: [{ id: 'second' }] })
+  expect(FakeXmlHttpRequest.sent[0].body).toMatchObject({ excludeCandidateIds: ['first'] })
+  expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+  expect(callbacks.onLoad).not.toHaveBeenCalled()
+})
+
+it('cancels both metadata and source lookup when leaving initial loading', async () => {
+  const aborted = vi.spyOn(FakeXmlHttpRequest.prototype, 'abort').mockClear()
+  FakeXmlHttpRequest.responder = () => ({ status: 200, delay: 5_000, body: { ok: true } })
+  const receiver = new CompanionReceiver(events())
+  const pending = receiver.requestPlay({ ...media, title: 'Example', runtimeMinutes: undefined })
+  receiver.cancelPlay()
+  expect(await pending).toBe('no-source')
+  expect(aborted).toHaveBeenCalledTimes(2)
+  await vi.advanceTimersByTimeAsync(6_000)
 })
