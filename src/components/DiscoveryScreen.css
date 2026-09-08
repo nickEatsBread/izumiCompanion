@@ -1,25 +1,63 @@
-.tv-discovery { position:absolute; inset:0; padding:50px 92px; color:#f5f5f5; background:#101214; overflow:auto; }
-.tv-discovery-backdrop,.tv-discovery-shade { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; pointer-events:none; }
-.tv-discovery-shade { background:linear-gradient(90deg,#0c0d10 15%,rgba(12,13,16,.93) 50%,rgba(12,13,16,.47) 100%),linear-gradient(0deg,#0c0d10,transparent); }
-.tv-discovery header,.tv-discovery-content,.tv-discovery-actions,.tv-discovery-notice { position:relative; }
-.tv-discovery header { display:flex; justify-content:space-between; align-items:center; margin-bottom:34px; }
-.tv-discovery header>span { font-size:20px; letter-spacing:4px; }
-.tv-discovery header small { font-size:18px; color:#afb2ba; }
-.tv-discovery-content { display:flex; align-items:center; justify-content:space-between; min-height:490px; }
-.tv-discovery-info { width:70%; max-width:1150px; padding-right:60px; }
-.tv-discovery h1 { font-size:52px; font-weight:700; line-height:1.12; letter-spacing:-1.5px; margin:0 0 22px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-.tv-discovery-meta { font-size:21px; color:#cacbd0; margin:0 0 24px; line-height:1.6; }
-.tv-discovery-description { font-size:23px; line-height:1.65; color:#cacbd0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-.tv-discovery-why { border-top:1px solid rgba(255,255,255,.15); padding-top:22px; margin-top:26px; }
-.tv-discovery-why h2 { font-size:18px; color:#aaaeb8; margin:0 0 12px; }
-.tv-discovery-why strong { font-size:22px; font-weight:500; }
-.tv-discovery-why p { font-size:18px; line-height:1.6; color:#aaaeb8; max-width:900px; }
-.tv-discovery-poster { width:270px; height:405px; object-fit:cover; border-radius:12px; margin-right:24px; }
-.tv-discovery-actions { display:flex; flex-wrap:wrap; margin:32px -7px 0; max-width:1240px; }
-.tv-discovery-actions button { width:calc(25% - 14px); margin:7px; min-height:64px; background:rgba(34,37,43,.87); color:#d8d9df; border:2px solid transparent; border-radius:8px; font:inherit; font-size:20px; display:flex; align-items:center; justify-content:center; outline:none; }
-.tv-discovery-actions button svg { margin-right:12px; }
-.tv-discovery-actions button:disabled { opacity:.4; }
-.tv-discovery-actions .discovery-focused { background:#f6f6f7; border-color:#fff; color:#101214; box-shadow:0 0 0 4px rgba(255,255,255,.2); }
-.tv-discovery-notice { min-height:32px; color:#b4b7c0; font-size:18px; margin-top:18px; }
-.tv-discovery-close { position:absolute; right:40px; top:30px; z-index:200; padding:15px 22px; background:white; color:#111; border:0; border-radius:6px; font-size:20px; }
-@media(max-height:800px) { .tv-discovery { padding:30px 65px; } .tv-discovery-content { min-height:340px; } .tv-discovery h1 { font-size:40px; } .tv-discovery-description { font-size:19px; -webkit-line-clamp:2; } .tv-discovery-meta { font-size:17px; margin-bottom:15px; } .tv-discovery-why { margin-top:18px; padding-top:15px; } .tv-discovery-why p { font-size:15px; } .tv-discovery-why strong { font-size:18px; } .tv-discovery-poster { width:205px; height:308px; } .tv-discovery-actions { margin-top:16px; max-width:1020px; } .tv-discovery-actions button { min-height:50px; font-size:17px; } .tv-discovery-notice { font-size:15px; } }
+.tv-discovery { position:absolute; top:0; right:0; bottom:0; left:0; padding:38px 84px 24px; color:#f5f5f5; background:#101214; overflow:auto; }
+.tv-discovery-browse { position:relative; min-height:100%; }
+.tv-discovery.has-trailer-open .tv-discovery-browse { visibility:hidden; }
+.tv-discovery-art { position:absolute; top:-38px; right:-84px; left:-84px; height:610px; overflow:hidden; pointer-events:none; }
+.tv-discovery-art img { width:100%; height:100%; object-fit:cover; object-position:center top; }
+.tv-discovery-art::after { content:''; position:absolute; top:0; right:0; bottom:0; left:0; background:linear-gradient(0deg,#101214,rgba(16,18,20,0) 45%); }
+.tv-discovery-art.is-poster { width:38%; top:0; right:0; left:auto; height:480px; }
+.tv-discovery-art.is-poster img { object-fit:contain; }
+.tv-discovery-no-art { height:100%; width:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#a8aeb9; font-size:17px; }
+.tv-discovery-no-art>span { margin-top:12px; }
+.tv-discovery-shade { position:absolute; top:-38px; right:-84px; bottom:0; left:-84px; pointer-events:none; background:linear-gradient(90deg,#101214 8%,rgba(16,18,20,.94) 29%,rgba(16,18,20,.6) 55%,rgba(16,18,20,.12) 90%),linear-gradient(0deg,#101214 37%,rgba(16,18,20,0) 86%); }
+.tv-discovery-header,.tv-discovery-content,.tv-discovery-actions,.tv-discovery-rail,.tv-discovery-notice { position:relative; }
+.tv-discovery-header { display:flex; justify-content:space-between; align-items:center; height:70px; margin-bottom:14px; }
+.tv-discovery-header h2 { font-size:34px; font-weight:800; letter-spacing:-1px; margin:0; }
+.tv-discovery-header p { font-size:19px; color:#b9bdc6; margin:6px 0 0; }
+.tv-discovery-header>small { font-size:19px; padding:10px 16px; border-radius:8px; background:rgba(16,18,20,.85); }
+.tv-discovery-content { height:338px; }
+.tv-discovery-info { width:61%; padding-top:10px; }
+.tv-discovery-eyebrow { display:flex; align-items:center; font-size:16px; font-weight:700; color:#d6d9e1; margin:0 0 10px; }
+.tv-discovery-eyebrow svg { margin-right:10px; }
+.tv-discovery-title { height:100px; position:relative; display:flex; align-items:center; margin-bottom:13px; }
+.tv-discovery-title img { width:520px; max-width:100%; height:100px; object-fit:contain; object-position:left center; }
+.tv-discovery h1 { font-size:46px; font-weight:800; line-height:1.14; letter-spacing:-1px; margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.tv-discovery .discovery-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.tv-discovery-meta { font-size:21px; color:#eceef2; margin:0 0 7px; line-height:1.5; }
+.tv-discovery-genres { font-size:20px; color:#c2c7d1; margin:0 0 14px; line-height:1.5; }
+.tv-discovery-rating { color:#fff; font-weight:700; }
+.tv-discovery-rating svg { vertical-align:-2px; margin-right:5px; }
+.tv-discovery-description { font-size:22px; line-height:1.55; color:#d0d3db; max-width:990px; margin:0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.tv-discovery-why { position:absolute; right:0; bottom:16px; width:31%; border-top:1px solid rgba(255,255,255,.28); padding:18px 20px; background:rgba(16,18,20,.8); }
+.tv-discovery-why h2 { display:flex; align-items:center; font-size:17px; color:#c8cbd4; margin:0 0 10px; }
+.tv-discovery-why h2 svg { margin-right:9px; }
+.tv-discovery-why strong { font-size:22px; line-height:1.45; font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.tv-discovery-why p { font-size:18px; line-height:1.5; color:#b8bdc7; margin:8px 0 0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.tv-discovery-actions { display:flex; flex-wrap:wrap; margin:14px -7px 0; width:1260px; max-width:100%; }
+.tv-discovery-actions button { width:calc(25% - 14px); margin:6px 7px; min-height:56px; background:rgba(34,37,43,.94); color:#e1e3e9; border:2px solid transparent; border-radius:8px; font:inherit; font-size:20px; display:flex; align-items:center; justify-content:center; outline:none; }
+.tv-discovery-actions button svg { margin-right:10px; flex-shrink:0; }
+.tv-discovery-actions button:disabled,.tv-discovery-paging button:disabled { opacity:.4; }
+.tv-discovery-actions .is-trailer-action:not(:disabled) { border-color:rgba(255,255,255,.62); }
+.tv-discovery .discovery-focused { background:#f6f6f7; border-color:#fff; color:#101214; box-shadow:0 0 0 4px rgba(255,255,255,.26); }
+.tv-discovery-rail { margin-top:16px; }
+.tv-discovery-rail-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; height:52px; }
+.tv-discovery-rail-heading h2 { font-size:25px; margin:0; }
+.tv-discovery-rail-heading h2 small { font-size:17px; color:#afb5c0; font-weight:400; margin-left:22px; }
+.tv-discovery-paging { display:flex; align-items:center; }
+.tv-discovery-paging>span { color:#bac0cc; font-size:18px; margin-right:15px; }
+.tv-discovery-paging button { display:flex; align-items:center; justify-content:center; margin-left:10px; width:52px; height:48px; border:2px solid #42464f; border-radius:8px; background:#1c1f25; color:#f5f5f5; }
+.tv-discovery-paging button.discovery-focused { color:#101214; background:#f6f6f7; border-color:#fff; }
+.tv-discovery-tiles { display:flex; padding:0; margin:0 -9px; list-style:none; }
+.tv-discovery-tiles>li { width:20%; padding:0 9px; min-width:0; }
+.tv-discovery-tile { display:block; width:100%; padding:5px; border:2px solid transparent; border-radius:10px; background:transparent; color:#e2e5ed; text-align:left; }
+.tv-discovery-tile.is-featured { border-color:#727985; }
+.tv-discovery-tile.discovery-focused { background:#f6f6f7; color:#101214; border-color:#fff; }
+.tv-discovery-tile-art { height:155px; overflow:hidden; border-radius:6px; background:#252931; }
+.tv-discovery-tile-art img { height:100%; width:100%; object-fit:cover; }
+.tv-discovery-tile-art.is-poster img { object-fit:contain; }
+.tv-discovery-tile-title { display:block; font-size:21px; font-weight:700; margin-top:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tv-discovery-tile-meta { display:block; font-size:17px; color:#b0b6c2; margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tv-discovery-tile.discovery-focused .tv-discovery-tile-meta { color:#414753; }
+.tv-discovery-notice { min-height:26px; color:#b4bac5; font-size:17px; margin:15px 0 0; line-height:1.5; }
+.tv-discovery-close { position:absolute; right:40px; top:30px; z-index:200; padding:15px 22px; background:white; color:#111; border:2px solid transparent; border-radius:6px; font-size:20px; min-height:56px; }
+.tv-discovery-close:focus { border-color:#fff; box-shadow:0 0 0 4px rgba(255,255,255,.4); }
+@media(prefers-reduced-motion:reduce) { .tv-discovery * { scroll-behavior:auto; transition:none; animation:none; } }
