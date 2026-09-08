@@ -1425,7 +1425,7 @@ async function main() {
       shade: getComputedStyle(document.querySelector('.tv-discovery-shade')).backgroundImage,
       buttonFill: getComputedStyle(document.querySelector('.tv-discovery-actions button:nth-child(3)')).backgroundColor,
       actions: document.querySelectorAll('.tv-discovery-actions button').length,
-      why: document.querySelector('.tv-discovery-why h2').textContent,
+      why: document.querySelector('.tv-discovery-why h2').textContent.trim(),
       lastBottom: document.querySelector('.tv-discovery-notice').getBoundingClientRect().bottom
     }))()`)
     assert(discoveryGeometry.width === 1920 && discoveryGeometry.actions === 8 && discoveryGeometry.lastBottom < 1080, 'Discover is clipped: ' + JSON.stringify(discoveryGeometry))
