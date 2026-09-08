@@ -1,5 +1,4 @@
 export const WORKER_UPDATE_REMOTE = 'izumi:worker-update-remote'
-export const WORKER_UPDATE_GUIDE = 'https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker#updating'
 
 export interface WorkerUpdateStatus {
   version: string
@@ -27,9 +26,9 @@ export function parseWorkerUpdateStatus(value: Record<string, unknown>): WorkerU
 
 export function workerUpdateMessage(status: WorkerUpdateStatus): string {
   switch (status.phase) {
-    case 'setup-required': return 'Set up automatic updates once using the guide.'
+    case 'setup-required': return 'Update this Worker from Izumi. Future updates will then install automatically.'
     case 'queued': return `Worker ${status.latestVersion} update requested. Waiting for installation…`
-    case 'delayed': return 'The update is taking longer than expected. Check Cloudflare Builds.'
+    case 'delayed': return 'The update is taking longer than expected. Your Worker will retry automatically.'
     case 'checking': return 'Your Worker is checking for an update…'
     case 'current': return `Worker ${status.version} is up to date.`
     case 'available': return `Worker ${status.latestVersion} is available.`
@@ -61,10 +60,10 @@ export function checkWorkerVersion(endpoint: string): Promise<string> {
           || !/^\d+\.\d+\.\d+$/.test(status.version)) throw new Error('invalid status')
         resolve(status.version)
       } catch {
-        reject(new Error('The Worker version could not be verified. You can still follow the update guide.'))
+        reject(new Error('The Worker version could not be verified. Try checking again.'))
       }
     }
-    request.onerror = () => reject(new Error('The TV could not reach your Worker. You can still follow the update guide.'))
+    request.onerror = () => reject(new Error('The TV could not reach your Worker. Try checking again.'))
     request.ontimeout = () => reject(new Error('The Worker did not respond in time. Try checking again.'))
     request.send()
   })

@@ -1,8 +1,7 @@
 import { ArrowLeft, Cloud, RefreshCw } from 'lucide-preact'
 import { useLayoutEffect, useRef, useState } from 'preact/hooks'
-import QRCode from 'qrcode'
 import type { RemoteAction } from '../lib/remote'
-import { workerUpdateMessage, type WorkerUpdateStatus, WORKER_UPDATE_GUIDE, WORKER_UPDATE_REMOTE } from '../lib/worker-update'
+import { workerUpdateMessage, type WorkerUpdateStatus, WORKER_UPDATE_REMOTE } from '../lib/worker-update'
 import './ClientLinkScreen.css'
 
 export function WorkerUpdateScreen({ endpoint, update, onBack }: {
@@ -11,7 +10,6 @@ export function WorkerUpdateScreen({ endpoint, update, onBack }: {
   onBack(): void
 }) {
   const [focus, setFocus] = useState(0)
-  const [qr, setQr] = useState('')
   const [checking, setChecking] = useState(true)
   const [status, setStatus] = useState<WorkerUpdateStatus | null>(null)
   const [error, setError] = useState('')
@@ -34,14 +32,10 @@ export function WorkerUpdateScreen({ endpoint, update, onBack }: {
   }
 
   useLayoutEffect(() => {
-    let mounted = true
     busy.current = false
     setStatus(null)
     check()
-    void QRCode.toDataURL(WORKER_UPDATE_GUIDE, { width: 480, margin: 4 }).then(value => {
-      if (mounted) setQr(value)
-    }).catch(() => {})
-    return () => { mounted = false; generation.current += 1; cancellation.current.cancel?.() }
+    return () => { generation.current += 1; cancellation.current.cancel?.() }
   }, [endpoint])
 
   useLayoutEffect(() => {
@@ -69,32 +63,22 @@ export function WorkerUpdateScreen({ endpoint, update, onBack }: {
   return <main class="client-link-screen" aria-label="Update Worker">
     <header class="client-link-heading"><p>PRIVATE CLOUDFLARE</p><h1>Update Worker</h1>
       <span>Keep your existing Worker, saved progress and TV connection.</span></header>
-    <div class="client-link-content">
+    <div class="client-link-content" style={{ gridTemplateColumns: '1fr' }}>
       <section class="client-link-instructions">
-        <h2>{status?.configured ? 'Update directly from your TV' : 'Enable updates once'}</h2>
+        <h2>Automatic Worker updates</h2>
         <div class="client-link-methods">
           {status?.configured ? <>
-            <p>Select <strong>Update now</strong> to install the latest stable Worker.</p>
+            <p>Your Worker installs stable updates from Izumi automatically.</p>
             <p>{status.automatic ? 'Automatic checks run every six hours, even with your TV switched off.' : 'Automatic updates are paused in Cloudflare settings.'}</p>
-            <p>You can leave this screen while Cloudflare installs the update.</p>
-          </> : <>
-            <p>1. Scan the guide on your phone or computer.</p>
-            <p>2. Connect your existing Worker to automatic releases in Cloudflare.</p>
-            <p>3. Return here to update from the TV whenever you want.</p>
-          </>}
+            <p>Select <strong>Update now</strong> to check sooner. You can leave this screen while it installs.</p>
+          </> : status ? <p>Update this Worker from Izumi. That update enables future automatic updates.</p>
+            : <p>Checking automatic update status…</p>}
         </div>
-        <p class="client-link-note">After setup, no API token is needed on the TV or for each update.</p>
         <div class={`client-link-status${error || status?.phase === 'error' ? ' is-error' : ''}`} role="status" aria-live="polite">
           <Cloud size={30} /><span>{checking ? 'Checking your Worker…' : error || (status ? workerUpdateMessage(status) : 'Worker status unavailable.')}
             <small>{status ? `Installed Worker version ${status.version}` : 'Your existing Worker address and device pairing stay in place.'}</small></span>
         </div>
       </section>
-      <aside class="client-link-code-panel" aria-label="Worker update guide">
-        <div class="client-link-qr">{qr ? <img src={qr} alt="Scan to open the Worker update guide" />
-          : <div class="client-link-qr-placeholder"><Cloud size={40} /><span>Use the address below for the guide.</span></div>}</div>
-        <div class="client-link-address"><span>Update guide</span><strong>github.com/nickEatsBread/izumi</strong></div>
-        <p class="client-link-note">Open cloudflare-sync-worker → Updating.</p>
-      </aside>
     </div>
     <footer class="client-link-actions">
       <button ref={element => { buttons.current[0] = element }} type="button" class={focus === 0 ? 'is-focused' : ''} tabIndex={focus === 0 ? 0 : -1}

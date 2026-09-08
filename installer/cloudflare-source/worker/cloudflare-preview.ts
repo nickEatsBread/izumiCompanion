@@ -127,13 +127,15 @@ async function ensureSubdomain(token: string, accountId: string): Promise<string
   throw new Error('Cloudflare could not create the private workers.dev address.')
 }
 
-async function uploadWorker(token: string, target: DeploymentTarget, bootstrapSecret: string): Promise<void> {
+async function uploadWorker(token: string, target: DeploymentTarget, bootstrapSecret: string, permanent: boolean): Promise<void> {
   const metadata = {
     main_module: 'worker.mjs',
     bindings: [
       { type: 'd1', name: 'DB', id: target.databaseId },
       { type: 'secret_text', name: 'BOOTSTRAP_SECRET', text: bootstrapSecret },
+      ...(permanent ? [{ type: 'secret_text', name: 'WORKER_UPDATE_AUTH', text: JSON.stringify({ apiToken: token, ...target }) }] : []),
     ],
+    keep_bindings: ['secret_text', 'plain_text'],
     compatibility_date: izumiArtifacts.compatibilityDate,
     compatibility_flags: ['nodejs_compat'],
     annotations: {
@@ -145,6 +147,17 @@ async function uploadWorker(token: string, target: DeploymentTarget, bootstrapSe
   form.set('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }))
   form.set('worker.mjs', new Blob([izumiArtifacts.workerBundle], { type: 'application/javascript+module' }), 'worker.mjs')
   await apiSuccess(`/accounts/${target.accountId}/workers/scripts/${target.scriptName}`, { method: 'PUT', body: form }, token)
+}
+
+async function ensureUpdateSchedule(token: string, target: DeploymentTarget): Promise<void> {
+  const path = `/accounts/${target.accountId}/workers/scripts/${target.scriptName}/schedules`
+  const result = await apiJson<{ schedules: { cron: string }[] }>(path, {}, token)
+  if (!Array.isArray(result?.schedules)) throw new Error('Cloudflare returned invalid Worker schedules.')
+  const schedules = result.schedules.map(({ cron }) => ({ cron }))
+  if (schedules.some(({ cron }) => cron === '17 */6 * * *')) return
+  await apiSuccess(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify([...schedules, { cron: '17 */6 * * *' }]),
+  }, token)
 }
 
 async function enableSubdomain(token: string, target: DeploymentTarget): Promise<void> {
@@ -194,7 +207,7 @@ export async function deployPreview(input: unknown): Promise<PreviewDeployment> 
   const token = preview.account.apiToken
   const accountId = preview.account.id
   if (!TOKEN_PATTERN.test(token) || !/^[a-f0-9]{32}$/i.test(accountId)) throw new Error('Cloudflare returned invalid temporary deployment credentials.')
-  const result = await deployAuthenticated(token, accountId, String(value.bootstrapSecret))
+  const result = await deployAuthenticated(token, accountId, String(value.bootstrapSecret), false)
   return { ...result, claimUrl: preview.claim.url, claimExpiresAt: preview.claim.expiresAt }
 }
 
@@ -217,10 +230,10 @@ export async function deployWithApiToken(input: unknown): Promise<PreviewDeploym
   if (!/^[a-f0-9]{32}$/i.test(accountId)) throw new Error('Choose the Cloudflare account to deploy into.')
   if (!TOKEN_PATTERN.test(String(value?.bootstrapSecret || ''))) throw new Error('The browser setup secret is invalid.')
   if (value?.acceptTerms !== true) throw new Error('Accept Cloudflare terms before deploying.')
-  return deployAuthenticated(token, accountId, String(value.bootstrapSecret))
+  return deployAuthenticated(token, accountId, String(value.bootstrapSecret), true)
 }
 
-async function deployAuthenticated(token: string, accountId: string, bootstrapSecret: string): Promise<PreviewDeployment> {
+async function deployAuthenticated(token: string, accountId: string, bootstrapSecret: string, permanent: boolean): Promise<PreviewDeployment> {
   const target: DeploymentTarget = { accountId, scriptName: `izumi-sync-${randomHex(4)}`, databaseId: '' }
   let createdDatabase = false
   try {
@@ -234,7 +247,8 @@ async function deployAuthenticated(token: string, accountId: string, bootstrapSe
     createdDatabase = true
     await applyMigrations(token, target)
     const subdomain = await ensureSubdomain(token, accountId)
-    await uploadWorker(token, target, bootstrapSecret)
+    await uploadWorker(token, target, bootstrapSecret, permanent)
+    if (permanent) await ensureUpdateSchedule(token, target)
     await enableSubdomain(token, target)
     const endpoint = `https://${target.scriptName}.${subdomain}.workers.dev`
     await waitForWorker(endpoint)

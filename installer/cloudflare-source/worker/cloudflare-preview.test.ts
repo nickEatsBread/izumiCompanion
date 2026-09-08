@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deploymentAccounts, deployWithApiToken } from './cloudflare-preview'
+import { deploymentAccounts, deployWithApiToken, deployPreview } from './cloudflare-preview'
 
 afterEach(() => vi.unstubAllGlobals())
 const credentials = { apiToken: 't'.repeat(40), accountId: 'a'.repeat(32), bootstrapSecret: 's'.repeat(43), acceptTerms: true }
@@ -25,12 +25,20 @@ describe('authenticated Cloudflare setup', () => {
       expect(new Headers(init.headers).get('Authorization')).toBe('Bearer ' + credentials.apiToken)
       if (url.endsWith('/d1/database')) return Response.json({ success: true, result: { uuid: db } })
       if (url.endsWith('/workers/subdomain')) { expect(init.method).toBeUndefined(); return Response.json({ success: true, result: { subdomain: 'existing-account' } }) }
+      if (url.endsWith('/schedules') && !init.method) return Response.json({ success: true, result: { schedules: [{ cron: '0 0 * * *' }] } })
       if (url.endsWith('/query')) return Response.json({ success: true, result: [] })
       return Response.json({ success: true, result: null })
     }))
     const result = await deployWithApiToken(credentials)
     expect(result.endpoint).toMatch(/^https:\/\/izumi-sync-[a-f0-9]+\.existing-account\.workers\.dev$/)
     expect(result.claimUrl).toBeUndefined()
+    const upload = calls.find(call => call.init.body instanceof FormData)!
+    const metadata = JSON.parse(await ((upload.init.body as FormData).get('metadata') as Blob).text())
+    const secret = metadata.bindings.find((binding: { name: string }) => binding.name === 'WORKER_UPDATE_AUTH')
+    expect(secret.type).toBe('secret_text')
+    expect(JSON.parse(secret.text)).toEqual({ apiToken: credentials.apiToken, ...result.deployment })
+    const schedule = calls.find(call => call.url.endsWith('/schedules') && call.init.method === 'PUT')!
+    expect(JSON.parse(schedule.init.body as string)).toEqual([{ cron: '0 0 * * *' }, { cron: '17 */6 * * *' }])
     expect(JSON.stringify(result)).not.toContain(credentials.apiToken)
     expect(calls.some(call => call.url.includes('/provisioning/'))).toBe(false)
     expect(calls.length).toBeLessThan(30)
@@ -49,4 +57,24 @@ describe('authenticated Cloudflare setup', () => {
     expect(calls.some(call => call.method === 'PUT')).toBe(false)
     expect(calls.some(call => call.method === 'DELETE' && call.url.endsWith('/' + db))).toBe(true)
   })
+  it('does not retain temporary account credentials or schedule updates before durable authorization', async () => {
+    let metadata: { bindings: { name: string }[] } | undefined
+    const fetcher = vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (url.endsWith('/provisioning/previews')) return Response.json({ success: true, result: {
+        account: { id: credentials.accountId, apiToken: credentials.apiToken },
+        claim: { url: 'https://dash.cloudflare.com/claim/example', expiresAt: '2026-09-09T00:00:00Z' },
+      } })
+      if (url.endsWith('/v1/status')) return Response.json({ app: 'izumi-sync' })
+      if (url.endsWith('/d1/database')) return Response.json({ success: true, result: { uuid: db } })
+      if (url.endsWith('/workers/subdomain')) return Response.json({ success: true, result: { subdomain: 'existing-account' } })
+      if (url.endsWith('/query')) return Response.json({ success: true, result: [] })
+      if (init.body instanceof FormData) metadata = JSON.parse(await (init.body.get('metadata') as Blob).text())
+      return Response.json({ success: true })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    await deployPreview({ ...credentials, challengeToken: 'c'.repeat(32), checkpoints: 'A'.repeat(64) })
+    expect(metadata!.bindings.map(binding => binding.name)).toEqual(['DB', 'BOOTSTRAP_SECRET'])
+    expect(fetcher.mock.calls.some(([url]) => url.endsWith('/schedules'))).toBe(false)
+  })
+
 })
