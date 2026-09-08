@@ -144,6 +144,47 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('TV Worker updates', () => {
+  const status = { version: '1.12.0', configured: true, automatic: true, phase: 'queued', latestVersion: '1.13.0', error: '' }
+  it('uses the existing pairing credential and only POSTs for an explicit update', async () => {
+    const receiver = new CompanionReceiver(events())
+    FakeXmlHttpRequest.responder = () => ({ status: 200, body: status })
+    const checking = receiver.workerUpdate()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(await checking).toEqual(status)
+    expect(FakeXmlHttpRequest.sent[0]).toMatchObject({ method: 'GET', url: `${transport.endpoint}/v1/companion/pairings/${transport.pairingId}/worker-update`, headers: { Authorization: `Bearer ${transport.tvToken}` } })
+    const updating = receiver.workerUpdate(true)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(await updating).toEqual(status)
+    expect(FakeXmlHttpRequest.sent[1]).toMatchObject({ method: 'POST', body: null })
+    receiver.disconnect()
+  })
+  it('shows one-time setup for older Workers without mistaking an auth failure for old firmware', async () => {
+    const receiver = new CompanionReceiver(events())
+    FakeXmlHttpRequest.responder = request => request.url.endsWith('/v1/status')
+      ? { status: 200, body: { app: 'izumi-sync', protocol: 1, version: '1.11.0' } } : { status: 404, body: {} }
+    const checking = receiver.workerUpdate()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(await checking).toMatchObject({ version: '1.11.0', phase: 'setup-required', configured: false })
+    FakeXmlHttpRequest.responder = () => ({ status: 401, body: { error: 'Authentication failed.' } })
+    const failed = expect(receiver.workerUpdate()).rejects.toThrow('Authentication failed')
+    await vi.advanceTimersByTimeAsync(10)
+    await failed
+    receiver.disconnect()
+  })
+  it('aborts an in-flight status request when leaving the update screen', async () => {
+    const receiver = new CompanionReceiver(events())
+    FakeXmlHttpRequest.responder = () => ({ status: 200, body: status, delay: 2000 })
+    const cancellation: { cancel?: () => void } = {}
+    const failed = expect(receiver.workerUpdate(false, cancellation)).rejects.toThrow('cancelled')
+    cancellation.cancel?.()
+    await failed
+    await vi.advanceTimersByTimeAsync(2100)
+    expect(cancellation.cancel).toBeUndefined()
+    receiver.disconnect()
+  })
+})
+
 describe('TV search requests', () => {
   it('cancels stale queries and reuses completed results', async () => {
     const handlers = events(), receiver = new CompanionReceiver(handlers)

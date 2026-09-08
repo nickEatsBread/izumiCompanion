@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { checkWorkerVersion } from './worker-update'
+import { checkWorkerVersion, parseWorkerUpdateStatus, workerUpdateMessage } from './worker-update'
 
 class RequestMock {
   static requests: RequestMock[] = []
@@ -22,6 +22,13 @@ beforeEach(() => { RequestMock.requests = []; vi.stubGlobal('XMLHttpRequest', Re
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Companion Worker version check', () => {
+  it('distinguishes a requested build from a confirmed installed version', () => {
+    const pending = parseWorkerUpdateStatus({ version: '1.12.0', configured: true, automatic: true, phase: 'queued', latestVersion: '1.13.0' })
+    expect(workerUpdateMessage(pending)).toContain('Waiting for installation')
+    expect(workerUpdateMessage(pending)).not.toContain('up to date')
+    expect(workerUpdateMessage({ ...pending, phase: 'current', version: '1.13.0' })).toBe('Worker 1.13.0 is up to date.')
+    expect(() => parseWorkerUpdateStatus({ phase: 'current' })).toThrow('could not be verified')
+  })
   it('reads the linked Worker public status without transmitting credentials', async () => {
     const checking = checkWorkerVersion('https://private.example.workers.dev')
     const request = RequestMock.requests[0]

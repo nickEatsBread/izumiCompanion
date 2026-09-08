@@ -16,6 +16,7 @@ import { isCompanionSnapshot } from '../types'
 import { validCatalogOptions } from './catalog-navigation'
 import { cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
 import { resolveWithTvSourceLookup } from './tv-source-lookup'
+import { parseWorkerUpdateStatus, type WorkerUpdateStatus } from './worker-update'
 import {
   clearPlaybackProgress,
   mergePlaybackProgress,
@@ -961,6 +962,21 @@ export class CompanionReceiver {
   /** Public status checks need only the address, never the TV pairing credential. */
   get workerEndpoint(): string {
     return this.cloudflare?.endpoint ?? ''
+  }
+
+  async workerUpdate(trigger = false, cancellation?: { cancel?: () => void }): Promise<WorkerUpdateStatus> {
+    const transport = this.cloudflare
+    if (!transport) throw new Error('Connect this TV to your private Worker first.')
+    try {
+      return parseWorkerUpdateStatus(await workerRequest(transport,
+        `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/worker-update`,
+        trigger ? 'POST' : 'GET', undefined, 25_000, cancellation))
+    } catch (error) {
+      if (!(error instanceof WorkerRequestError) || error.status !== 404) throw error
+      const status = await workerRequest(transport, '/v1/status', 'GET', undefined, 10_000, cancellation)
+      if (status.app !== 'izumi-sync' || status.protocol !== 1) throw new Error('The private Worker could not be verified.')
+      return parseWorkerUpdateStatus({ version: status.version, configured: false, automatic: false, phase: 'setup-required' })
+    }
   }
 
   /** Persist the TV-scoped capability received through the stateless phone handoff. */

@@ -1,6 +1,43 @@
 export const WORKER_UPDATE_REMOTE = 'izumi:worker-update-remote'
 export const WORKER_UPDATE_GUIDE = 'https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker#updating'
 
+export interface WorkerUpdateStatus {
+  version: string
+  configured: boolean
+  automatic: boolean
+  phase: 'setup-required' | 'unchecked' | 'checking' | 'queued' | 'delayed' | 'error' | 'available' | 'current'
+  latestVersion: string
+  error: string
+  retryAt?: number
+}
+
+export function parseWorkerUpdateStatus(value: Record<string, unknown>): WorkerUpdateStatus {
+  if (typeof value.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(value.version)
+    || typeof value.configured !== 'boolean' || typeof value.automatic !== 'boolean'
+    || !['setup-required', 'unchecked', 'checking', 'queued', 'delayed', 'error', 'available', 'current'].includes(String(value.phase))) {
+    throw new Error('The Worker update status could not be verified.')
+  }
+  return { version: value.version, configured: value.configured, automatic: value.automatic,
+    phase: value.phase as WorkerUpdateStatus['phase'],
+    latestVersion: typeof value.latestVersion === 'string' && /^\d+\.\d+\.\d+$/.test(value.latestVersion) ? value.latestVersion : '',
+    error: typeof value.error === 'string' ? value.error : '',
+    ...(typeof value.retryAt === 'number' && Number.isFinite(value.retryAt) ? { retryAt: value.retryAt } : {}),
+  }
+}
+
+export function workerUpdateMessage(status: WorkerUpdateStatus): string {
+  switch (status.phase) {
+    case 'setup-required': return 'Set up automatic updates once using the guide.'
+    case 'queued': return `Worker ${status.latestVersion} update requested. Waiting for installation…`
+    case 'delayed': return 'The update is taking longer than expected. Check Cloudflare Builds.'
+    case 'checking': return 'Your Worker is checking for an update…'
+    case 'current': return `Worker ${status.version} is up to date.`
+    case 'available': return `Worker ${status.latestVersion} is available.`
+    case 'error': return status.error || 'The update could not be confirmed. Try checking again.'
+    default: return `Worker ${status.version} is installed. Select Update now to check for a stable release.`
+  }
+}
+
 /** Read-only check. Cloudflare administration stays on the owner's phone or computer. */
 export function checkWorkerVersion(endpoint: string): Promise<string> {
   return new Promise((resolve, reject) => {

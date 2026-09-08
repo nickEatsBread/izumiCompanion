@@ -3553,7 +3553,11 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         />
       )}
       {screen === 'worker-update' && (
-        <WorkerUpdateScreen endpoint={receiverRef.current?.workerEndpoint ?? ''} onBack={closeWorkerUpdate} />
+        <WorkerUpdateScreen endpoint={receiverRef.current?.workerEndpoint ?? ''}
+          update={(trigger, cancellation) => {
+            const receiver = receiverRef.current
+            return receiver ? receiver.workerUpdate(trigger, cancellation) : Promise.reject(new Error('The Worker connection is unavailable.'))
+          }} onBack={closeWorkerUpdate} />
       )}
       {screen === 'client-link' && (
         <ClientLinkScreen
