@@ -83,8 +83,8 @@ android {
         applicationId "com.nicho.izumi.tvinstaller"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 242
-        versionName "0.2.42"
+        versionCode 243
+        versionName "0.2.43"
     }
     signingConfigs {
         release {
