@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyTrackHints, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './track-selection'
+import { applyTrackHints, decodableAudioTrack, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './track-selection'
 
 describe('receiver track matching', () => {
   const tracks = [
@@ -54,4 +54,23 @@ describe('receiver track matching', () => {
 it('keeps descriptive names even when they already contain the language', () => {
   expect(subtitleTrackLabel('English SDH', 'eng', 0)).toBe('English SDH')
   expect(subtitleTrackLabel('English forced', 'eng', 1)).toBe('English forced')
+})
+
+describe('decodable audio track fallback', () => {
+  const dts = { type: 'AUDIO' as const, index: 1, language: 'eng', codec: 'DTSH', label: 'ENG · 6ch' }
+  const ac3 = { type: 'AUDIO' as const, index: 2, language: 'eng', codec: 'AC-3', label: 'ENG · 6ch' }
+  const jpnAac = { type: 'AUDIO' as const, index: 3, language: 'jpn', codec: 'AAC', label: 'JPN · 2ch' }
+
+  it('moves off a DTS default onto the decodable track in the same language', () => {
+    expect(decodableAudioTrack([dts, jpnAac, ac3], dts)).toBe(ac3)
+    expect(decodableAudioTrack([dts, jpnAac, ac3], undefined)).toBe(ac3)
+  })
+  it('accepts any decodable track when no same-language one exists', () => {
+    expect(decodableAudioTrack([dts, jpnAac], dts)).toBe(jpnAac)
+  })
+  it('leaves a decodable choice untouched and preserves an undefined choice on a decodable default', () => {
+    expect(decodableAudioTrack([ac3, dts], ac3)).toBe(ac3)
+    expect(decodableAudioTrack([ac3, dts], undefined)).toBeUndefined()
+    expect(decodableAudioTrack([{ ...dts, codec: 'TrueHD' }], dts)).toBe(dts)
+  })
 })

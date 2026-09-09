@@ -104,6 +104,29 @@ export function preferredExternalSubtitle(
   return match?.index
 }
 
+// Audio codecs this TV platform cannot decode in-app: DTS in every variant on 2018 and later
+// models, and TrueHD/MLP everywhere. A release commonly carries such a track first and a
+// decodable AC-3/AAC/E-AC-3 track beside it; Samsung's default is the first one.
+const UNDECODABLE_AUDIO = /dts|truehd|mlp/i
+const undecodableAudio = (track: PlaybackTrack) => UNDECODABLE_AUDIO.test(`${track.codec ?? ''} ${track.label}`)
+
+/** Keep the chosen (or default first) audio track unless the TV cannot decode it, in which case
+ * move to a decodable track in the same language, then any decodable track. Returns the input
+ * choice untouched when nothing needs to change, so callers keep their default-track behaviour. */
+export function decodableAudioTrack(
+  tracks: PlaybackTrack[],
+  chosen: PlaybackTrack | undefined,
+): PlaybackTrack | undefined {
+  const audio = tracks.filter((track) => track.type === 'AUDIO')
+  const current = chosen ?? audio[0]
+  if (!current || !undecodableAudio(current)) return chosen
+  const language = trackLanguageKey(current.language)
+  const alternatives = audio.filter((track) => track !== current && !undecodableAudio(track))
+  return alternatives.find((track) => !language || trackLanguageKey(track.language) === language)
+    ?? alternatives[0]
+    ?? chosen
+}
+
 /** Receiver track indexes are unrelated to mpv's indexes. Match descriptive sender metadata and
  * require at least one positive field so an empty preference never enables a random subtitle. */
 export function preferredTrack(
