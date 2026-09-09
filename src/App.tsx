@@ -67,6 +67,7 @@ import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController, plainSubtitleText, type SubtitleCueStyle } from './lib/subtitles'
 import { applyTrackHints, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
+import { earlyStartDelay, observeEarlyStart, type EarlyStartState } from './lib/early-start'
 import { TvLinkReceiver, type TvLinkInfo } from './lib/tv-link'
 import { installVoiceSearch } from './lib/voice-search'
 import { searchIsLoading, titleSuggestions } from './lib/search-suggestions'
@@ -400,6 +401,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const sourceRefreshRef = useRef(0)
   const cloudSourceChangeAvailable = sourceChoices.length < 60 && sourceChoices.some(choice => choice.request.sessionId.startsWith('cloud-'))
   const failedCloudSourcesRef = useRef<Set<string>>(new Set())
+  // Progressive cloud discovery: playback may begin from an early snapshot while the Worker keeps
+  // listing. These track that background lookup so a manual pick or Back never abandons the list.
+  const earlyStartRef = useRef<EarlyStartState>({})
+  const earlyStartTimerRef = useRef<number>()
+  const resolvePendingRef = useRef(false)
+  const resolveListingRef = useRef(0)
+  const autoStartRef = useRef(true)
+  const retryAfterResolveRef = useRef(false)
+  const [resolvingSources, setResolvingSources] = useState(false)
   const [deviceSourceOptions, setDeviceSourceOptions] = useState<LinkedDeviceSourceOptions | undefined>(previewLongMenus ? previewMenuDeviceSources : undefined)
   const [activeSourceId, setActiveSourceId] = useState<string | undefined>(previewLongMenus ? previewMenuSources[20].id : undefined)
   const [deviceSourceChangeAvailable, setDeviceSourceChangeAvailable] = useState(previewLongMenus)
@@ -806,6 +816,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     audioSelectionGenerationRef.current += 1
     manualAudioPreferenceRef.current = undefined
     playRequestGenerationRef.current += 1
+    endSourceListing()
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     stopSeekHold(undefined, false)
     // Publish the terminal state before clearing the authenticated sender session. Android uses
@@ -838,10 +849,59 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     } else setScreen(destination)
   }
 
-  const startAvPlay = async (request: CastLoadRequest) => {
+  const clearEarlyStart = () => {
+    if (earlyStartTimerRef.current == null) return
+    window.clearTimeout(earlyStartTimerRef.current)
+    earlyStartTimerRef.current = undefined
+  }
+
+  /** Forget the background source listing: a new title, a stop, or an explicit cancel. */
+  const endSourceListing = () => {
+    if (resolvePendingRef.current) receiverRef.current?.cancelPlay()
+    resolveListingRef.current += 1
+    resolvePendingRef.current = false
+    retryAfterResolveRef.current = false
+    setResolvingSources(false)
+    clearEarlyStart()
+  }
+
+  const chooseSource = (sources: PlaybackSourceChoice[], selectedId?: string) => {
+    const preferred = playbackSettings.preferBingeSource && currentSourceLabelRef.current
+      ? sources.find((source) => source.label.trim().toLowerCase() === currentSourceLabelRef.current.trim().toLowerCase())
+      : undefined
+    return preferred ?? sources.find((source) => source.id === selectedId) ?? sources[0]
+  }
+
+  /** The Worker's final ranking leads; earlier snapshot rows it dropped stay reachable at the end. */
+  const mergeSourceChoices = (sources: PlaybackSourceChoice[]) => {
+    const ids = new Set(sources.map((choice) => choice.id))
+    const merged = [...sources, ...sourceChoicesRef.current.filter((choice) => !ids.has(choice.id))].slice(0, 60)
+    sourceChoicesRef.current = merged
+    setSourceChoices(merged)
+  }
+
+  const scheduleEarlyStart = (generation: number, listing: number) => {
+    clearEarlyStart()
+    const delay = earlyStartDelay(earlyStartRef.current, tvNow())
+    if (delay == null) return
+    earlyStartTimerRef.current = window.setTimeout(() => {
+      earlyStartTimerRef.current = undefined
+      if (generation !== playRequestGenerationRef.current || listing !== resolveListingRef.current
+        || !autoStartRef.current || activeLoadRef.current) return
+      const choice = chooseSource(sourceChoicesRef.current, earlyStartRef.current.topId)
+      if (!choice) return
+      setActiveSourceId(choice.id)
+      currentSourceLabelRef.current = choice.label
+      void startAvPlay(choice.request, { background: true })
+    }, delay)
+  }
+
+  const startAvPlay = async (request: CastLoadRequest, options: { background?: boolean } = {}) => {
     sourceRefreshRef.current += 1
     setRefreshingSources(false)
-    receiverRef.current?.cancelPlay()
+    clearEarlyStart()
+    // A cloud listing for this title keeps running behind playback; only foreign requests cancel.
+    if (!resolvePendingRef.current) receiverRef.current?.cancelPlay()
     const previousMedia = activeLoadRef.current?.media
     if (previousMedia && request.media && (previousMedia.ref.id !== request.media.ref.id
       || previousMedia.ref.provider !== request.media.ref.provider || previousMedia.ref.type !== request.media.ref.type)) {
@@ -851,7 +911,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       ...request.trackPreferences, audio: manualAudioPreferenceRef.current,
     } }
     stopSeekHold(undefined, false)
-    const generation = ++playRequestGenerationRef.current
+    // A background start belongs to the listing that produced it, so the listing's completion
+    // handler still recognises this playback as its own.
+    const generation = options.background ? playRequestGenerationRef.current : ++playRequestGenerationRef.current
     audioSelectionGenerationRef.current += 1
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     const requestedPreferences = subtitlePreferencesFor(request.subtitleStyle)
@@ -896,12 +958,25 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       if (failedCloudSourcesRef.current.has(request.sessionId)) return true
       failedCloudSourcesRef.current.add(request.sessionId)
       const next = sourceChoicesRef.current.find((choice) => !failedCloudSourcesRef.current.has(choice.request.sessionId))
-      if (!next) return false
+      if (!next) {
+        // Discovery is still running: let its completion pick the next release instead of failing now.
+        if (!resolvePendingRef.current) return false
+        retryAfterResolveRef.current = true
+        avplayRef.current.close()
+        setActiveSourceId(undefined)
+        showNotice('Waiting for more sources after the previous source failed')
+        return true
+      }
       avplayRef.current.close()
       setActiveSourceId(next.id)
       currentSourceLabelRef.current = next.label
       showNotice(`Trying ${next.label} after the previous source failed`)
-      window.setTimeout(() => { if (generation === playRequestGenerationRef.current) void startAvPlay({ ...next.request, positionSeconds: playerRef.current.position }) }, 0)
+      // While the listing is still running its completion handler must keep recognising this
+      // playback, so a failover during discovery stays in the listing's generation. The AVPlay
+      // wrapper guards its own callbacks per load, so the superseded load cannot leak events.
+      window.setTimeout(() => {
+        if (generation === playRequestGenerationRef.current) void startAvPlay({ ...next.request, positionSeconds: playerRef.current.position }, { background: resolvePendingRef.current })
+      }, 0)
       return true
     }
     try {
@@ -2040,6 +2115,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     audioSelectionGenerationRef.current += 1
     manualAudioPreferenceRef.current = undefined
     playRequestGenerationRef.current += 1
+    endSourceListing()
     stopSeekHold(undefined, false)
     updatePlayer({ state: 'idle' })
     publishStatus(true)
@@ -2087,6 +2163,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     failedCloudSourcesRef.current.clear()
     setActiveSourceId(undefined)
     setLoadingProgress(0)
+    endSourceListing()
+    const listing = resolveListingRef.current
+    autoStartRef.current = true
+    earlyStartRef.current = {}
     updatePlayer({ title: media.title, state: 'buffering', position: media.progress ? 523 : 0, duration: 1_422, isLive: false })
     setScreen('loading')
     if (showPreviewTools) {
@@ -2098,27 +2178,58 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       }, 900)
       return
     }
+    resolvePendingRef.current = true
+    setResolvingSources(true)
     const result = await receiverRef.current?.requestPlay(media, undefined, selection => {
-      if (generation !== playRequestGenerationRef.current) return
-      setSourceChoices(selection.sources)
-      sourceChoicesRef.current = selection.sources
+      if (listing !== resolveListingRef.current) return
+      // Every snapshot feeds the picker; only an untouched loading screen may auto-start from one.
+      mergeSourceChoices(selection.sources)
+      if (generation !== playRequestGenerationRef.current || !autoStartRef.current) return
+      if (retryAfterResolveRef.current) {
+        // Every earlier candidate failed; a newly listed release can be tried straight away.
+        const next = sourceChoicesRef.current.find((choice) => !failedCloudSourcesRef.current.has(choice.request.sessionId))
+        if (!next) return
+        retryAfterResolveRef.current = false
+        setActiveSourceId(next.id)
+        currentSourceLabelRef.current = next.label
+        void startAvPlay({ ...next.request, positionSeconds: playerRef.current.position }, { background: true })
+        return
+      }
+      if (activeLoadRef.current) return
+      earlyStartRef.current = observeEarlyStart(earlyStartRef.current, chooseSource(selection.sources, selection.selectedId)?.id, tvNow())
+      scheduleEarlyStart(generation, listing)
     }) ?? 'open-client'
-    if (generation !== playRequestGenerationRef.current) return
+    const sameListing = listing === resolveListingRef.current
+    if (sameListing) { resolvePendingRef.current = false; setResolvingSources(false) }
+    clearEarlyStart()
+    const resolved = typeof result !== 'string' && result.kind === 'resolved' ? result : undefined
+    if (generation !== playRequestGenerationRef.current) {
+      // Playback moved on (a manual pick or a stop), but the completed list still belongs here.
+      if (sameListing && resolved) mergeSourceChoices(resolved.sources)
+      return
+    }
+    if (resolved) mergeSourceChoices(resolved.sources)
+    if (activeLoadRef.current && !retryAfterResolveRef.current) return // Early playback is already under way.
+    if (!autoStartRef.current) return // The viewer backed out to the picker; the list is refreshed.
     if (typeof result !== 'string' && result.kind === 'failed') {
       setErrorMessage(result.message)
       setScreen('error')
-    } else if (typeof result !== 'string') {
-      setSourceChoices(result.sources)
-      sourceChoicesRef.current = result.sources
-      const preferred = playbackSettings.preferBingeSource && currentSourceLabelRef.current
-        ? result.sources.find((source) => source.label.trim().toLowerCase() === currentSourceLabelRef.current.trim().toLowerCase())
-        : undefined
-      const selectedSource = preferred ?? result.sources.find((source) => source.id === result.selectedId)
-      const request = selectedSource?.request ?? result.request
-      const sourceId = selectedSource?.id ?? result.selectedId
+    } else if (resolved || retryAfterResolveRef.current) {
+      const failed = failedCloudSourcesRef.current
+      const selectedSource = retryAfterResolveRef.current
+        ? sourceChoicesRef.current.find((choice) => !failed.has(choice.request.sessionId))
+        : chooseSource(resolved!.sources, resolved!.selectedId)
+      retryAfterResolveRef.current = false
+      const request = selectedSource?.request ?? resolved?.request
+      if (!request) {
+        setErrorMessage('Every source the Worker found failed to play on this TV. Try again or choose another source.')
+        setScreen('error')
+        return
+      }
+      const sourceId = selectedSource?.id ?? resolved?.selectedId
       setActiveSourceId(sourceId)
-      currentSourceLabelRef.current = selectedSource?.label ?? result.sources.find((source) => source.id === sourceId)?.label ?? ''
-      await startAvPlay(request)
+      currentSourceLabelRef.current = selectedSource?.label ?? sourceChoicesRef.current.find((source) => source.id === sourceId)?.label ?? ''
+      await startAvPlay(request, { background: true })
     } else if (result === 'open-client') {
       setErrorMessage('Open izumi on your linked device, then try again.')
       setScreen('error')
@@ -2443,8 +2554,12 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     const positionSeconds = activeLoadRef.current ? playerRef.current.position : sourceChoicesRef.current[0]?.request.positionSeconds ?? 0
     audioSelectionGenerationRef.current += 1
     playRequestGenerationRef.current += 1
+    // The viewer wants to choose. Keep the background listing alive so the picker keeps filling.
+    autoStartRef.current = false
+    retryAfterResolveRef.current = false
+    clearEarlyStart()
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
-    receiverRef.current?.cancelPlay()
+    if (!resolvePendingRef.current) receiverRef.current?.cancelPlay()
     avplayRef.current.close()
     externalSubtitlesRef.current.clear()
     subtitleLoadGenerationRef.current += 1
@@ -3622,9 +3737,10 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         <LoadingScreen
           title={player.title}
           progress={loadingProgress}
-          sourceLabel={sourceChoices.find(choice => choice.id === activeSourceId)?.label}
+          activeSource={sourceChoices.find(choice => choice.id === activeSourceId)}
           canChooseSource={sourceChoices.length > 0}
-          availableSources={!activeLoadRef.current ? sourceChoices : undefined}
+          availableSources={sourceChoices}
+          resolving={resolvingSources}
           onCancel={cancelLoadingToSources}
           contentRating={activeLoadRef.current?.contentRating ?? (selected.title === player.title ? selected.contentRating : undefined)}
         />

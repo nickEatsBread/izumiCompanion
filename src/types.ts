@@ -278,10 +278,21 @@ export interface CastLoadRequest {
   userAgent?: string
 }
 
+export type SourceDelivery = 'direct' | 'debrid' | 'hosted'
+
 export interface PlaybackSourceChoice {
   id: string
   label: string
   detail?: string
+  /** The add-on or provider that listed this release, for the picker's identity column. */
+  origin?: { name: string; logo?: string }
+  /** How the TV reaches the bytes: a prepared provider link, a plain file, or a gateway route. */
+  delivery?: SourceDelivery
+  quality?: string
+  badges?: string[]
+  size?: string
+  seeders?: number
+  group?: string
   request: CastLoadRequest
 }
 

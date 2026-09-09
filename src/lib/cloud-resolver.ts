@@ -1,4 +1,4 @@
-import type { CastLoadRequest, CastSubtitleTrack, CompanionMedia, PlaybackSourceChoice, SubtitleStyle } from '../types'
+import type { CastLoadRequest, CastSubtitleTrack, CompanionMedia, PlaybackSourceChoice, SourceDelivery, SubtitleStyle } from '../types'
 
 export interface CloudResolveRequest {
   ref: CompanionMedia['ref']
@@ -8,6 +8,9 @@ export interface CloudResolveRequest {
   nativeType?: string
   streamIds?: string[]
   title?: string
+  /** Catalogue release year, so the Worker can reject a same-title production from another era. */
+  year?: number
+  runtimeMinutes?: number
   excludeCandidateIds?: string[]
   videoCapabilities?: { hdr?: boolean; uhd?: boolean; av1?: boolean; opus?: boolean; flac?: boolean }
 }
@@ -24,6 +27,11 @@ interface DirectSourceCandidate {
   cookies?: string
   userAgent?: string
   lan?: boolean
+  origin?: { name: string; logo?: string }
+  delivery?: SourceDelivery
+  size?: string
+  seeders?: number
+  group?: string
 }
 
 function publicHttpUrl(value: unknown, maximum = 4096, allowPrivate = false): string | undefined {
@@ -88,6 +96,13 @@ function normalizeCandidate(value: unknown): DirectSourceCandidate | null {
       contentType: boundedText(track.contentType, 80) ?? subtitleContentType(trackUrl),
     }]
   })
+  const originValue = input.origin && typeof input.origin === 'object' ? input.origin as Record<string, unknown> : undefined
+  const originName = boundedText(originValue?.name, 120)
+  const originLogo = publicHttpUrl(originValue?.logo, 2048)
+  const delivery = input.delivery === 'debrid' || input.delivery === 'hosted' || input.delivery === 'direct'
+    ? input.delivery
+    : input.hosted === true ? 'hosted' : undefined
+  const seeders = Number(input.seeders)
   return {
     id,
     url,
@@ -102,6 +117,11 @@ function normalizeCandidate(value: unknown): DirectSourceCandidate | null {
     cookies: headerValue(input.cookies, 4096),
     userAgent: headerValue(input.userAgent, 512),
     lan,
+    origin: originName ? { name: originName, ...(originLogo ? { logo: originLogo } : {}) } : undefined,
+    delivery,
+    size: boundedText(input.size, 24),
+    seeders: Number.isInteger(seeders) && seeders >= 0 ? seeders : undefined,
+    group: boundedText(input.group, 60),
   }
 }
 
@@ -140,6 +160,8 @@ export function cloudResolveRequest(media: CompanionMedia): CloudResolveRequest 
   const nativeType = media.ref.provider === 'stremio' && /^[A-Za-z0-9._-]{1,80}$/.test(media.resolver?.nativeType ?? '')
     ? media.resolver?.nativeType
     : undefined
+  const year = Number(media.releaseYear)
+  const runtimeMinutes = Number(media.runtimeMinutes)
   return {
     title: boundedText(media.title, 240),
     videoCapabilities: tvVideoCapabilities(),
@@ -149,6 +171,8 @@ export function cloudResolveRequest(media: CompanionMedia): CloudResolveRequest 
     streamType,
     nativeType,
     streamIds: streamIds.length ? streamIds : undefined,
+    year: Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : undefined,
+    runtimeMinutes: Number.isFinite(runtimeMinutes) && runtimeMinutes > 0 ? Math.min(10_080, Math.round(runtimeMinutes)) : undefined,
   }
 }
 
@@ -198,6 +222,13 @@ export function cloudResolveSelection(value: unknown, media: CompanionMedia, req
   const sources = candidates.map((candidate, index): PlaybackSourceChoice => ({
     id: candidate.id,
     ...sourceLabel(candidate, index),
+    ...(candidate.origin ? { origin: candidate.origin } : candidate.source ? { origin: { name: candidate.source } } : {}),
+    ...(candidate.delivery ? { delivery: candidate.delivery } : {}),
+    ...(candidate.quality ? { quality: candidate.quality } : {}),
+    ...(candidate.badges.length ? { badges: candidate.badges } : {}),
+    ...(candidate.size ? { size: candidate.size } : {}),
+    ...(candidate.seeders != null ? { seeders: candidate.seeders } : {}),
+    ...(candidate.group ? { group: candidate.group } : {}),
     request: {
       sessionId: `cloud-${requestId.slice(0, 80)}-${candidateSessions ? (() => {
         if (!candidateSessions.has(candidate.id)) candidateSessions.set(candidate.id, candidateSessions.size + 1)

@@ -158,3 +158,31 @@ it('preserves preferred track languages for every cloud playback alternative', (
   expect(selection?.sources.map(source => source.request.trackPreferences?.subtitle?.language)).toEqual(['eng', 'eng'])
   expect(selection?.request.trackPreferences?.audio?.language).toBe('jpn')
 })
+
+describe('TV resolve hints and picker metadata', () => {
+  it('sends the catalogue release year and runtime beside the media identity', () => {
+    expect(cloudResolveRequest({ ...media, releaseYear: 2026, runtimeMinutes: 148.4 })).toMatchObject({ year: 2026, runtimeMinutes: 148 })
+    const request = cloudResolveRequest({ ...media, releaseYear: 12, runtimeMinutes: -1 })
+    expect(request.year).toBeUndefined()
+    expect(request.runtimeMinutes).toBeUndefined()
+  })
+
+  it('keeps the listing origin, delivery and release facts on each source choice', () => {
+    const selection = cloudResolveSelection({
+      ok: true,
+      selectedId: 'a',
+      candidates: [
+        { id: 'a', url: 'https://cdn.example/a.mkv', title: 'Release A', quality: '1080p', badges: ['1080p', 'HEVC'], subtitles: [],
+          origin: { name: 'Source A', logo: 'https://source.example/logo.png' }, delivery: 'debrid', size: '4.2 GB', seeders: 120, group: 'GROUP' },
+        { id: 'b', url: 'https://gateway.example/cfg/playback/abc/0/b.mkv', title: 'Release B', subtitles: [], hosted: true, source: 'Gateway' },
+        { id: 'c', url: 'https://cdn.example/c.mkv', title: 'Release C', subtitles: [], origin: { name: 'X', logo: 'javascript:alert(1)' }, seeders: -4 },
+      ],
+    }, media, 'request')!
+    expect(selection.sources[0]).toMatchObject({
+      origin: { name: 'Source A', logo: 'https://source.example/logo.png' }, delivery: 'debrid', quality: '1080p', badges: ['1080p', 'HEVC'], size: '4.2 GB', seeders: 120, group: 'GROUP',
+    })
+    expect(selection.sources[1]).toMatchObject({ origin: { name: 'Gateway' }, delivery: 'hosted' })
+    expect(selection.sources[2].origin).toEqual({ name: 'X' })
+    expect(selection.sources[2]).not.toHaveProperty('seeders')
+  })
+})
