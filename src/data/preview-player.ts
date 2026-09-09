@@ -3,8 +3,15 @@ import type { LinkedDeviceSourceOptions, PlaybackSourceChoice, PlaybackTrack, Su
 // Long menus exercise remote scrolling in the browser preview without starting playback.
 export const previewMenuSources: PlaybackSourceChoice[] = Array.from({ length: 24 }, (_, index) => ({
   id: `preview-source-${index}`,
-  label: `Source ${index + 1}${index % 3 === 0 ? ' · Extended release with multiple audio tracks' : ''}`,
+  label: `Preview.Title.${index % 2 === 0 ? '2160p' : '1080p'}.WEB-DL.${index % 3 === 0 ? 'DDP5.1.Atmos.HEVC' : 'AAC.H264'}-GROUP${index + 1}.mkv`,
   detail: index % 2 === 0 ? '1080p · Multi-language' : '720p',
+  origin: { name: index % 3 === 0 ? 'Listing source' : index % 3 === 1 ? 'Another listing' : 'Third listing' },
+  delivery: index % 3 === 0 ? 'debrid' : index % 3 === 1 ? 'direct' : 'hosted',
+  quality: index % 2 === 0 ? '2160p' : '1080p',
+  badges: index % 2 === 0 ? ['2160p', 'HEVC', 'HDR10', 'WEB-DL'] : ['1080p', 'H264', 'WEB-DL'],
+  size: index % 2 === 0 ? '12.4 GB' : '4.1 GB',
+  seeders: (index + 1) * 37,
+  group: `GROUP${index + 1}`,
   request: { sessionId: `cloud-preview-${index}`, url: '', title: 'Preview', positionSeconds: 0, subtitles: [], activeTrackIds: [] },
 }))
 

@@ -240,8 +240,43 @@ function ratingGuidance(contentRating: string): string {
   return normalized === 'NR' ? 'Rating information unavailable' : 'Viewer guidance advised'
 }
 
+export function sourceDeliveryLabel(delivery?: PlaybackSourceChoice['delivery']): string {
+  if (delivery === 'debrid') return 'Prepared by your provider'
+  if (delivery === 'hosted') return 'Gateway link'
+  if (delivery === 'direct') return 'Direct file'
+  return ''
+}
+
+/** Compact release facts for a picker row: quality first, then what the listing declared. */
+export function sourceFacts(source: Pick<PlaybackSourceChoice, 'quality' | 'badges' | 'size' | 'seeders' | 'group' | 'detail'>): string {
+  const facts = [
+    ...(source.badges?.length ? source.badges : source.quality ? [source.quality] : []),
+    source.size,
+    source.seeders != null ? `${source.seeders} seed${source.seeders === 1 ? '' : 's'}` : undefined,
+    source.group,
+  ].filter((fact): fact is string => Boolean(fact))
+  const unique = facts.filter((fact, index) => facts.indexOf(fact) === index)
+  return unique.length ? unique.join(' · ') : source.detail ?? ''
+}
+
+function SourceIdentity({ source, compact = false }: { source: Pick<PlaybackSourceChoice, 'origin' | 'delivery'>; compact?: boolean }) {
+  const name = source.origin?.name?.trim() || 'Source'
+  const delivery = sourceDeliveryLabel(source.delivery)
+  return (
+    <span class={`source-identity${compact ? ' is-compact' : ''}`}>
+      {source.origin?.logo
+        ? <img class="source-identity-logo" src={source.origin.logo} alt="" />
+        : <span class="source-identity-monogram" aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>}
+      <span class="source-identity-copy">
+        <strong>{name}</strong>
+        {!compact && delivery && <small>{delivery}</small>}
+      </span>
+    </span>
+  )
+}
+
 export function LoadingScreen({
-  sourceLabel, canChooseSource, onCancel, availableSources,
+  activeSource, canChooseSource, onCancel, availableSources, resolving,
   title,
   progress,
   contentRating,
@@ -249,14 +284,25 @@ export function LoadingScreen({
   title: string
   progress: number
   contentRating?: string
-  sourceLabel?: string
+  /** The source AVPlay is opening right now; absent while discovery has not settled. */
+  activeSource?: PlaybackSourceChoice
   canChooseSource?: boolean
-  availableSources?: Array<{ id: string; label: string }>
+  availableSources?: PlaybackSourceChoice[]
+  /** Discovery is still listing releases behind whatever is on screen. */
+  resolving?: boolean
   onCancel?(): void
 }) {
   const rating = contentRating?.trim() || 'NR'
   const clampedProgress = Math.min(100, Math.max(0, progress))
   const progressKnown = clampedProgress > 0
+  const found = availableSources?.length ?? 0
+  const headline = progressKnown ? `${Math.round(clampedProgress)}%`
+    : activeSource ? 'Preparing stream'
+      : found ? 'Starting shortly'
+        : 'Finding sources'
+  const countCopy = found
+    ? `${found} source${found === 1 ? '' : 's'} ${resolving ? 'found so far' : 'found'} · Back to choose one${activeSource ? '' : ' now'}`
+    : resolving ? 'Finding available sources…' : 'Preparing stream'
   return (
     <main class="state-screen loading-screen">
       <header class="loading-title-lockup">
@@ -270,11 +316,17 @@ export function LoadingScreen({
         </span>
       </aside>
       <div class="loading-status" role="status" aria-live="polite">
-        <strong>{progressKnown ? `${Math.round(clampedProgress)}%` : availableSources?.length ? `${availableSources.length} source${availableSources.length === 1 ? '' : 's'} found` : 'Preparing stream'}</strong>
-        <small>{sourceLabel ? `Loading ${sourceLabel}` : 'Finding available sources…'}</small>
-        {!!availableSources?.length && <ul class="loading-sources">
-          {availableSources.slice(0, 3).map(source => <li key={source.id}>{source.label}</li>)}
-        </ul>}
+        <strong>{headline}</strong>
+        {activeSource && (
+          <span class="loading-active-source">
+            <SourceIdentity source={activeSource} compact />
+            <span class="loading-active-source-copy">
+              <span class="loading-active-source-label">{activeSource.label}</span>
+              {sourceFacts(activeSource) && <span class="loading-active-source-facts">{sourceFacts(activeSource)}</span>}
+            </span>
+          </span>
+        )}
+        <small class={activeSource ? 'is-secondary' : ''}>{countCopy}</small>
       </div>
       <div class="loading-footer">
         <span
@@ -599,14 +651,16 @@ export function PlayerScreen({
       </div>
 
       {menu && (
-        <section ref={menuRef} class="player-menu" aria-label={`${menu} options`}>
+        <section ref={menuRef} class={`player-menu${menu === 'source' ? ' is-source-picker' : ''}`} aria-label={`${menu} options`}>
           <header class="player-menu-heading">
             <span class="player-menu-heading-icon">
               {menu === 'source' ? <RefreshCcw size={28} /> : menu === 'audio' ? <Volume2 size={29} /> : menu === 'subtitles' ? <Captions size={30} /> : <SlidersHorizontal size={29} />}
             </span>
             <span>
               <p>{menu === 'source' ? 'Change source' : menu === 'audio' ? 'Audio' : menu === 'subtitles' ? 'Subtitles' : 'Subtitle appearance'}</p>
-              <small>{menu === 'source' ? 'Choose where this title plays from' : menu === 'audio' ? 'Choose an audio track' : menu === 'subtitles' ? 'Choose a language or turn subtitles off' : 'Adjust how subtitles appear on this TV'}</small>
+              <small>{menu === 'source'
+                ? `${sourceChoices.length ? `${sourceChoices.length} source${sourceChoices.length === 1 ? '' : 's'}${refreshingSources ? ', still searching' : ''} · ` : ''}Choose where this title plays from`
+                : menu === 'audio' ? 'Choose an audio track' : menu === 'subtitles' ? 'Choose a language or turn subtitles off' : 'Adjust how subtitles appear on this TV'}</small>
             </span>
           </header>
           {menu === 'source' && (
@@ -614,13 +668,23 @@ export function PlayerScreen({
               {sourceChoices.map((source, index) => (
                 <button
                   type="button"
-                  class={`${menuFocus === index ? 'is-focused' : ''}${activeSourceId === source.id ? ' is-selected' : ''}`}
+                  class={`source-row${menuFocus === index ? ' is-focused' : ''}${activeSourceId === source.id ? ' is-selected' : ''}`}
                   aria-pressed={activeSourceId === source.id}
+                  aria-label={`${source.origin?.name ? `${source.origin.name}: ` : ''}${source.label}${activeSourceId === source.id ? ', now playing' : ''}`}
                   onFocus={() => onMenuFocus(index)}
                   onClick={() => onSource(source)}
                   key={source.id}
                 >
-                  <span>{source.label}</span><small>{activeSourceId === source.id ? 'Current' : source.detail ?? ''}</small>
+                  <SourceIdentity source={source} />
+                  <span class="source-row-copy">
+                    <span class="source-row-label">{source.label}</span>
+                    {sourceFacts(source) && <span class="source-row-facts">{sourceFacts(source)}</span>}
+                  </span>
+                  <span class="source-row-state">
+                    {activeSourceId === source.id
+                      ? <><Check size={24} strokeWidth={3} aria-hidden="true" /><span>Now playing</span></>
+                      : <span class="source-row-play"><Play size={18} fill="currentColor" aria-hidden="true" /><span>Play</span></span>}
+                  </span>
                 </button>
               ))}
               {deviceSourceOptions?.choices.map((source, index) => {
