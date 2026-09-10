@@ -4,8 +4,6 @@ Install Companion and its updater on a Samsung Tizen TV from your phone. The app
 
 Keep the phone and TV on the same network. Enable TV Developer Mode and use the phone address shown in the installer as Host PC IP. Restart the TV by holding the remote's Power button for at least five seconds; press it again if the TV stays off. Connect, install, complete Samsung sign-in, and enter the updater's verification code when prompted.
 
-**Set up Cloudflare** opens the TV setup wizard with native one-click deployment. It also accepts an API token for an existing Cloudflare account. After one-click deployment, claim the temporary account before the expiry shown in the wizard. Keep the app in the foreground while installing or deploying.
-
 The signing identity is saved in the app's private data directory, outside bundled assets, so app updates preserve it. Deleting the installer also deletes that local identity. The installer refuses to replace an existing TV app when its matching author key is unavailable. The updater on a provisioned TV keeps its own encrypted identity. Installation logs can be viewed and shared from the installer.
 
 ## Builds
@@ -19,7 +17,6 @@ npm ci
 npm ci --prefix updater --ignore-scripts
 npm ci --prefix installer
 npm run assets --prefix installer
-npm run cloudflare --prefix installer
 npm ci --prefix mobile
 node mobile/scripts/icons.cjs
 npm run prepareRuntime --prefix mobile
@@ -35,4 +32,4 @@ Production Android signing accepts `IZUMI_ANDROID_STORE_FILE`, `IZUMI_ANDROID_ST
 
 GitHub Actions uses `IZUMI_MOBILE_ANDROID_KEYSTORE` (base64 PKCS#12, alias `izumi-installer`) and `IZUMI_MOBILE_ANDROID_PASSWORD`. Keep a private backup: replacing the signing key prevents existing Android installations from upgrading.
 
-The mobile host uses React Native with Node.js Mobile. Its bundled Node process handles TCP and signing; the WebView has only scoped installer or Cloudflare messages. Samsung sign-in stays in a separate WebView with no installer bridge. Android's native network API supplies active connection addresses; iPhone uses native interface enumeration.
+The mobile host uses React Native with Node.js Mobile. Its bundled Node process handles TCP and signing; the WebView has only scoped installer messages. Samsung sign-in stays in a separate WebView with no installer bridge. Android's native network API supplies active connection addresses; iPhone uses native interface enumeration.

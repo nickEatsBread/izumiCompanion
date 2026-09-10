@@ -8,8 +8,6 @@ let finishInstall, failConnect = false, failInstall = false, verificationCount =
 const calls = [], screenshots = []
 const logEntries = [], logActions = []
 let copiedLogs = '', cancelSave = true
-let cloudflareOpened = 0
-ipcMain.handle('installer:cloudflare-setup', () => { cloudflareOpened++; return { ok: true } })
 const localAddresses = ['192.0.2.20', '198.51.100.10', '198.51.100.11', '198.51.100.12', '203.0.113.10', '255.255.255.254', '198.51.100.200']
 ipcMain.handle('installer:get-config', () => ({ localAddresses, version: '0.2.36' }))
 ipcMain.handle('installer:copy-logs', () => { copiedLogs = logEntries.map(entry => entry.text).join('\n'); logActions.push('copy'); return { ok: true } })
@@ -122,9 +120,6 @@ app.whenReady().then(async () => {
   assert.equal(await js("document.getElementById('connect').disabled"), false)
   assert.deepEqual(errors, [])
   assert.deepEqual(logActions, ['copy', 'save', 'save', 'open'])
-  await js("document.getElementById('cloudflare-setup').click()")
-  await waitFor('!document.getElementById("cloudflare-setup").disabled')
-  assert.equal(cloudflareOpened, 1)
   win.setSize(390, 844)
   await js("document.getElementById('error-panel').hidden=true;window.scrollTo(0,0)")
   await capture('11-phone-layout')

@@ -33,7 +33,6 @@
   }
   window.izumiInstaller = {
     getConfig: () => invoke('getConfig'), run: input => invoke('run', input), verifyCode: code => invoke('verifyCode', code),
-    openCloudflareSetup: async () => send({ type: 'open-cloudflare' }),
     copyLogs: shareLogs, saveLogs: shareLogs, openLogs: shareLogs,
     onStage: listener => on('installer:stage', listener), onProgress: listener => on('installer:progress', listener),
     onLog: listener => on('installer:log', listener), onVerifyKey: listener => on('installer:verify-key', listener),

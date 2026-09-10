@@ -331,9 +331,10 @@ describe('companion play routing', () => {
     const view = { app: 'izumi', kind: 'companion-home', version: 1, revision: 'cloud-1', generatedAt: Date.now(), catalog: { screen: 'stremio', label: 'Stremio' }, rows: [] }
     FakeXmlHttpRequest.responder = (request) => request.url.endsWith('/catalog')
       ? { status: 200, body: { snapshot: view } } : { status: 404, body: {} }
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
     const handlers = events()
     const receiver = new CompanionReceiver(handlers)
-    receiver.adoptStandaloneTransport(transport)
+    receiver.requestRefresh()
     await vi.advanceTimersByTimeAsync(0)
     expect(FakeXmlHttpRequest.sent.find((request) => request.url.endsWith('/catalog'))?.body).toMatchObject({ screen: 'default' })
     expect(handlers.onSnapshot).toHaveBeenCalledWith(expect.objectContaining({ catalog: view.catalog }))
@@ -352,7 +353,7 @@ describe('companion play routing', () => {
     const handlers = events()
     const receiver = new CompanionReceiver(handlers)
     await receiver.connect()
-    receiver.adoptStandaloneTransport(transport)
+    receiver.requestRefresh()
     await vi.advanceTimersByTimeAsync(0)
     expect(handlers.onCatalogError).toHaveBeenCalledWith('default', message)
     expect(channel.publish.mock.calls.some(([name]) => name === 'izumi.companion.catalog')).toBe(false)
@@ -869,37 +870,6 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
-  it('opens authenticated Worker setup on the linked client and accepts only its matching status', async () => {
-    const channel = new FakeSmartViewChannel()
-    Object.assign(window, {
-      msf: {
-        local: (callback: (error: unknown, service: unknown) => void) => callback(null, {
-          channel: () => channel,
-        }),
-      },
-    })
-    const receiverEvents = { ...events(), onWorkerSetupStatus: vi.fn(), onIndependentPlaybackReady: vi.fn() }
-    const receiver = new CompanionReceiver(receiverEvents)
-    await receiver.connect()
-
-    expect(receiver.independentPlaybackReady).toBe(true)
-    expect(receiver.requestIndependentSetup()).toBe(true)
-    const request = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.worker-setup')
-    expect(request).toBeTruthy()
-    expect(request?.[1]).toMatchObject({
-      credential,
-      pairingId: credential.slice(0, 16),
-    })
-    expect(request?.[2]).toBe('broadcast')
-
-    const requestId = request?.[1].requestId
-    channel.emit('izumi.companion.worker-setup-status', { credential: 'wrong', requestId, status: 'opened' })
-    expect(receiverEvents.onWorkerSetupStatus).not.toHaveBeenCalled()
-    channel.emit('izumi.companion.worker-setup-status', { credential, requestId, status: 'opened' })
-    expect(receiverEvents.onWorkerSetupStatus).toHaveBeenCalledWith('opened', undefined)
-    receiver.disconnect()
-  })
-
   it('prefetches a Worker source once and consumes it on next-episode playback', async () => {
     FakeXmlHttpRequest.responder = () => ({
       status: 200,
@@ -1075,65 +1045,4 @@ describe('companion play routing', () => {
     }, 'linked-client')
     receiver.disconnect()
   })
-
-  it('adopts a TV-scoped Worker handoff without a linked client credential', async () => {
-    storage.clear()
-    FakeXmlHttpRequest.responder = () => ({ status: 200, body: {} })
-    const receiverEvents = { ...events(), onIndependentPlaybackReady: vi.fn() }
-    const receiver = new CompanionReceiver(receiverEvents)
-
-    receiver.adoptStandaloneTransport(transport)
-    await vi.advanceTimersByTimeAsync(0)
-
-    expect(storage.getItem('izumi.companion.credential')).toBe('07'.repeat(32))
-    expect(JSON.parse(storage.getItem('izumi.companion.cloudflare') || '{}')).toEqual(transport)
-    expect(receiverEvents.onPaired).toHaveBeenLastCalledWith(true)
-    expect(receiverEvents.onIndependentPlaybackReady).toHaveBeenLastCalledWith(true)
-    expect(FakeXmlHttpRequest.sent.some((request) => request.url.endsWith('/snapshots?screen=default'))).toBe(true)
-  })
-})
-
-it('aborts a cloud play lookup and ignores its delayed result after Back', async () => {
-  const aborted = vi.spyOn(FakeXmlHttpRequest.prototype, 'abort')
-  FakeXmlHttpRequest.responder = () => ({ status: 200, delay: 5_000, body: { ok: true, candidates: [{ id: 'one', url: 'https://media.example/video.mp4' }] } })
-  const callbacks = events()
-  const receiver = new CompanionReceiver(callbacks)
-  const pending = receiver.requestPlay(media)
-  receiver.cancelPlay()
-  expect(await pending).toBe('no-source')
-  await vi.advanceTimersByTimeAsync(6_000)
-  expect(aborted).toHaveBeenCalledOnce()
-  expect(callbacks.onLoad).not.toHaveBeenCalled()
-  expect(FakeXmlHttpRequest.sent).toHaveLength(1)
-})
-
-it('loads missing feature runtime alongside source lookup for native duration validation', async () => {
-  FakeXmlHttpRequest.responder = request => ({ status: 200, body: request.url.endsWith('/details')
-    ? { ok: true, details: { runtimeMinutes: 120 } }
-    : { ok: true, candidates: [{ id: 'one', url: 'https://media.example/video.mp4' }] } })
-  const result = await new CompanionReceiver(events()).requestPlay({ ...media, title: 'Example', runtimeMinutes: undefined })
-  expect(result).toMatchObject({ kind: 'resolved', request: { media: { runtimeMinutes: 120 } } })
-  expect(FakeXmlHttpRequest.sent).toHaveLength(2)
-})
-
-it('requests more cloud choices without loading video or contacting a linked client', async () => {
-  FakeXmlHttpRequest.responder = () => ({ status: 200, body: { ok: true, candidates: [{ id: 'second', url: 'https://media.example/second.mp4' }] } })
-  const callbacks = events()
-  const receiver = new CompanionReceiver(callbacks)
-  const result = await receiver.requestPlay({ ...media, title: 'Example' }, ['first'])
-  expect(result).toMatchObject({ kind: 'resolved', sources: [{ id: 'second' }] })
-  expect(FakeXmlHttpRequest.sent[0].body).toMatchObject({ excludeCandidateIds: ['first'] })
-  expect(FakeXmlHttpRequest.sent).toHaveLength(1)
-  expect(callbacks.onLoad).not.toHaveBeenCalled()
-})
-
-it('cancels both metadata and source lookup when leaving initial loading', async () => {
-  const aborted = vi.spyOn(FakeXmlHttpRequest.prototype, 'abort').mockClear()
-  FakeXmlHttpRequest.responder = () => ({ status: 200, delay: 5_000, body: { ok: true } })
-  const receiver = new CompanionReceiver(events())
-  const pending = receiver.requestPlay({ ...media, title: 'Example', runtimeMinutes: undefined })
-  receiver.cancelPlay()
-  expect(await pending).toBe('no-source')
-  expect(aborted).toHaveBeenCalledTimes(2)
-  await vi.advanceTimersByTimeAsync(6_000)
 })

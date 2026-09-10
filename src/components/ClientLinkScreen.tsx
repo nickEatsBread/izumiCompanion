@@ -52,7 +52,7 @@ export function ClientLinkScreen({ identity, showPreviewTools, onBack }: {
       return
     }
     if (!showPreviewTools && !identity) {
-      setView({ phase: 'unavailable', message: 'This TV needs independent setup before it can link another device. In Connection, open “Use TV without izumi open”, complete setup, then return here. Your existing pairing is kept.' })
+      setView({ phase: 'unavailable', message: 'Pair this TV with izumi and connect private Cloudflare sync there before it can link another device. Your existing pairing is kept.' })
       return
     }
     setView({ phase: 'loading' })

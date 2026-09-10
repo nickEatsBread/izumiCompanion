@@ -38,7 +38,7 @@ import { HomeScreen, trailerNeedsEnglishCaptions } from './components/HomeScreen
 import { NavigationSkeleton } from './components/NavigationSkeleton'
 import { TitlePanel, TITLE_PANEL_REMOTE, type TitlePanelKind } from './components/TitlePanel'
 import { PreviewToolbar } from './components/PreviewToolbar'
-import { ErrorScreen, ExitConfirmation, IndependentSetupScreen, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen, StandaloneLinkScreen, type IndependentSetupPhase } from './components/StateScreens'
+import { ErrorScreen, ExitConfirmation, LoadingScreen, PlayerScreen, PostPlayScreen, ReadyScreen } from './components/StateScreens'
 import { navDestinationAt, navIndexFor, navItemCount } from './components/NavRail'
 import { catalogLevel, mergeAccountOptions, mayNavigateForSnapshot } from './lib/catalog-navigation'
 import { previewDetailsFor, previewSnapshot, previewSnapshotForCatalog } from './data/preview'
@@ -61,14 +61,12 @@ import {
   wrappedHeroIndex,
 } from './lib/home-navigation'
 import { popNavigationEntry, pushNavigationEntry } from './lib/navigation-history'
-import { normalizeTvLinkCode, tvLinkUrl } from './lib/onboarding'
 import { registerRemoteKeys, remoteAction, remoteSeekAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController, plainSubtitleText, type SubtitleCueStyle } from './lib/subtitles'
 import { applyTrackHints, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { earlyStartDelay, observeEarlyStart, type EarlyStartState } from './lib/early-start'
-import { TvLinkReceiver, type TvLinkInfo } from './lib/tv-link'
 import { installVoiceSearch } from './lib/voice-search'
 import { searchIsLoading, titleSuggestions } from './lib/search-suggestions'
 import { hasStartedWatching, mediaRatingKey, readMediaRatings, writeMediaRating, type MediaRating } from './lib/media-rating'
@@ -277,7 +275,7 @@ function focusId(focus: FocusLocation): string {
 
 function initialScreen(): ScreenName {
   const requested = new URLSearchParams(location.search).get('screen')
-  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'discover', 'watch-history', 'settings', 'client-link', 'worker-update', 'independent-setup', 'standalone-link', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
+  if (requested && ['home', 'search', 'trending', 'series-home', 'series', 'movies', 'my-list', 'discover', 'watch-history', 'settings', 'client-link', 'worker-update', 'details', 'ready', 'loading', 'player', 'postplay', 'error'].includes(requested)) return requested as ScreenName
   return import.meta.env.DEV ? 'home' : 'ready'
 }
 
@@ -317,9 +315,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     ? { zone: 'detail', index: 0 }
     : initialDestination === 'series'
       ? { zone: 'series-action', index: 0 }
-      : initialDestination === 'independent-setup'
-        ? { zone: 'setting', index: 1 }
-      : initialDestination === 'ready' || initialDestination === 'standalone-link'
+      : initialDestination === 'ready'
         ? { zone: 'setting', index: 0 }
       : initialDestination === 'settings'
           ? { zone: 'setting', index: 0 }
@@ -338,16 +334,9 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   const [paired, setPaired] = useState(Boolean(localStorage.getItem('izumi.companion.credential')))
   const [pairing, setPairing] = useState<PairingInfo>()
   const [qrCode, setQrCode] = useState<string>()
-  const [standaloneQrCode, setStandaloneQrCode] = useState<string>()
-  const [tvLinkInfo, setTvLinkInfo] = useState<TvLinkInfo>({ code: '', expiresAt: 0, phase: 'preparing' })
-  const [standaloneCatalogError, setStandaloneCatalogError] = useState('')
-  const [standaloneSaved, setStandaloneSaved] = useState(false)
-  const pairingChallenge = normalizeTvLinkCode(pairing?.challenge ?? (showPreviewTools ? 'TV42IZ' : ''))
+  const pairingChallenge = (pairing?.challenge ?? (showPreviewTools ? 'TV42IZ' : '')).replace(/\s+/g, '').toUpperCase()
   const pairingDisplayCode = pairingChallenge
     ? `${pairingChallenge.slice(0, 3)} ${pairingChallenge.slice(3, 6)}`
-    : ''
-  const tvLinkDisplayCode = tvLinkInfo.code
-    ? `${tvLinkInfo.code.slice(0, 4)} ${tvLinkInfo.code.slice(4, 8)}`
     : ''
   const [loadingProgress, setLoadingProgress] = useState(previewParameters.get('scenario') === 'buffering' ? 46 : 34)
   const [errorMessage, setErrorMessage] = useState('The TV player could not open this source.')
@@ -443,9 +432,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     ? settingsSectionForOption(focus.index)
     : focus.zone === 'settings-category' ? focus.index : settingsCategory
   useEffect(() => { setSettingsCategory(visibleSettingsCategory) }, [visibleSettingsCategory])
-  const [independentPlaybackReady, setIndependentPlaybackReady] = useState(false)
-  const [independentSetupPhase, setIndependentSetupPhase] = useState<IndependentSetupPhase>('intro')
-  const [independentSetupError, setIndependentSetupError] = useState('')
   const [catalogMenuOpen, setCatalogMenuOpen] = useState(false)
   const [catalogTrail, setCatalogTrail] = useState<CompanionCatalogOption[]>([])
   const [accountOptionsLoading, setAccountOptionsLoading] = useState(false)
@@ -466,7 +452,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
   )
 
   const receiverRef = useRef<CompanionReceiver>()
-  const tvLinkReceiverRef = useRef<TvLinkReceiver>()
   const avplayRef = useRef(new AvPlayController())
   const activeLoadRef = useRef<CastLoadRequest>()
   const playerRef = useRef(player)
@@ -1165,10 +1150,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       },
       onPlaybackProgress: setSnapshot,
       onCatalogError: (catalogScreen, message) => {
-        if (screenRef.current === 'standalone-link') {
-          setStandaloneCatalogError(message)
-          return
-        }
         const pendingCatalog = catalogRequestRef.current
         if (!pendingCatalog) { showNotice(message); return }
         if (pendingCatalog.screen !== catalogScreen) return
@@ -1205,20 +1186,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       },
       onControl: handleControl,
       onDeviceSourceAvailability: setDeviceSourceChangeAvailable,
-      onIndependentPlaybackReady: (ready) => {
-        setIndependentPlaybackReady(ready)
-        if (ready && screenRef.current === 'independent-setup') setIndependentSetupPhase('ready')
-      },
-      onWorkerSetupStatus: (status, message) => {
-        if (status === 'opened' || status === 'starting') setIndependentSetupPhase('waiting')
-        else if (status === 'dismissed') {
-          setIndependentSetupPhase('intro')
-          showNotice('Setup was closed on the linked device')
-        } else {
-          setIndependentSetupError(message || 'The linked device could not open setup.')
-          setIndependentSetupPhase('error')
-        }
-      },
       onDeviceSourceOptions: (options) => {
         setDeviceSourceOptions(options)
         setPlayerMenu('source')
@@ -1291,63 +1258,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }).then((value) => { if (!cancelled) setQrCode(value) })
     return () => { cancelled = true }
   }, [pairing?.link])
-
-  useEffect(() => {
-    if (screen !== 'standalone-link') return
-    if (previewParameters.has('capture')) {
-      const confirming = previewParameters.get('scenario') === 'tv-link-confirming'
-      setTvLinkInfo({
-        code: 'ABCD2345',
-        linkSecret: 'abcdefghijklmnopqrstuv',
-        expiresAt: Date.now() + 10 * 60_000,
-        phase: confirming ? 'confirming' : 'waiting',
-        confirmation: confirming ? '418209' : undefined,
-        message: confirming ? 'Compare this number with your phone, then approve it here.' : 'Scan the QR code or enter the TV code on your phone.',
-      })
-      return
-    }
-    const receiver = receiverRef.current
-    if (!receiver) {
-      setTvLinkInfo({ code: '', expiresAt: 0, phase: 'error', message: 'The TV receiver is still starting. Go back and try again.' })
-      return
-    }
-    const link = new TvLinkReceiver(receiver.pairingInfo.deviceId, {
-      onInfo: (info) => {
-        setTvLinkInfo(info)
-        if (info.phase === 'confirming') setFocus({ zone: 'setting', index: 0 })
-      },
-      onSetup: (transport) => {
-        const activeReceiver = receiverRef.current
-        if (!activeReceiver) throw new Error('The TV receiver closed before setup completed.')
-        if (catalogRequestRef.current) window.clearTimeout(catalogRequestRef.current.timer)
-        catalogRequestRef.current = undefined
-        activeReceiver.adoptStandaloneTransport(transport)
-        setStandaloneSaved(true)
-        setPaired(true)
-      },
-    })
-    tvLinkReceiverRef.current = link
-    link.start()
-    return () => {
-      link.stop()
-      if (tvLinkReceiverRef.current === link) tvLinkReceiverRef.current = undefined
-    }
-  }, [screen])
-
-  useEffect(() => {
-    if (!tvLinkInfo.code || !tvLinkInfo.linkSecret) {
-      setStandaloneQrCode(undefined)
-      return
-    }
-    let cancelled = false
-    void QRCode.toDataURL(tvLinkUrl(tvLinkInfo.code, tvLinkInfo.linkSecret), {
-      width: 420,
-      margin: 2,
-      color: { dark: '#050505', light: '#ffffff' },
-      errorCorrectionLevel: 'H',
-    }).then((value) => { if (!cancelled) setStandaloneQrCode(value) })
-    return () => { cancelled = true }
-  }, [tvLinkInfo.code, tvLinkInfo.linkSecret])
 
   useEffect(() => {
     const nativeVideo = avplayRef.current.available
@@ -2974,72 +2884,18 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
   }
 
-  const openIndependentSetup = () => {
-    setIndependentSetupError('')
-    setIndependentSetupPhase(independentPlaybackReady ? 'ready' : 'intro')
-    setScreen('independent-setup')
-    setActiveNav(navIndexFor('settings'))
-    changeFocus({ zone: 'setting', index: independentPlaybackReady ? 0 : 1 })
-  }
-
   const closeClientLink = () => {
     setScreen('settings')
     setActiveNav(navIndexFor('settings'))
-    setSettingsCategory(settingsSectionForOption(11))
-    changeFocus({ zone: 'setting', index: 11 })
+    setSettingsCategory(settingsSectionForOption(10))
+    changeFocus({ zone: 'setting', index: 10 })
   }
 
   const closeWorkerUpdate = () => {
     setScreen('settings')
     setActiveNav(navIndexFor('settings'))
-    setSettingsCategory(settingsSectionForOption(13))
-    changeFocus({ zone: 'setting', index: receiverRef.current?.workerEndpoint ? 13 : 7 })
-  }
-
-  const closeIndependentSetup = () => {
-    setScreen('settings')
-    setActiveNav(navIndexFor('settings'))
-    changeFocus({ zone: 'setting', index: 7 })
-  }
-
-  const startIndependentSetup = () => {
-    setIndependentSetupError('')
-    if (receiverRef.current?.requestIndependentSetup() || showPreviewTools) {
-      setIndependentSetupPhase('waiting')
-      changeFocus({ zone: 'setting', index: 0 })
-      return
-    }
-    setIndependentSetupError('Open izumi on the device currently linked to this TV, then try again.')
-    setIndependentSetupPhase('error')
-    changeFocus({ zone: 'setting', index: 1 })
-  }
-
-  const openStandaloneLink = () => {
-    setStandaloneCatalogError('')
-    setStandaloneSaved(false)
-    setScreen('standalone-link')
-    changeFocus({ zone: 'setting', index: 0 })
-  }
-
-  const closeStandaloneLink = () => {
-    setScreen(standaloneSaved ? 'home' : 'ready')
-    changeFocus({ zone: 'setting', index: 0 })
-  }
-
-  const retryStandaloneCatalog = () => {
-    setStandaloneCatalogError('')
-    if (!receiverRef.current?.requestCatalog('default') && tvProfileReady()) {
-      setStandaloneCatalogError('The TV receiver is unavailable. Reopen Companion to load your saved setup.')
-    }
-  }
-
-  const approveStandaloneLink = () => {
-    if (tvLinkReceiverRef.current?.approveSession()) changeFocus({ zone: 'setting', index: 0 })
-  }
-
-  const rejectStandaloneLink = () => {
-    tvLinkReceiverRef.current?.rejectSession()
-    changeFocus({ zone: 'setting', index: 0 })
+    setSettingsCategory(settingsSectionForOption(12))
+    changeFocus({ zone: 'setting', index: receiverRef.current?.workerEndpoint ? 12 : 10 })
   }
 
   const runSettingsAction = (index: number) => {
@@ -3050,16 +2906,15 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         showNotice(`${index === 0 ? 'Home layout' : index === 1 ? 'Video previews' : index === 2 ? 'Post-play mini-player' : index === 3 ? 'Autoplay' : index === 4 ? 'Automatic skipping' : index === 5 ? 'Still watching check' : 'Source continuity'} updated`)
         return
       }
-      if (index === 12) { setScreenEditorOpen(true); return }
-      if (index === 13) {
+      if (index === 11) { setScreenEditorOpen(true); return }
+      if (index === 12) {
         if (receiverRef.current?.workerEndpoint) setScreen('worker-update')
         else showNotice('Connect this TV to a private Worker first.')
         return
       }
-      if (index === 7) return openIndependentSetup()
-      if (index === 11) { setScreen('client-link'); return }
-      if (index === 10) { void launchUpdater(false).catch((error: Error) => showNotice(error.message)); return }
-      setSettingsConfirmation(index === 8 ? 'unpair' : 'reset')
+      if (index === 10) { setScreen('client-link'); return }
+      if (index === 9) { void launchUpdater(false).catch((error: Error) => showNotice(error.message)); return }
+      setSettingsConfirmation(index === 7 ? 'unpair' : 'reset')
       changeFocus({ zone: 'setting', index: 0 })
       return
     }
@@ -3080,7 +2935,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     setSnapshot(emptySnapshot)
     setSelected(fallbackMedia)
     setSettingsConfirmation(null)
-    setIndependentPlaybackReady(false)
     setScreen('ready')
     changeFocus({ zone: 'setting', index: 0 })
   }
@@ -3223,24 +3077,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
         else if (focus.zone === 'settings-category') changeFocus({ zone: 'nav', index: activeNav })
         else selectNav(0)
       }
-      return
-    }
-    if (screen === 'independent-setup') {
-      const canStart = independentSetupPhase === 'intro' || independentSetupPhase === 'error'
-      if (canStart && (action === 'left' || action === 'up')) changeFocus({ zone: 'setting', index: 0 })
-      else if (canStart && (action === 'right' || action === 'down')) changeFocus({ zone: 'setting', index: 1 })
-      else if (action === 'select') focus.index === 1 && canStart ? startIndependentSetup() : closeIndependentSetup()
-      else if (action === 'back') closeIndependentSetup()
-      return
-    }
-    if (screen === 'standalone-link') {
-      if (tvLinkInfo.phase === 'confirming') {
-        if (action === 'left' || action === 'up') changeFocus({ zone: 'setting', index: 0 })
-        else if (action === 'right' || action === 'down') changeFocus({ zone: 'setting', index: 1 })
-        else if (action === 'select') focus.index === 1 ? approveStandaloneLink() : rejectStandaloneLink()
-        else if (action === 'back') rejectStandaloneLink()
-      } else if (action === 'select' && standaloneSaved) retryStandaloneCatalog()
-      else if (action === 'select' || action === 'back') closeStandaloneLink()
       return
     }
     if (screen === 'details') {
@@ -3398,7 +3234,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
     }
     if (screen === 'ready') {
       if (action === 'back') requestExit()
-      else if (action === 'select') openStandaloneLink()
       return
     }
     if (action === 'back') requestExit()
@@ -3477,7 +3312,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       setSettingsConfirmation(null)
       changeFocus({ zone: 'setting', index: 0 })
     }
-    if (next === 'ready' || next === 'standalone-link') changeFocus({ zone: 'setting', index: 0 })
+    if (next === 'ready') changeFocus({ zone: 'setting', index: 0 })
     if (next === 'loading') setLoadingProgress(34)
     if (next === 'player') {
       setPlayerControlFocus(0)
@@ -3650,7 +3485,7 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
       ))}
       {screen === 'discover' && <DiscoveryScreen key={tvProfileId()} snapshot={snapshot} receiver={receiverRef.current} onDetails={selectCatalogMedia} onBack={() => selectNav(navIndexFor('my-list'))} />}
       {screenEditorOpen && <ScreenLayoutEditor key={tvProfileId()} layout={activeLayout} onChange={changeScreenLayout}
-        onClose={() => { setScreenEditorOpen(false); changeFocus({ zone: 'setting', index: 12 }) }}
+        onClose={() => { setScreenEditorOpen(false); changeFocus({ zone: 'setting', index: 11 }) }}
         sections={[
           { id: 'screens', title: 'Catalogues', items: rawCatalogOptions.map(option => ({ id: option.screen, title: option.label })) },
           ...(['home', 'browse', 'shows', 'movies'] as const).map(kind => ({ id: `${snapshot.catalog.screen}:${kind}`, title: ({ home: 'Home', browse: 'Browse', shows: 'Shows', movies: 'Movies' })[kind],
@@ -3663,7 +3498,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           activeNav={activeNav}
           paired={paired}
           connected={connected}
-          independentReady={independentPlaybackReady}
           workerLinked={Boolean(receiverRef.current?.workerEndpoint)}
           deviceId={pairing?.deviceId}
           confirmation={settingsConfirmation}
@@ -3690,17 +3524,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           onBack={closeClientLink}
         />
       )}
-      {screen === 'independent-setup' && (
-        <IndependentSetupScreen
-          phase={independentSetupPhase}
-          connected={connected}
-          focusIndex={focus.zone === 'setting' ? focus.index : 0}
-          error={independentSetupError}
-          onFocus={(index) => changeFocus({ zone: 'setting', index })}
-          onBack={closeIndependentSetup}
-          onStart={startIndependentSetup}
-        />
-      )}
       {screen === 'ready' && (
         <ReadyScreen
           connected={connected}
@@ -3708,29 +3531,6 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           pairingCode={pairingDisplayCode}
           expiresAt={pairing?.expiresAt}
           posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
-          independentFocused={focus.zone === 'setting'}
-          onIndependentFocus={() => changeFocus({ zone: 'setting', index: 0 })}
-          onIndependent={openStandaloneLink}
-        />
-      )}
-      {screen === 'standalone-link' && (
-        <StandaloneLinkScreen
-          connected={connected}
-          qrCode={standaloneQrCode}
-          pairingCode={tvLinkDisplayCode}
-          expiresAt={tvLinkInfo.expiresAt}
-          phase={standaloneCatalogError ? 'error' : tvLinkInfo.phase}
-          statusMessage={standaloneCatalogError ? `Your setup is saved, but the catalogue could not load: ${standaloneCatalogError}` : tvLinkInfo.message}
-          setupSaved={standaloneSaved}
-          confirmation={tvLinkInfo.confirmation}
-          confirmationFocus={focus.index}
-          posters={Array.from(new Set(snapshot.rows.flatMap((row) => row.items.map((item) => item.poster).filter(Boolean) as string[]))).slice(0, 12)}
-          backFocused={focus.zone === 'setting'}
-          onBackFocus={() => changeFocus({ zone: 'setting', index: 0 })}
-          onConfirmationFocus={(index) => changeFocus({ zone: 'setting', index })}
-          onBack={standaloneSaved ? retryStandaloneCatalog : closeStandaloneLink}
-          onApprove={approveStandaloneLink}
-          onReject={rejectStandaloneLink}
         />
       )}
       {screen === 'loading' && (

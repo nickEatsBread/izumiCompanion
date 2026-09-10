@@ -1168,7 +1168,6 @@ export function SettingsScreen({
   activeNav,
   paired,
   connected,
-  independentReady,
   workerLinked,
   deviceId,
   confirmation,
@@ -1185,7 +1184,6 @@ export function SettingsScreen({
   activeNav: number
   paired: boolean
   connected: boolean
-  independentReady: boolean
   workerLinked: boolean
   deviceId?: string
   confirmation: SettingsConfirmation
@@ -1209,7 +1207,6 @@ export function SettingsScreen({
     { title: 'Automatically skip segments', detail: 'Use AniSkip, IntroDB and chapter timing supplied by izumi.', icon: Captions, enabled: playbackSettings.autoSkipSegments },
     { title: 'Still watching check', detail: 'Pause autoplay after three episodes until you confirm.', icon: ShieldCheck, enabled: playbackSettings.stillWatchingEnabled },
     { title: 'Keep the current source', detail: 'Prefer the same provider when the next episode is available.', icon: History, enabled: playbackSettings.preferBingeSource },
-    { title: 'Use TV without izumi open', detail: independentReady ? 'Connected to your private Worker and ready for independent playback.' : 'One-time setup for private sync and most compatible sources.', icon: Cloud },
     { title: 'Unpair this TV', detail: 'Disconnect this TV from your izumi sync group.', icon: Link2Off },
       { title: 'Reset companion', detail: 'Remove pairing, preferences and this TV identity.', icon: RotateCcw },
       { title: 'App updates', detail: 'Open izumi Updater to check and install the latest TV version.', icon: RotateCcw },
@@ -1249,7 +1246,7 @@ export function SettingsScreen({
             return (
             <button
               type="button"
-              class={`${focus.zone === 'setting' && focus.index === index && !confirmation ? 'is-focused' : ''}${enabled !== undefined ? ' is-toggle' : ''}${index === 8 || index === 9 ? ' is-destructive' : ''}`}
+              class={`${focus.zone === 'setting' && focus.index === index && !confirmation ? 'is-focused' : ''}${enabled !== undefined ? ' is-toggle' : ''}${index === 7 || index === 8 ? ' is-destructive' : ''}`}
               aria-pressed={enabled}
               data-focus-id={!confirmation ? `setting-${index}` : undefined}
               tabIndex={!confirmation && focus.zone === 'setting' && focus.index === index ? 0 : -1}

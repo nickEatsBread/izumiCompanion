@@ -1337,7 +1337,7 @@ async function main() {
     await waitFor("document.querySelectorAll('.settings-options > button')[1].getAttribute('aria-pressed') === 'false'")
     const previewsDisabled = await waitFor("JSON.parse(localStorage.getItem('izumi.companion.playback-experience')).videoPreviewsEnabled === false")
     assert(previewsDisabled, 'The video-preview opt-out was not persisted.')
-    await evaluate("document.querySelector('[data-focus-id=\"setting-12\"]').click()")
+    await evaluate("document.querySelector('[data-focus-id=\"setting-11\"]').click()")
     await waitFor("document.querySelector('.screen-layout-editor')")
     await press('ArrowDown')
     await press('Enter')
@@ -1352,90 +1352,8 @@ async function main() {
     assert(editedLayout && editedLayout.screens.hidden.length === 1 && editedLayout.screens.order.length > 1, 'Remote layout editing did not persist.')
     await capture('m56-screen-layout-editor.png')
     await press('Backspace')
-    await waitFor("!document.querySelector('.screen-layout-editor') && document.querySelector('[data-focus-id=\"setting-12\"].is-focused')")
+    await waitFor("!document.querySelector('.screen-layout-editor') && document.querySelector('[data-focus-id=\"setting-11\"].is-focused')")
 
-
-    await press('ArrowLeft')
-    await press('ArrowDown')
-    await press('ArrowDown')
-    await press('ArrowRight')
-    await waitFor("document.querySelector('[data-focus-id=\"setting-11\"].is-focused')")
-    await press('ArrowDown')
-    await waitFor("document.querySelector('[data-focus-id=\"setting-7\"].is-focused')")
-    await press('Enter')
-    await waitFor("document.querySelector('.independent-setup-screen .independent-setup-heading h1')")
-    const independentSetup = await evaluate(`(() => ({
-      title: document.querySelector('.independent-setup-heading h1').textContent.trim(),
-      titleSize: parseFloat(getComputedStyle(document.querySelector('.independent-setup-heading h1')).fontSize),
-      instructionSize: parseFloat(getComputedStyle(document.querySelector('.independent-setup-instruction p')).fontSize),
-      logoWidth: document.querySelector('.independent-setup-screen .state-brand').naturalWidth,
-      actions: document.querySelectorAll('.independent-setup-actions button').length,
-      body: [document.body.scrollWidth, document.body.scrollHeight]
-    }))()`)
-    assert(independentSetup.title === 'Use this TV without keeping izumi open', `Independent setup title is wrong: ${independentSetup.title}.`)
-    assert(independentSetup.titleSize >= 60 && independentSetup.instructionSize >= 24, `Independent setup type is too small for TV: ${JSON.stringify(independentSetup)}.`)
-    assert(independentSetup.logoWidth > 0 && independentSetup.actions === 2, `Independent setup branding/actions did not render: ${JSON.stringify(independentSetup)}.`)
-    assert(JSON.stringify(independentSetup.body) === '[1920,1080]', `Independent setup overflowed the TV viewport: ${independentSetup.body}.`)
-    await evaluate("document.querySelector('.independent-setup-actions button:last-child').click()")
-    await waitFor("document.querySelector('.independent-setup-progress > i')")
-    const spinner = await evaluate("getComputedStyle(document.querySelector('.independent-setup-progress > i')).borderTopColor")
-    assert(spinner === 'rgb(255, 255, 255)', `Independent setup spinner is not white: ${spinner}.`)
-    await capture('m56-independent-setup.png')
-
-    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=ready` })
-    await waitFor("document.readyState === 'complete' && document.querySelector('.ready-independent-option button.is-focused')")
-    await waitFor("!document.getElementById('startup-splash')")
-    const readySetupAction = await evaluate(`(() => ({
-      label: document.querySelector('.ready-independent-option button').textContent.trim(),
-      body: [document.body.scrollWidth, document.body.scrollHeight]
-    }))()`)
-    assert(readySetupAction.label === 'Use TV independently', `Unpaired setup action is wrong: ${readySetupAction.label}.`)
-    assert(JSON.stringify(readySetupAction.body) === '[1920,1080]', `Ready screen overflowed the TV viewport: ${readySetupAction.body}.`)
-    await press('Enter')
-    await waitFor("document.querySelector('.standalone-link-screen .standalone-qr-shell img') && document.querySelector('.standalone-link-screen .standalone-qr-shell img').complete")
-    const standaloneLink = await evaluate(`(() => {
-      var panel = document.querySelector('.standalone-link-panel').getBoundingClientRect();
-      var qr = document.querySelector('.standalone-qr-shell img');
-      return {
-        title: document.querySelector('.standalone-link-copy h1').textContent.trim(),
-        titleSize: parseFloat(getComputedStyle(document.querySelector('.standalone-link-copy h1')).fontSize),
-        copySize: parseFloat(getComputedStyle(document.querySelector('.standalone-link-copy > p:not(.state-kicker)')).fontSize),
-        qrNatural: [qr.naturalWidth, qr.naturalHeight],
-        qrDisplay: [qr.getBoundingClientRect().width, qr.getBoundingClientRect().height],
-        panel: [panel.left, panel.top, panel.right, panel.bottom],
-        manualLink: document.querySelector('.standalone-qr-panel > span').textContent.trim(),
-        code: document.querySelector('.standalone-code b').textContent.trim(),
-        body: [document.body.scrollWidth, document.body.scrollHeight]
-      };
-    })()`)
-    assert(standaloneLink.title === 'Set up this TV directly', `Standalone setup title is wrong: ${standaloneLink.title}.`)
-    assert(standaloneLink.titleSize >= 60 && standaloneLink.copySize >= 21, `Standalone setup type is too small for TV: ${JSON.stringify(standaloneLink)}.`)
-    assert(standaloneLink.qrNatural[0] === 420 && standaloneLink.qrNatural[1] === 420, `Standalone QR source is not 420px: ${standaloneLink.qrNatural}.`)
-    assert(standaloneLink.qrDisplay[0] >= 330 && standaloneLink.qrDisplay[1] >= 330, `Standalone QR is too small to scan across a room: ${standaloneLink.qrDisplay}.`)
-    assert(standaloneLink.manualLink === 'or visit tv-link.izumi.watch', `Standalone manual setup link is wrong: ${standaloneLink.manualLink}.`)
-    assert(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4} [ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/.test(standaloneLink.code), `Standalone preview code is malformed: ${standaloneLink.code}.`)
-    assert(standaloneLink.panel.every((edge) => edge >= 0) && standaloneLink.panel[2] <= 1920 && standaloneLink.panel[3] <= 1080, `Standalone setup panel is clipped: ${standaloneLink.panel}.`)
-    assert(JSON.stringify(standaloneLink.body) === '[1920,1080]', `Standalone setup overflowed the TV viewport: ${standaloneLink.body}.`)
-    await capture('m56-standalone-link.png')
-    await press('Backspace')
-    await waitFor("document.querySelector('.ready-independent-option button.is-focused')")
-
-    await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=standalone-link&scenario=tv-link-confirming` })
-    await waitFor("document.readyState === 'complete' && document.querySelectorAll('.standalone-confirm-actions button').length === 2")
-    await waitFor("!document.getElementById('startup-splash')")
-    const standaloneConfirmation = await evaluate(`(() => ({
-      number: document.querySelector('.standalone-confirmation b').textContent.trim(),
-      buttons: Array.from(document.querySelectorAll('.standalone-confirm-actions button')).map((button) => button.textContent.trim()),
-      focused: document.querySelector('.standalone-confirm-actions button.is-focused').textContent.trim(),
-      body: [document.body.scrollWidth, document.body.scrollHeight]
-    }))()`)
-    assert(standaloneConfirmation.number === '418 209', `Standalone confirmation number is wrong: ${standaloneConfirmation.number}.`)
-    assert(JSON.stringify(standaloneConfirmation.buttons) === '["Does not match","Numbers match"]', `Standalone confirmation actions are wrong: ${standaloneConfirmation.buttons}.`)
-    assert(standaloneConfirmation.focused === 'Does not match', `Standalone confirmation did not default to the safe rejection action: ${standaloneConfirmation.focused}.`)
-    assert(JSON.stringify(standaloneConfirmation.body) === '[1920,1080]', `Standalone confirmation overflowed the TV viewport: ${standaloneConfirmation.body}.`)
-    await press('ArrowRight')
-    await waitFor("document.querySelector('.standalone-confirm-actions button:last-child').classList.contains('is-focused')")
-    await capture('m56-standalone-confirmation.png')
 
     await cdp.call('Page.navigate', { url: `http://127.0.0.1:${port}/?preview=1&capture=1&screen=discover` })
     await waitFor("document.querySelector('.tv-discovery h1') && !document.querySelector('.tv-discovery-actions button:nth-child(3)').disabled")
@@ -1531,7 +1449,7 @@ async function main() {
     const exceptions = cdp.events.filter((event) => event.method === 'Runtime.exceptionThrown')
     const applicationExceptions = exceptions.filter((event) => !/^https:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\//i.test(event.params?.exceptionDetails?.url ?? ''))
     assert(applicationExceptions.length === 0, `Chromium 56 reported ${applicationExceptions.length} application exception(s): ${JSON.stringify(applicationExceptions.map((event) => event.params?.exceptionDetails))}`)
-    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, independent Worker onboarding, secure TV-side confirmation, unpaired phone handoff, Discover explanations/save/undo/remote navigation, and no application runtime errors.\n`)
+    process.stdout.write(`Chromium 56 check passed (${focusPerformance.maximum.toFixed(1)}ms max/${focusPerformance.average.toFixed(1)}ms average D-pad focus commit): Home geometry, retained mid-page sidebar position, stable title art, full-frame trailer transitions, Samsung voice-search routing, series-page selection, merged Browse carousel, one-photo tiles, looping rails, straight search navigation, animated skeletons, accelerated seeking, trailer fallback, player prompts, Discover explanations/save/undo/remote navigation, and no application runtime errors.\n`)
   } catch (error) {
     process.stderr.write(`Chromium check failed: ${error instanceof Error ? error.message : String(error)}\n`)
     throw error

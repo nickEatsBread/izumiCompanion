@@ -59,9 +59,7 @@ Android and iPhone installer builds are available through the [mobile build work
 
 ### Cloudflare setup
 
-Choose **Set up Cloudflare** in the installer to link the TV's sources with native one-click deployment. Enter the code shown in Companion, approve the matching number on the TV, choose your sources, and deploy. Claim the temporary Cloudflare account before the expiry shown in the wizard.
-
-You can also use [TV Link](https://tv-link.izumi.watch) in a browser with a Cloudflare API token. Updated Android izumi builds can open the TV's QR invitation directly in the app. The website's **Open in izumi** button provides an app handoff on other platforms, with browser setup available if the app is absent.
+Private Cloudflare sync is set up in the full izumi client under **Settings → Device sync**. Pair this TV with that client and the TV receives the Worker connection from it.
 
 ### 2. Prepare your TV
 

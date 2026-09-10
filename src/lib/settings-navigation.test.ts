@@ -3,18 +3,18 @@ import { moveSettingsContentFocus, SETTINGS_SECTIONS, settingsSectionForOption, 
 
 describe('settings remote navigation', () => {
   it('reaches Update Worker only when the TV has a Worker and returns to Connection', () => {
-    expect(settingsSections(false)[2].options).toEqual([11, 7, 8])
-    expect(settingsSections(true)[2].options).toEqual([11, 7, 13, 8])
-    expect(moveSettingsContentFocus({ zone: 'setting', index: 7 }, 'down', true)).toEqual({ zone: 'setting', index: 13 })
-    expect(moveSettingsContentFocus({ zone: 'setting', index: 13 }, 'down', true)).toEqual({ zone: 'setting', index: 8 })
-    expect(moveSettingsContentFocus({ zone: 'setting', index: 8 }, 'up', true)).toEqual({ zone: 'setting', index: 13 })
-    expect(moveSettingsContentFocus({ zone: 'setting', index: 13 }, 'back', true)).toEqual({ zone: 'settings-category', index: 2 })
-    expect(moveSettingsContentFocus({ zone: 'setting', index: 7 }, 'down', false)).toEqual({ zone: 'setting', index: 8 })
+    expect(settingsSections(false)[2].options).toEqual([10, 7])
+    expect(settingsSections(true)[2].options).toEqual([10, 12, 7])
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 10 }, 'down', true)).toEqual({ zone: 'setting', index: 12 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 12 }, 'down', true)).toEqual({ zone: 'setting', index: 7 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 7 }, 'up', true)).toEqual({ zone: 'setting', index: 12 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 12 }, 'back', true)).toEqual({ zone: 'settings-category', index: 2 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 10 }, 'down', false)).toEqual({ zone: 'setting', index: 7 })
   })
 
   it('keeps every existing action in exactly one category', () => {
     const options = SETTINGS_SECTIONS.flatMap((section) => section.options)
-    expect(options.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 13 }, (_, i) => i))
+    expect(options.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, i) => i))
     expect(new Set(options).size).toBe(options.length)
   })
 
@@ -32,17 +32,17 @@ describe('settings remote navigation', () => {
   })
 
   it('returns setup and destructive-action cancellation to their original sections', () => {
-    expect(settingsSectionForOption(11)).toBe(2)
+    expect(settingsSectionForOption(10)).toBe(2)
     expect(settingsSectionForOption(7)).toBe(2)
-    expect(settingsSectionForOption(8)).toBe(2)
+    expect(settingsSectionForOption(8)).toBe(3)
     expect(settingsSectionForOption(9)).toBe(3)
-    expect(moveSettingsContentFocus({ zone: 'setting', index: 10 }, 'down')).toEqual({ zone: 'setting', index: 9 })
-    expect(moveSettingsContentFocus({ zone: 'setting', index: 9 }, 'up')).toEqual({ zone: 'setting', index: 10 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 9 }, 'down')).toEqual({ zone: 'setting', index: 8 })
+    expect(moveSettingsContentFocus({ zone: 'setting', index: 8 }, 'up')).toEqual({ zone: 'setting', index: 9 })
   })
 
   it('opens Connection on Link phone or desktop and preserves its Back destination', () => {
-    const linkedScreenBack = { zone: 'setting' as const, index: 11 }
-    expect(SETTINGS_SECTIONS[2].options).toEqual([11, 7, 8])
+    const linkedScreenBack = { zone: 'setting' as const, index: 10 }
+    expect(SETTINGS_SECTIONS[2].options).toEqual([10, 7])
     expect(moveSettingsContentFocus({ zone: 'settings-category', index: 2 }, 'select')).toEqual(linkedScreenBack)
     expect(moveSettingsContentFocus(linkedScreenBack, 'up')).toEqual(linkedScreenBack)
     expect(moveSettingsContentFocus(linkedScreenBack, 'down')).toEqual({ zone: 'setting', index: 7 })

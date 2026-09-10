@@ -46,7 +46,6 @@ jobs:
       - run: npm ci --prefix installer --ignore-scripts
       - run: npm test --prefix installer
       - run: npm run assets --prefix installer
-      - run: npm run cloudflare --prefix installer
       - run: npm ci --prefix mobile
       - run: npm run typecheck --prefix mobile
       - run: node mobile/scripts/icons.cjs
