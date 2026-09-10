@@ -44,8 +44,6 @@ export interface CompanionTrailerSource {
   url: string
 }
 
-export type CompanionWorkerSetupStatus = 'opened' | 'starting' | 'dismissed' | 'error'
-
 export type CompanionPlayResult =
   | 'local'
   | 'notified'
@@ -69,8 +67,6 @@ export interface ReceiverEvents {
   onControl(request: CastControlRequest, senderId: string): void
   onDeviceSourceAvailability?(available: boolean): void
   onDeviceSourceOptions?(options: LinkedDeviceSourceOptions): void
-  onIndependentPlaybackReady?(ready: boolean): void
-  onWorkerSetupStatus?(status: CompanionWorkerSetupStatus, message?: string): void
 }
 
 function parseMessage(value: unknown): unknown {
@@ -624,7 +620,6 @@ export class CompanionReceiver {
   private detailRequests = new Map<string, (media: CompanionMedia | null) => void>()
   private trailerRequests = new Map<string, (source: CompanionTrailerSource | null, error?: string) => void>()
   private prefetchedPlays = new Map<string, { expiresAt: number; result: Extract<CompanionPlayResult, { kind: 'resolved' }> }>()
-  private workerSetupRequestId = ''
   private cloudPlayGeneration = 0
   private playCancellation?: { cancel?: () => void }
   private activePlayback?: { sessionId: string; media: CompanionMedia; profileId: string }
@@ -639,7 +634,6 @@ export class CompanionReceiver {
     this.events.onPairingInfo(this.pairing)
     this.events.onPaired(Boolean(this.credential))
     this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
-    this.events.onIndependentPlaybackReady?.(this.independentPlaybackReady)
     const snapshot = this.credential ? storedSnapshot() : null
     if (snapshot) this.acceptSnapshot(snapshot)
   }
@@ -729,23 +723,9 @@ export class CompanionReceiver {
       this.cloudflare = transport
       localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
       this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
-      this.events.onIndependentPlaybackReady?.(this.independentPlaybackReady)
       this.publish('izumi.companion.transport-ready', {
         pairingId: transport.pairingId,
       }, peerId(from) || 'host')
-    })
-    this.channel.on('izumi.companion.worker-setup-status', (value) => {
-      const message = parseMessage(value)
-      if (!message || typeof message !== 'object') return
-      const input = message as Record<string, unknown>
-      const allowed: CompanionWorkerSetupStatus[] = ['opened', 'starting', 'dismissed', 'error']
-      if (!this.credential
-        || input.credential !== this.credential
-        || input.requestId !== this.workerSetupRequestId
-        || !allowed.includes(input.status as CompanionWorkerSetupStatus)) return
-      const status = input.status as CompanionWorkerSetupStatus
-      this.events.onWorkerSetupStatus?.(status, typeof input.message === 'string' ? input.message.slice(0, 180) : undefined)
-      if (status === 'dismissed' || status === 'error') this.workerSetupRequestId = ''
     })
     this.channel.on('izumi.companion.snapshot', (value) => this.receiveSnapshot(value))
     this.channel.on('izumi.companion.progress-request', (value, from) => {
@@ -956,10 +936,6 @@ export class CompanionReceiver {
     this.publish('izumi.companion.refresh', { protocol: 1 }, 'broadcast')
   }
 
-  get independentPlaybackReady(): boolean {
-    return Boolean(this.cloudflare && this.cloudflare.playbackMode !== 'device-only')
-  }
-
   /** Public status checks need only the address, never the TV pairing credential. */
   get workerEndpoint(): string {
     return this.cloudflare?.endpoint ?? ''
@@ -978,50 +954,6 @@ export class CompanionReceiver {
       if (status.app !== 'izumi-sync' || status.protocol !== 1) throw new Error('The private Worker could not be verified.')
       return parseWorkerUpdateStatus({ version: status.version, configured: false, automatic: false, phase: 'setup-required' })
     }
-  }
-
-  /** Persist the TV-scoped capability received through the stateless phone handoff. */
-  adoptStandaloneTransport(value: unknown): void {
-    // This entry point receives the authenticated, decrypted standalone setup payload.
-    const transport = parseCloudflareTransport(value, true)
-    if (!transport || transport.playbackMode === 'device-only') throw new Error('The Cloudflare TV setup is invalid.')
-    preserveRecoveryKey(transport, this.cloudflare)
-    const credential = this.credential || secureRandomHex(32)
-    if (!credential) throw new Error('This TV could not create secure local credentials.')
-    const previousCredential = localStorage.getItem('izumi.companion.credential')
-    const previousTransport = localStorage.getItem('izumi.companion.cloudflare')
-    try {
-      localStorage.setItem('izumi.companion.credential', credential)
-      localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
-    } catch {
-      if (previousCredential === null) localStorage.removeItem('izumi.companion.credential')
-      else localStorage.setItem('izumi.companion.credential', previousCredential)
-      if (previousTransport === null) localStorage.removeItem('izumi.companion.cloudflare')
-      else localStorage.setItem('izumi.companion.cloudflare', previousTransport)
-      throw new Error('This TV could not save the Cloudflare setup.')
-    }
-    if (this.cloudflare && (this.cloudflare.endpoint !== transport.endpoint || this.cloudflare.pairingId !== transport.pairingId)) {
-      void this.revokeCloudflarePairing()
-    }
-    this.credential = credential
-    this.cloudflare = transport
-    this.events.onPaired(true)
-    this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
-    this.events.onIndependentPlaybackReady?.(true)
-    // "auto" is an actual AniList catalogue. An unknown selector requests defaultScreen.
-    void this.refreshHousehold().then(() => this.requestCatalog('default'))
-  }
-
-  /** Ask the authenticated, currently linked izumi client to open the private Worker onboarding. */
-  requestIndependentSetup(): boolean {
-    if (!this.credential || !this.connected) return false
-    this.workerSetupRequestId = randomHex(12)
-    this.publish('izumi.companion.worker-setup', {
-      credential: this.credential,
-      pairingId: this.credential.slice(0, 16),
-      requestId: this.workerSetupRequestId,
-    }, 'broadcast')
-    return true
   }
 
   async sendDiscoveryChoice(choice: DiscoveryChoice): Promise<boolean> {

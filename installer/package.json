@@ -15,15 +15,10 @@
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
-    "dist:linux": "electron-builder --linux --publish never",
-    "cloudflare": "node scripts/build-cloudflare.cjs",
-    "prestart": "npm run cloudflare",
-    "predist": "npm run cloudflare",
-    "predist:win": "npm run cloudflare",
-    "predist:mac": "npm run cloudflare",
-    "predist:linux": "npm run cloudflare"
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "dependencies": {
+    "@izumi/companion": "file:..",
     "@xmldom/xmldom": "^0.8.11",
     "form-data": "^4.0.6",
     "jszip": "^3.10.1",
@@ -33,8 +28,7 @@
   },
   "devDependencies": {
     "electron": "^44.0.0",
-    "electron-builder": "^26.15.3",
-    "esbuild": "0.28.2"
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.nicho.izumi.tvinstaller",

@@ -7,7 +7,7 @@ const http = require('node:http')
 const vm = require('node:vm')
 const { createRequire } = require('node:module')
 
-test('mobile runtime serves only packaged UI and routes installer and Cloudflare requests', async t => {
+test('mobile runtime serves only packaged UI and routes installer requests', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'izumi-mobile-test-'))
   const filename = path.resolve(__dirname, '../nodejs-assets/nodejs-project/main.js')
   const realRequire = createRequire(filename)
@@ -35,6 +35,6 @@ test('mobile runtime serves only packaged UI and routes installer and Cloudflare
   await listeners[0](JSON.stringify({ type: 'request', scope: 'installer', id: 'config', method: 'getConfig' }))
   assert.deepEqual(messages.find(value => value.id === 'config').result.localAddresses, ['192.0.2.10'])
   await listeners[0](JSON.stringify({ type: 'request', scope: 'cloudflare', id: 'unknown', method: 'shell', input: {} }))
-  assert.match(messages.find(value => value.id === 'unknown').error, /Unknown Cloudflare/)
+  assert.match(messages.find(value => value.id === 'unknown').error, /Unknown mobile request/)
   assert.ok(fs.existsSync(path.join(directory, 'izumi-tv-installer')))
 })

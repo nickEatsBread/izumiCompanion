@@ -67,7 +67,6 @@ $('launch').onclick = () => { void run('launch') }
 $('launch-updater').onclick = () => { void run('launch-updater') }
 $('back').onclick = () => { hide('error-panel', true); go(1); tvIp.focus() }
 $('start-over').onclick = () => { hide('error-panel', true); tvIp.value = ''; go(1); tvIp.focus() }
-$('cloudflare-setup').onclick = async () => { try { await api.openCloudflareSetup() } catch (error) { fail(error) } }
 document.querySelectorAll('[data-view-logs]').forEach(button => { button.onclick = () => { $('activity').open = true; $('logs-summary').focus(); $('activity').scrollIntoView({ block: 'start' }) } })
 for (const [id, action, done] of [['copy-logs', 'copyLogs', 'Logs copied.'], ['save-logs', 'saveLogs', 'Logs saved.'], ['open-logs', 'openLogs', 'Saved logs opened.']]) {
   $(id).onclick = async () => {

@@ -11,8 +11,6 @@ export type ScreenName =
   | 'settings'
   | 'client-link'
   | 'worker-update'
-  | 'independent-setup'
-  | 'standalone-link'
   | 'details'
   | 'ready'
   | 'loading'

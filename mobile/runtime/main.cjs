@@ -41,8 +41,7 @@ bridge.channel.on('message', async raw => {
   if (message.type !== 'request' || !installer || typeof message.id !== 'string' || message.id.length > 80) return
   try {
     let result
-    if (message.scope === 'cloudflare') result = await require('./installer/src/cloudflare/cloudflare.cjs').invoke(message.method, message.input)
-    else if (message.scope === 'installer') {
+    if (message.scope === 'installer') {
       if (message.method === 'getConfig') result = await installer.getConfig()
       else if (message.method === 'run') result = await installer.run(message.input)
       else if (message.method === 'verifyCode') result = installer.verifyCode(message.input)

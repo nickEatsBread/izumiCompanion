@@ -45,9 +45,7 @@ export function navIndexFor(destination: ScreenName): number {
     ? 'series-home'
     : destination === 'details'
       ? 'movies'
-      : destination === 'independent-setup'
-        ? 'settings'
-        : destination
+      : destination
   const index = items.findIndex((item) => item.destination === resolved)
   return index < 0 ? 0 : index
 }

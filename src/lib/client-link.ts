@@ -150,7 +150,7 @@ export class ClientLinkSession {
     try {
       this.assertActive()
       if (!this.identity.deviceId || !this.identity.credential || !this.identity.transport.tvToken) {
-        throw new Error('Complete independent TV setup before linking a phone or desktop.')
+        throw new Error('Pair this TV with izumi and connect private Cloudflare sync before linking a phone or desktop.')
       }
       const status = await this.activeRequest('GET', '/v1/status')
       this.assertActive()

@@ -2,7 +2,6 @@ import { webcrypto } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CompanionReceiver, type ReceiverEvents } from './receiver'
 import { resetTvHousehold } from './profiles'
-import { parseTvLinkSetup } from './tv-link'
 import type { CompanionCloudflareTransport } from '../types'
 
 const STORAGE_KEY = 'izumi.companion.cloudflare'
@@ -250,32 +249,5 @@ describe('TV-generated recovery identity', () => {
     sendTransport(instance, 'pair', { ...transport, recoveryKey: incomingKey })
     expect(storedTransport().recoveryKey).toBeUndefined()
     expect(instance.clientLinkIdentity!.transport.recoveryKey).not.toBe(oldKey)
-  })
-
-  it('preserves a recovery key received through authenticated encrypted standalone setup', () => {
-    seed(null, '')
-    const instance = receiver()
-    const parsed = parseTvLinkSetup({ protocol: 1, endpoint: transport.endpoint, cloudflare: { ...transport, recoveryKey: savedKey } })
-    expect(parsed?.recoveryKey).toBe(savedKey)
-    instance.adoptStandaloneTransport(parsed)
-    expect(storedTransport().recoveryKey).toBe(savedKey)
-    expect(instance.clientLinkIdentity!.transport.recoveryKey).toBe(savedKey)
-    expect(receiver().clientLinkIdentity!.transport.recoveryKey).toBe(savedKey)
-  })
-
-  it.each([undefined, incomingKey])('retains an existing local key when the same encrypted setup is repeated (incoming %s)', (recoveryKey) => {
-    const instance = receiver()
-    const key = instance.clientLinkIdentity!.transport.recoveryKey
-    instance.adoptStandaloneTransport({ ...transport, recoveryKey })
-    expect(instance.clientLinkIdentity!.transport.recoveryKey).toBe(key)
-    expect(storedTransport().recoveryKey).toBe(key)
-  })
-
-  it('does not carry a local key into a different standalone route without a key', () => {
-    const instance = receiver()
-    const key = instance.clientLinkIdentity!.transport.recoveryKey
-    instance.adoptStandaloneTransport({ ...transport, tvToken: 'U'.repeat(43) })
-    expect(storedTransport().recoveryKey).toBeUndefined()
-    expect(instance.clientLinkIdentity!.transport.recoveryKey).not.toBe(key)
   })
 })

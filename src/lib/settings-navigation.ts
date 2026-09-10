@@ -2,15 +2,15 @@ import type { FocusLocation } from '../types'
 import type { RemoteAction } from './remote'
 
 export const SETTINGS_SECTIONS = [
-  { title: 'Appearance', description: 'Make the home screen feel like yours.', options: [0, 1, 12] },
+  { title: 'Appearance', description: 'Make the home screen feel like yours.', options: [0, 1, 11] },
   { title: 'Playback', description: 'Choose what happens during and after you watch.', options: [2, 3, 4, 5, 6] },
-  { title: 'Connection', description: 'Manage how this TV connects to izumi.', options: [11, 7, 8] },
-  { title: 'System', description: 'Keep Companion up to date and manage this device.', options: [10, 9] },
+  { title: 'Connection', description: 'Manage how this TV connects to izumi.', options: [10, 7] },
+  { title: 'System', description: 'Keep Companion up to date and manage this device.', options: [9, 8] },
 ]
 
 export function settingsSections(workerLinked = false) {
   return SETTINGS_SECTIONS.map(section => section.title === 'Connection' && workerLinked
-    ? { ...section, options: [11, 7, 13, 8] } : section)
+    ? { ...section, options: [10, 12, 7] } : section)
 }
 
 export function settingsSectionForOption(index: number): number {

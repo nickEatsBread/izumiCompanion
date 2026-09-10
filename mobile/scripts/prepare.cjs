@@ -17,7 +17,7 @@ for (const name of ['react', 'react-native', 'nodejs-mobile-react-native', 'reac
 }
 const source = path.join(root, 'installer')
 for (const name of ['installer.config.json', 'LICENSE', 'THIRD-PARTY-NOTICES.md']) fs.cpSync(path.join(source, name), path.join(destination, 'installer', name), { recursive: true })
-fs.cpSync(path.join(source, 'src'), path.join(destination, 'installer/src'), { recursive: true, filter: file => !['main.cjs', 'preload.cjs', 'cloudflare-window.cjs', 'cloudflare-preload.cjs'].includes(path.basename(file)) })
+fs.cpSync(path.join(source, 'src'), path.join(destination, 'installer/src'), { recursive: true, filter: file => !['main.cjs', 'preload.cjs'].includes(path.basename(file)) })
 fs.cpSync(path.join(root, 'updater/runtime'), path.join(destination, 'installer/src/runtime'), { recursive: true })
 fs.copyFileSync(path.join(mobile, 'runtime/main.cjs'), path.join(destination, 'main.js'))
 fs.copyFileSync(path.join(mobile, 'runtime/bridge.js'), path.join(destination, 'installer/src/renderer/mobile-bridge.js'))

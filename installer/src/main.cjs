@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, shell, dialog, clipboard } = require('elect
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const { createInstaller } = require('./installer-core.cjs')
-const { openCloudflareSetup } = require('./cloudflare-window.cjs')
 
 // Keep the existing TV author identity across desktop installer upgrades.
 app.setPath('userData', path.join(app.getPath('appData'), 'izumi-tv-installer'))
@@ -39,7 +38,6 @@ function handle(channel, callback) {
 handle('installer:get-config', () => installer.getConfig())
 handle('installer:run', (_event, request) => installer.run(request))
 handle('installer:verify-code', (_event, code) => installer.verifyCode(code))
-handle('installer:cloudflare-setup', () => { openCloudflareSetup(); return { ok: true } })
 handle('installer:copy-logs', () => { clipboard.writeText(installer.logs.text()); return { ok: true } })
 handle('installer:save-logs', async event => {
   const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {

@@ -34,11 +34,8 @@ import type {
   SubtitlePreferences,
 } from '../types'
 import type { MediaRating } from '../lib/media-rating'
-import type { TvLinkPhase } from '../lib/tv-link'
 import { informativeHeroMeta, displayRatings, ratingDisplayValue } from './HomeScreen'
 import { POST_PLAY_VIDEO_RECT } from '../lib/post-play-layout'
-
-export type IndependentSetupPhase = 'intro' | 'waiting' | 'ready' | 'error'
 
 function usePairingCountdown(expiresAt?: number) {
   const [remainingSeconds, setRemainingSeconds] = useState(() => Math.max(0, Math.ceil(((expiresAt ?? 0) - Date.now()) / 1000)))
@@ -75,90 +72,18 @@ function PairingBackdrop({ posters }: { posters: string[] }) {
   )
 }
 
-export function IndependentSetupScreen({
-  phase,
-  connected,
-  focusIndex,
-  error,
-  onFocus,
-  onBack,
-  onStart,
-}: {
-  phase: IndependentSetupPhase
-  connected: boolean
-  focusIndex: number
-  error?: string
-  onFocus(index: number): void
-  onBack(): void
-  onStart(): void
-}) {
-  const canStart = phase === 'intro' || phase === 'error'
-  return (
-    <main class="state-screen independent-setup-screen">
-      <img class="state-brand" src={companionLockup} alt="izumi companion" />
-      <section class="independent-setup-panel">
-        <header class="independent-setup-heading">
-          <p>Independent TV playback</p>
-          <h1>Use this TV without keeping izumi open</h1>
-          <span>A one-time Cloudflare Worker setup gives your TV a private route to the parts of izumi it needs.</span>
-        </header>
-
-        <div class="independent-setup-features">
-          <article><b>01</b><div><h2>Watch progress</h2><p>Keep your izumi playtime available across your devices through your private Worker.</p></div></article>
-          <article><b>02</b><div><h2>Most sources</h2><p>Resolve compatible add-on sources and optional debrid links without leaving another device running.</p></div></article>
-          <article><b>03</b><div><h2>TV-first playback</h2><p>Start supported titles directly here. Device-only and P2P sources may still need izumi open.</p></div></article>
-        </div>
-
-        <div class="independent-setup-instruction">
-          <strong>This takes approximately 10 minutes.</strong>
-          <p>Open izumi on the device currently linked to this TV, then select OK.</p>
-        </div>
-
-        <footer class={`independent-setup-footer phase-${phase}`}>
-          {phase === 'waiting' && <div class="independent-setup-progress" role="status">
-            <i aria-hidden="true" />
-            <div><strong>Continue on your linked device</strong><span>izumi opened the private Worker setup for this TV.</span></div>
-          </div>}
-          {phase === 'ready' && <div class="independent-setup-progress is-ready" role="status">
-            <Check size={36} aria-hidden="true" />
-            <div><strong>This TV is ready</strong><span>Independent playback is connected to your private Worker.</span></div>
-          </div>}
-          {phase === 'error' && <div class="independent-setup-progress is-error" role="alert">
-            <AlertTriangle size={34} aria-hidden="true" />
-            <div><strong>Setup could not open</strong><span>{error || 'Make sure izumi is open on the linked device, then try again.'}</span></div>
-          </div>}
-          <div class="independent-setup-actions">
-            <button type="button" class={focusIndex === 0 ? 'is-focused' : ''} data-focus-id="setting-0" onFocus={() => onFocus(0)} onClick={onBack}>
-              {phase === 'ready' ? 'Done' : 'Back'}
-            </button>
-            {canStart && <button type="button" class={focusIndex === 1 ? 'is-focused' : ''} data-focus-id="setting-1" onFocus={() => onFocus(1)} onClick={onStart}>
-              {phase === 'error' ? 'Try again' : connected ? 'OK' : 'Open izumi, then OK'}
-            </button>}
-          </div>
-        </footer>
-      </section>
-    </main>
-  )
-}
-
 export function ReadyScreen({
   connected,
   qrCode,
   pairingCode,
   expiresAt,
   posters,
-  independentFocused,
-  onIndependentFocus,
-  onIndependent,
 }: {
   connected: boolean
   qrCode?: string
   pairingCode: string
   expiresAt?: number
   posters: string[]
-  independentFocused: boolean
-  onIndependentFocus(): void
-  onIndependent(): void
 }) {
   const { remainingSeconds, remainingLabel } = usePairingCountdown(expiresAt)
   return (
@@ -176,18 +101,6 @@ export function ReadyScreen({
             <span>PAIRING CODE</span>
             <strong>{pairingCode || '------'}</strong>
             {expiresAt && <small>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</small>}
-          </div>
-          <div class="ready-independent-option">
-            <span>Don’t want to pair?</span>
-            <button
-              type="button"
-              class={independentFocused ? 'is-focused' : ''}
-              data-focus-id="setting-0"
-              onFocus={onIndependentFocus}
-              onClick={onIndependent}
-            >
-              Use TV independently <ArrowRight size={24} aria-hidden="true" />
-            </button>
           </div>
         </div>
         {connected && qrCode && (
@@ -789,118 +702,6 @@ export function PlayerScreen({
           </div>
         </section>
       )}
-    </main>
-  )
-}
-
-export function StandaloneLinkScreen({
-  connected,
-  qrCode,
-  pairingCode,
-  expiresAt,
-  phase,
-  statusMessage,
-  setupSaved = false,
-  confirmation,
-  confirmationFocus,
-  posters,
-  backFocused,
-  onBackFocus,
-  onConfirmationFocus,
-  onBack,
-  onApprove,
-  onReject,
-}: {
-  connected: boolean
-  qrCode?: string
-  pairingCode: string
-  expiresAt?: number
-  phase: TvLinkPhase
-  statusMessage?: string
-  setupSaved?: boolean
-  confirmation?: string
-  confirmationFocus: number
-  posters: string[]
-  backFocused: boolean
-  onBackFocus(): void
-  onConfirmationFocus(index: number): void
-  onBack(): void
-  onApprove(): void
-  onReject(): void
-}) {
-  const { remainingSeconds, remainingLabel } = usePairingCountdown(expiresAt)
-  const statusTitle = phase === 'phone-connected' ? 'Phone connected'
-    : phase === 'confirming' ? 'Check the confirmation number'
-      : phase === 'approved' ? 'Secure link approved'
-        : phase === 'installing' ? 'Linking your private Worker'
-        : phase === 'complete' ? 'TV setup complete'
-          : phase === 'error' ? 'Setup needs attention'
-            : phase === 'preparing' ? 'Preparing secure setup'
-              : 'Secure setup ready'
-  return (
-    <main class="state-screen ready-screen standalone-link-screen">
-      <PairingBackdrop posters={posters} />
-      <img class="state-brand" src={companionLockup} alt="izumi companion" />
-      <section class="standalone-link-panel">
-        <div class="standalone-link-copy">
-          <p class="state-kicker">INDEPENDENT TV SETUP</p>
-          <h1>Set up this TV directly</h1>
-          <p>Scan with your phone to connect this TV to your private Cloudflare setup. Supported sources and watch progress will work without keeping izumi open on another device.</p>
-          <div class="standalone-link-steps" aria-label="Setup overview">
-            <div><b>1</b><span>Scan the QR code</span></div>
-            <div><b>2</b><span>Complete the one-time phone setup</span></div>
-            <div><b>3</b><span>Return here to start watching</span></div>
-          </div>
-          <div class={`standalone-link-status is-${phase}`} aria-live="polite">
-            <strong>{statusTitle}</strong>
-            <span>{statusMessage || 'Scan the QR code to begin the one-time setup.'}</span>
-            {confirmation && (phase === 'confirming' || phase === 'approved' || phase === 'installing') && (
-              <div class="standalone-confirmation">
-                <small>CONFIRMATION NUMBER</small>
-                <b>{confirmation.slice(0, 3)} {confirmation.slice(3)}</b>
-                <em>{phase === 'confirming' ? 'Compare with your phone, then approve using the TV remote.' : 'Approved on this TV.'}</em>
-              </div>
-            )}
-            {phase === 'confirming' && (
-              <div class="standalone-confirm-actions" aria-label="Approve secure TV link">
-                <button
-                  type="button"
-                  class={confirmationFocus === 0 ? 'is-focused' : ''}
-                  data-focus-id="setting-0"
-                  onFocus={() => onConfirmationFocus(0)}
-                  onClick={onReject}
-                ><RotateCcw size={20} aria-hidden="true" /> Does not match</button>
-                <button
-                  type="button"
-                  class={confirmationFocus === 1 ? 'is-focused is-approve' : 'is-approve'}
-                  data-focus-id="setting-1"
-                  onFocus={() => onConfirmationFocus(1)}
-                  onClick={onApprove}
-                ><Check size={20} aria-hidden="true" /> Numbers match</button>
-              </div>
-            )}
-          </div>
-          {phase !== 'confirming' && <button
-              type="button"
-              class={`standalone-link-back${backFocused ? ' is-focused' : ''}`}
-              data-focus-id="setting-0"
-              onFocus={onBackFocus}
-              onClick={onBack}
-            ><ChevronLeft size={25} aria-hidden="true" /> {setupSaved ? 'Retry catalogue' : 'Back to pairing'}</button>}
-        </div>
-        <aside class="standalone-qr-panel">
-          {qrCode
-            ? <div class="standalone-qr-shell"><img src={qrCode} alt="Open independent TV setup on your phone" /></div>
-            : <div class="standalone-qr-wait" role="status"><i aria-hidden="true" /><span>{connected ? 'Preparing secure link…' : 'Connecting this TV…'}</span></div>}
-          <strong>Scan with your phone</strong>
-          <span>or visit tv-link.izumi.watch</span>
-          <div class="standalone-code">
-            <small>TV CODE</small>
-            <b>{pairingCode || '--------'}</b>
-            {expiresAt && phase !== 'complete' && <em>{remainingSeconds ? `Refreshes in ${remainingLabel}` : 'Refreshing code…'}</em>}
-          </div>
-        </aside>
-      </section>
     </main>
   )
 }
