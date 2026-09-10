@@ -64,7 +64,7 @@ import { popNavigationEntry, pushNavigationEntry } from './lib/navigation-histor
 import { registerRemoteKeys, remoteAction, remoteSeekAction, type RemoteAction } from './lib/remote'
 import { CompanionReceiver } from './lib/receiver'
 import { ExternalSubtitleController, plainSubtitleText, type SubtitleCueStyle } from './lib/subtitles'
-import { applyTrackHints, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
+import { applyTrackHints, decodableAudioTrack, preferredExternalSubtitle, preferredTrack, subtitleTrackLabel } from './lib/track-selection'
 import { markFocusApplied, markRemoteInput, markScrollSettled, tvNow } from './lib/tv-performance'
 import { earlyStartDelay, observeEarlyStart, type EarlyStartState } from './lib/early-start'
 import { installVoiceSearch } from './lib/voice-search'
@@ -1001,7 +1001,8 @@ export function App({ onStartupSettled }: { onStartupSettled?(): void }) {
           setAudioTracks(audio)
           setSubtitleChoices([offSubtitle, ...externalChoices, ...embedded])
           if (audio.length && appliedAudioPreferenceRef.current !== request.sessionId) {
-            const selected = request.trackPreferences?.audio ? preferredTrack(audio, request.trackPreferences.audio) : audio[0]
+            // A DTS/TrueHD default track plays silently or fails outright here; prefer a decodable one.
+            const selected = decodableAudioTrack(audio, request.trackPreferences?.audio ? preferredTrack(audio, request.trackPreferences.audio) : audio[0])
             if (selected) {
               const selectionGeneration = ++audioSelectionGenerationRef.current
               void avplayRef.current.selectTrack('AUDIO', selected.index).then((confirmed) => {
